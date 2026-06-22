@@ -1,0 +1,64 @@
+
+services:
+  db:
+    image: postgres:15
+    container_name: learn_hub_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: learn_hub_db
+      POSTGRES_USER: learn_hub_user
+      POSTGRES_PASSWORD: secret
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  redis:
+    image: redis:alpine
+    container_name: learn_hub_cache
+    restart: unless-stopped
+    ports:
+      - "6380:6379"
+
+  nextjs:
+    build:
+      context: ./client
+      dockerfile: Dockerfile
+    container_name: learn_hub_client
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - WATCHPACK_POLLING=true
+      - NEXT_PUBLIC_API_URL=http://localhost:3001
+      - NODE_ENV=development
+    volumes:
+      - ./client:/app
+      - /app/node_modules
+      - /app/.next
+
+  server:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: learn_hub_server
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    environment:
+      - PORT=3001
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_USERNAME=learn_hub_user
+      - DB_PASSWORD=secret
+      - DB_NAME=learn_hub_db
+      - NODE_ENV=development
+    volumes:
+      - ./server:/app
+      - /app/node_modules
+    depends_on:
+      - db
+      - redis
+
+volumes:
+  pgdata:

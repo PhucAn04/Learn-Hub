@@ -4,11 +4,14 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "dev:clean": "npx rimraf .next && next dev",
+    "clean": "npx rimraf .next",
     "build": "next build",
     "start": "next start",
     "lint": "eslint"
   },
   "dependencies": {
+    "lucide-react": "^1.21.0",
     "next": "16.2.9",
     "react": "19.2.4",
     "react-dom": "19.2.4"

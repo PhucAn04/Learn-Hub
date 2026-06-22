@@ -52,6 +52,11 @@ services:
       - DB_USERNAME=learn_hub_user
       - DB_PASSWORD=secret
       - DB_NAME=learn_hub_db
+      - DATABASE_HOST=db
+      - DATABASE_PORT=5432
+      - DATABASE_USERNAME=learn_hub_user
+      - DATABASE_PASSWORD=secret
+      - DATABASE_NAME=learn_hub_db
       - NODE_ENV=development
     volumes:
       - ./server:/app

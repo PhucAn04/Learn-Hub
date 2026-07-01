@@ -28,11 +28,11 @@ export default function Home() {
         </h1>
 
         <p className="mt-4 max-w-2xl mx-auto text-lg md:text-xl font-medium text-gray-600 leading-relaxed px-4">
-          Chào mừng các bạn nhỏ đến với thế giới AI! Hãy dùng chiếc camera thần kỳ để chơi đùa, đếm ngón tay, và biến hình cùng AI nhé!
+          Chào mừng các bạn nhỏ đến với thế giới AI! Hãy dùng chiếc camera thần kỳ để học tập, đếm ngón tay, và tự tay huấn luyện bạn AI của riêng mình nhé!
         </p>
 
         {/* ── MAIN SECTIONS ── */}
-        <div className="mt-16 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 px-4">
+        <div className="mt-16 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 px-4">
           
           {/* Card 0: Lớp Học AI */}
           <Link
@@ -115,6 +115,69 @@ export default function Home() {
             </p>
             <div className="mt-6 px-4 py-2 bg-emerald-500 text-white font-extrabold rounded-full group-hover:bg-emerald-600 shadow-md">
               THỬ SỨC 🕵️‍♂️
+            </div>
+          </Link>
+
+          {/* Card 4: Bé Dạy AI Học */}
+          <Link
+            href="/challenge/teach"
+            onClick={playClickSound}
+            className="group relative bg-white/80 backdrop-blur-md rounded-3xl p-8 border-4 border-indigo-300 hover:border-indigo-400 shadow-lg hover:shadow-2xl transition-all duration-300 hover:-translate-y-2 flex flex-col items-center text-center overflow-hidden"
+          >
+            <div className="absolute top-0 right-0 w-16 h-16 bg-indigo-100 rounded-bl-full flex items-center justify-center group-hover:scale-110 transition-transform">
+              <Star className="w-6 h-6 text-indigo-500 fill-indigo-400" />
+            </div>
+            <div className="w-20 h-20 bg-indigo-100 text-indigo-600 rounded-2xl flex items-center justify-center mb-6 border-2 border-indigo-200 shadow-inner group-hover:rotate-6 transition-transform">
+              <Sparkles className="w-10 h-10" />
+            </div>
+            <h3 className="text-2xl font-black text-indigo-700 mb-2">5. Bé Dạy AI Học</h3>
+            <p className="text-gray-600 text-sm font-semibold">
+              Tự chụp ảnh mẫu, dạy bạn AI phân biệt ngón tay và gửi nộp bài cho thầy cô giáo nhé!
+            </p>
+            <div className="mt-6 px-4 py-2 bg-indigo-500 text-white font-extrabold rounded-full group-hover:bg-indigo-600 shadow-md">
+              KHÁM PHÁ 🧠
+            </div>
+          </Link>
+
+          {/* Card 6: Bé Dạy AI Học Cử Chỉ */}
+          <Link
+            href="/challenge/teach-gestures"
+            onClick={playClickSound}
+            className="group relative bg-white/80 backdrop-blur-md rounded-3xl p-8 border-4 border-orange-300 hover:border-orange-400 shadow-lg hover:shadow-2xl transition-all duration-300 hover:-translate-y-2 flex flex-col items-center text-center overflow-hidden"
+          >
+            <div className="absolute top-0 right-0 w-16 h-16 bg-orange-100 rounded-bl-full flex items-center justify-center group-hover:scale-110 transition-transform">
+              <Star className="w-6 h-6 text-orange-500 fill-orange-400" />
+            </div>
+            <div className="w-20 h-20 bg-orange-100 text-orange-600 rounded-2xl flex items-center justify-center mb-6 border-2 border-orange-200 shadow-inner group-hover:rotate-6 transition-transform">
+              <Gamepad2 className="w-10 h-10" />
+            </div>
+            <h3 className="text-2xl font-black text-orange-700 mb-2">6. AI Học Cử Chỉ</h3>
+            <p className="text-gray-600 text-sm font-semibold">
+              Chụp ảnh và dạy AI phân biệt cử chỉ tay. Bài sẽ được chấm chéo với dữ liệu chuẩn trên Kaggle!
+            </p>
+            <div className="mt-6 px-4 py-2 bg-orange-500 text-white font-extrabold rounded-full group-hover:bg-orange-600 shadow-md">
+              KHÁM PHÁ 🧠
+            </div>
+          </Link>
+
+          {/* Card 7: Bé Dạy AI Học Cảm Xúc */}
+          <Link
+            href="/challenge/teach-face"
+            onClick={playClickSound}
+            className="group relative bg-white/80 backdrop-blur-md rounded-3xl p-8 border-4 border-teal-300 hover:border-teal-400 shadow-lg hover:shadow-2xl transition-all duration-300 hover:-translate-y-2 flex flex-col items-center text-center overflow-hidden"
+          >
+            <div className="absolute top-0 right-0 w-16 h-16 bg-teal-100 rounded-bl-full flex items-center justify-center group-hover:scale-110 transition-transform">
+              <Star className="w-6 h-6 text-teal-500 fill-teal-400" />
+            </div>
+            <div className="w-20 h-20 bg-teal-100 text-teal-600 rounded-2xl flex items-center justify-center mb-6 border-2 border-teal-200 shadow-inner group-hover:rotate-6 transition-transform">
+              <Smile className="w-10 h-10" />
+            </div>
+            <h3 className="text-2xl font-black text-teal-700 mb-2">7. AI Học Cảm Xúc</h3>
+            <p className="text-gray-600 text-sm font-semibold">
+              Làm mặt Vui, Buồn, Ngạc nhiên để dạy AI học. Dữ liệu đối chiếu từ bộ FER-2013 thật luôn!
+            </p>
+            <div className="mt-6 px-4 py-2 bg-teal-500 text-white font-extrabold rounded-full group-hover:bg-teal-600 shadow-md">
+              KHÁM PHÁ 🧠
             </div>
           </Link>
 

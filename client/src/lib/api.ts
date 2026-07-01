@@ -15,6 +15,14 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   });
 
   if (!response.ok) {
+    if (response.status === 401) {
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('token');
+        if (window.location.pathname !== '/login' && window.location.pathname !== '/register') {
+          window.location.href = '/login';
+        }
+      }
+    }
     const errorData = await response.json().catch(() => ({}));
     throw new Error(errorData.message || `Request failed with status ${response.status}`);
   }
@@ -77,6 +85,19 @@ export const api = {
 
   async getUserStats() {
     return request<Record<string, number>>('/progress/stats', {
+      method: 'GET',
+    });
+  },
+
+  async submitAssignment(accuracy: number, dataset: any, reflectionAnswer: string, challengeType: string = 'teach') {
+    return request<any>('/submissions', {
+      method: 'POST',
+      body: JSON.stringify({ accuracy, dataset, reflectionAnswer, challengeType }),
+    });
+  },
+
+  async getSubmissions() {
+    return request<any[]>('/submissions', {
       method: 'GET',
     });
   },

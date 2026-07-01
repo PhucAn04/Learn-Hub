@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, ArrowRight, Star, Volume2 } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Volume2 } from 'lucide-react';
 
 const SLIDES = [
   {
@@ -37,7 +37,6 @@ const SLIDES = [
 export default function ConceptsPage() {
   const [currentStep, setCurrentStep] = useState(0);
   const [quizAnswered, setQuizAnswered] = useState<number | null>(null);
-  const [quizScore, setQuizScore] = useState(0);
   const speakVietnamese = (_text: string) => {
     void _text;
   };
@@ -67,7 +66,6 @@ export default function ConceptsPage() {
     if (quizAnswered !== null) return;
     setQuizAnswered(index);
     if (index === 1) { // Option B is correct
-      setQuizScore(1);
       speakVietnamese('Hoàn toàn chính xác! Bé giỏi quá! Ting tinh!');
     } else {
       speakVietnamese('Ồ! Chưa đúng rồi, bé hãy thử lại xem sao nhé!');
@@ -87,8 +85,7 @@ export default function ConceptsPage() {
             Trang Chủ
           </Link>
           <div className="flex items-center gap-1 bg-yellow-200 border-2 border-yellow-400 px-4 py-2 rounded-full font-black text-yellow-800">
-            <Star className="w-5 h-5 text-yellow-600 fill-yellow-500 animate-spin" />
-            <span>ĐIỂM: {quizScore * 10}</span>
+            <span>📖 Lớp Học AI</span>
           </div>
         </div>
 

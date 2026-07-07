@@ -6,6 +6,7 @@ import { DatabaseModule } from './shared/database/database.module';
 import { UsersModule } from './modules/users/users.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { ProgressModule } from './modules/progress/progress.module';
+import { SubmissionsModule } from './modules/submissions/submissions.module';
 
 @Module({
   imports: [
@@ -14,6 +15,7 @@ import { ProgressModule } from './modules/progress/progress.module';
     UsersModule,
     AuthModule,
     ProgressModule,
+    SubmissionsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

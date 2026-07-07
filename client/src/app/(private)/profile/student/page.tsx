@@ -2,12 +2,12 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Award, Star, Loader2, Calendar, Smile, Hand, Gamepad2, ArrowLeft } from 'lucide-react';
+import { Award, Loader2, Calendar, Smile, Hand, Gamepad2, ArrowLeft } from 'lucide-react';
 import { api } from '@/lib/api';
 import { playClickSound } from '@/lib/audio';
 import Link from 'next/link';
 
-export default function ProfilePage() {
+export default function StudentProfilePage() {
   const router = useRouter();
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [stats, setStats] = useState<Record<string, number>>({
@@ -27,6 +27,10 @@ export default function ProfilePage() {
     const loadData = async () => {
       try {
         const profile = await api.getProfile();
+        if (profile.role !== 'student') {
+          router.replace('/profile/teacher');
+          return;
+        }
         setCurrentUser(profile);
 
         const userStats = await api.getUserStats();
@@ -81,6 +85,7 @@ export default function ProfilePage() {
             {currentUser.avatar || '🦁'}
           </div>
           <div className="flex-1 text-center md:text-left relative z-10">
+            <div className="inline-block px-3 py-1 bg-purple-100 text-purple-700 rounded-full text-xs font-black mb-2 uppercase">Học Sinh 🦁</div>
             <h2 className="text-3xl font-black text-gray-800 leading-tight mb-2">
               {currentUser.username}
             </h2>

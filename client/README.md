@@ -45,10 +45,25 @@ client/
 
 ## Các Trang Hiện Có
 
+### Trang Public
 | Route | File | Mô tả |
 |-------|------|-------|
-| `/` | `(public)/page.tsx` | Trang chủ — 4 cards: Lớp Học AI, Đếm Ngón Tay, Ảo Thuật Tay, Thám Tử Mặt |
+| `/` | `(public)/page.tsx` | Trang chủ — 4 cards điều hướng chính |
 | `/concepts` | `(public)/concepts/page.tsx` | Trang giới thiệu các khái niệm AI |
+| `/login` | `(auth)/login/page.tsx` | Đăng nhập |
+| `/register` | `(auth)/register/page.tsx` | Đăng ký |
+
+### Trang Lớp Học (Private)
+| Route | File | Mô tả |
+|-------|------|-------|
+| `/profile` | `(private)/profile/page.tsx` | Hồ sơ học sinh / giáo viên |
+| `/challenge/teach` | `teach/page.tsx` | Dạy AI nhận diện số ngón tay |
+| `/challenge/teach-gestures` | `teach-gestures/page.tsx` | Dạy AI nhận diện cử chỉ tay (Kéo búa bao) |
+| `/challenge/teach-face` | `teach-face/page.tsx` | Dạy AI nhận diện biểu cảm khuôn mặt |
+| `/challenge/sandbox` | `sandbox/page.tsx` | Kiểm tra độ chính xác của AI ngón tay |
+| `/challenge/gestures` | `gestures/page.tsx` | Kiểm tra độ chính xác của AI cử chỉ tay |
+| `/challenge/face` | `face/page.tsx` | Kiểm tra độ chính xác của AI khuôn mặt |
+| `/challenge/fingers` | `fingers/page.tsx` | Trò chơi tính nhẩm bằng ngón tay |
 
 ## Cài Đặt & Chạy
 

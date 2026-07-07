@@ -32,7 +32,7 @@ export function useMl5Handpose(
         const handPoseModel = ml5.handPose({
           maxHands,
           flipHorizontal,
-          runtime: 'mediapipe',
+          runtime: 'tfjs',
           modelType: 'full',
         }, () => {
           if (cancelled) return;

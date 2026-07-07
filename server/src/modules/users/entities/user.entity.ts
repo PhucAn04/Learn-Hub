@@ -17,6 +17,9 @@ export class User {
   @Column({ default: '🦁' })
   avatar: string;
 
+  @Column({ default: 'student' })
+  role: string;
+
   @CreateDateColumn()
   createdAt: Date;
 

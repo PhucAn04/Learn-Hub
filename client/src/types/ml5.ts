@@ -38,11 +38,11 @@ export type Ml5FaceMeshModel = {
 
 export type Ml5Module = {
   handPose: (
-    options: { maxHands: number; flipHorizontal: boolean; runtime: 'mediapipe'; modelType: 'full' },
+    options: { maxHands: number; flipHorizontal: boolean; runtime: string; modelType: string },
     callback: () => void,
   ) => HandPoseModel;
   faceMesh: (
-    options: { maxFaces: number; flipHorizontal: boolean },
+    options: { maxFaces: number; flipHorizontal: boolean; runtime?: string },
     callback: () => void,
   ) => Ml5FaceMeshModel;
 };

@@ -61,6 +61,7 @@ export function useMl5FaceMesh(
         const model = ml5.faceMesh({
           maxFaces,
           flipHorizontal,
+          runtime: 'tfjs',
         }, async () => {
           if (cancelled) return;
           updateDebug('FaceMesh sẵn sàng');

@@ -15,6 +15,13 @@ Ngoài ra, hệ thống còn sử dụng:
 - **PostgreSQL 15** — Cơ sở dữ liệu chính
 - **Redis (Alpine)** — Cache layer
 
+## Tính Năng Nổi Bật
+
+- 🤖 **Nhận diện Khuôn Mặt Bất Biến (Expression-Ratio Based)**: Thay vì dùng KNN dễ bị nhiễu bởi hình dáng khuôn mặt, hệ thống tự động trích xuất 5 chỉ số hình học độc lập để nhận diện biểu cảm chính xác cho mọi đối tượng.
+- ✋ **Cử Chỉ Tay (Golden Dataset Validation)**: Sử dụng thuật toán so sánh với bộ dữ liệu chuẩn (Golden Dataset) kết hợp Heuristic để nhận diện ngón tay và các cử chỉ như Kéo-Búa-Bao.
+- 📸 **Thu thập dữ liệu thông minh**: Hỗ trợ cơ chế Hold-to-capture (giữ để chụp liên tục), Live Indicator (hiển thị AI đang thấy gì theo thời gian thực) và Thumbnail Gallery giúp bé dễ dàng kiểm tra dữ liệu giảng dạy.
+- 🚦 **Giáo dục tương tác**: AI sẽ tự động so sánh, đối chiếu ảnh mẫu của bé và hiển thị cảnh báo viền đỏ (⚠️) nếu bé chụp sai nhãn để rèn luyện tư duy phân loại dữ liệu.
+
 ## Kiến Trúc Hệ Thống
 
 ```

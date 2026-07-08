@@ -43,7 +43,7 @@ export default function RegisterPage() {
       playSuccessSound();
       // Auto login by setting token
       api.setToken(response.accessToken);
-      router.push('/');
+      router.push('/dashboard');
     } catch (err: any) {
       setError(err.message || 'Có lỗi xảy ra khi tạo tài khoản rồi bé ơi.');
     } finally {

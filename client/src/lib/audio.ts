@@ -56,26 +56,22 @@ export const playSuccessSound = () => {
   }
 };
 
-export const speakVietnamese = (text: string) => {
+export const speakEnglish = (text: string) => {
   if (typeof window === 'undefined' || !window.speechSynthesis) return;
   
-  // Cancel current speech to prevent overlapping sounds
   window.speechSynthesis.cancel();
   
   const utterance = new SpeechSynthesisUtterance(text);
-  utterance.lang = 'vi-VN';
+  utterance.lang = 'en-US';
   
-  // Try to find a Vietnamese voice if available
   const voices = window.speechSynthesis.getVoices();
-  const viVoice = voices.find(voice => voice.lang.includes('vi'));
-  if (viVoice) {
-    utterance.voice = viVoice;
+  const enVoice = voices.find(voice => voice.lang.includes('en'));
+  if (enVoice) {
+    utterance.voice = enVoice;
   }
   
-  // Kids-friendly speech properties
   utterance.rate = 0.9;
   utterance.pitch = 1.1;
   
   window.speechSynthesis.speak(utterance);
 };
-

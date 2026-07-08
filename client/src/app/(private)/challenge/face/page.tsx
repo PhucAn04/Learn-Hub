@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Smile } from 'lucide-react';
-import { playSuccessSound, speakVietnamese, playClickSound } from '@/lib/audio';
+import { playSuccessSound, speakEnglish, playClickSound } from '@/lib/audio';
 import { useCamera } from '@/hooks/useCamera';
 import { useMl5FaceMesh } from '@/hooks/useMl5FaceMesh';
 import {
@@ -58,9 +58,7 @@ export default function FaceChallenge() {
     maxFaces: 4,
   });
 
-  // Speak initial instruction
   useEffect(() => {
-    speakVietnamese('Chào mừng bé đến với Thử thách khuôn mặt! Bé hãy rủ bạn bè cùng xuất hiện trước camera nhé!');
   }, []);
 
   // Fetch leaderboard on mount and score change
@@ -219,7 +217,6 @@ export default function FaceChallenge() {
     if (isSmilingDetected && photoCountdown === null && !capturedPhotoUrl) {
       // Start countdown
       timer = setTimeout(() => setPhotoCountdown(3), 0);
-      speakVietnamese('Nhìn thẳng camera và cười tươi nhé! Ba... hai... một... Chụp!');
     }
 
     if ((!isSmilingDetected || smileProgress < 100) && photoCountdown !== null) {

@@ -158,3 +158,27 @@ export function drawFaceStickers(
     ctx.fill();
   }
 }
+
+export function drawFaceSkeleton(
+  ctx: CanvasRenderingContext2D,
+  kps: FaceKeypoint[],
+  videoWidth: number,
+  videoHeight: number,
+  canvasWidth: number,
+  canvasHeight: number,
+) {
+  const sx = canvasWidth / videoWidth;
+  const sy = canvasHeight / videoHeight;
+
+  const scaledKps = kps.map(kp => ({ x: kp.x * sx, y: kp.y * sy, z: kp.z }));
+
+  ctx.strokeStyle = '#34d399'; // emerald-400
+  ctx.lineWidth = 2;
+  ctx.lineCap = 'round';
+
+  drawPolyline(ctx, FACE_OVAL, scaledKps);
+  drawPolyline(ctx, FACE_L_EYE, scaledKps);
+  drawPolyline(ctx, FACE_R_EYE, scaledKps);
+  drawPolyline(ctx, FACE_LIPS, scaledKps);
+  drawPolyline(ctx, FACE_NOSE, scaledKps);
+}

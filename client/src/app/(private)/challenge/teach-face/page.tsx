@@ -18,11 +18,12 @@ import {
   drawFaceStickers,
   getFaceKeypoints
 } from '@/lib/face-drawing';
-import { playSuccessSound, speakVietnamese, playClickSound } from '@/lib/audio';
+import { playSuccessSound, speakEnglish, playClickSound } from '@/lib/audio';
 import { normalizeFaceFeatures, classifyKNN, StoredSample } from '@/lib/knn-classifier';
 import { EMOTION_LANDMARK_DATASET } from '@/lib/emotion-landmark-dataset';
 import CameraView from '@/components/CameraView';
 import SampleGallery from '@/components/SampleGallery';
+import { uploadSamplesToCloudinary, isCloudinaryConfigured } from '@/lib/cloudinary';
 
 // Predefined classes for teaching
 const CLASSES = [
@@ -52,6 +53,7 @@ export default function TeachFacePage() {
   const [submitScore, setSubmitScore] = useState<number | null>(null);
   const [penaltyWarning, setPenaltyWarning] = useState<boolean>(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState('');
   const [submitSuccess, setSubmitSuccess] = useState(false);
 
   // Capture states
@@ -71,9 +73,7 @@ export default function TeachFacePage() {
     maxFaces: 1,
   });
 
-  // Speak initial instruction
   useEffect(() => {
-    speakVietnamese('Chào mừng bé! Hôm nay bé sẽ làm thầy cô giáo để dạy bạn A I học nhận biết các nét mặt nhé!');
   }, []);
 
   const getVideoThumb = () => {
@@ -242,7 +242,17 @@ export default function TeachFacePage() {
     const classLabel = CLASSES.find(c => c.id === classId)?.label || classId;
     setSamples(prev => prev.filter(s => s.sourceId ? s.sourceId !== classId : s.label !== classLabel));
     setIsTrained(false);
-    speakVietnamese(`Đã xóa tất cả mẫu`);
+    speakEnglish(`All samples cleared`);
+  };
+
+  // Clear ALL samples across all classes (reset entire dataset)
+  const clearAllSamples = () => {
+    playClickSound();
+    setSamples([]);
+    setIsTrained(false);
+    setPredictedLabel('Chưa nhận diện... 🤔');
+    setConfidence(0);
+    speakEnglish('All data cleared. Start collecting again!');
   };
 
   // Run mock training simulation
@@ -253,7 +263,7 @@ export default function TeachFacePage() {
     const c4 = samples.filter(s => s.sourceId === 'class_4' || (s.label === CLASSES[3].label && !s.sourceId)).length;
 
     if (c1 < 3 || c2 < 3 || c3 < 3 || c4 < 3) {
-      speakVietnamese('Bé chưa chụp đủ 3 ảnh mẫu cho mỗi nhóm rồi! Bé hãy chụp thêm hình mẫu nhé!');
+      speakEnglish('Need more samples to learn');
       return;
     }
     
@@ -268,7 +278,7 @@ export default function TeachFacePage() {
           setIsTraining(false);
           setIsTrained(true);
           playSuccessSound();
-          speakVietnamese('A I đã học xong và ghi nhớ toàn bộ nét mặt của bé rồi! Hãy làm mặt biểu cảm để kiểm tra nào!');
+          speakEnglish('Learning complete. Let us test!');
           return 100;
         }
         return prev + 10;
@@ -330,7 +340,7 @@ export default function TeachFacePage() {
         }
 
         if (msg) {
-          speakVietnamese(msg);
+          speakEnglish('Validation failed');
           setTimeout(() => setEffectEmoji(null), 1200);
         }
       }
@@ -491,17 +501,36 @@ export default function TeachFacePage() {
 
     try {
       setIsSubmitting(true);
-      // Save submission record
-      await api.submitAssignment(submitScore, samples, `${reflectionAnswer} | Lời nhắn: ${teacherMessage}`);
+
+      // Step 1: Upload images to Cloudinary (if configured)
+      let processedSamples = samples;
+      if (isCloudinaryConfigured()) {
+        setUploadProgress('Đang tải ảnh lên Cloud...');
+        processedSamples = await uploadSamplesToCloudinary(
+          samples,
+          'teach-face',
+          (uploaded, total) => {
+            setUploadProgress(`Tải ảnh ${uploaded}/${total}...`);
+          }
+        );
+        setUploadProgress('Đang lưu bài...');
+      }
+
+      // Step 2: Save to new Dataset API (stores samples as file + creates model with testScore)
+      await api.createDataset('teach-face', processedSamples, submitScore, `${reflectionAnswer} | Lời nhắn: ${teacherMessage}`);
+      // Also save to legacy submission record for backward compatibility
+      await api.submitAssignment(submitScore, processedSamples, `${reflectionAnswer} | Lời nhắn: ${teacherMessage}`, 'teach-face');
       // Save score to progress/medals
       await api.saveProgress('teach-face', submitScore);
       
       setSubmitSuccess(true);
+      setUploadProgress('');
       playSuccessSound();
-      speakVietnamese('Chúc mừng bé đã nộp bài thành công cho thầy cô rồi nhé!');
+      speakEnglish('Submission successful!');
     } catch (err) {
       console.error('Failed to submit assignment', err);
-      speakVietnamese('Nộp bài gặp lỗi rồi bé ơi!');
+      setUploadProgress('');
+      speakEnglish('Submission failed!');
     } finally {
       setIsSubmitting(false);
     }
@@ -550,7 +579,7 @@ export default function TeachFacePage() {
                       onClick={() => {
                         playClickSound();
                         setActiveClass(cls.id);
-                        speakVietnamese(cls.voicePrompt);
+                        // speakEnglish(cls.voicePrompt);
                       }}
                       className={`cursor-pointer rounded-2xl p-4 border-2 transition-all flex items-center justify-between ${
                         isSelected
@@ -696,8 +725,33 @@ export default function TeachFacePage() {
                 </button>
               )}
 
+              {/* Clear All Dataset Button */}
+              {samples.length > 0 && (
+                <div className="mt-4">
+                  <button
+                    onClick={clearAllSamples}
+                    className="w-full bg-red-50 hover:bg-red-100 text-red-600 font-extrabold py-3 px-6 rounded-2xl border-2 border-red-200 flex items-center justify-center gap-2 transition-colors"
+                  >
+                    <Trash2 className="w-5 h-5" />
+                    <span>XÓA TOÀN BỘ DỮ LIỆU & LÀM LẠI 🔄</span>
+                  </button>
+                </div>
+              )}
+
+              {/* View History Link */}
+              <div className="mt-4">
+                <Link
+                  href="/student/history/teach-face"
+                  onClick={playClickSound}
+                  className="inline-flex items-center justify-center gap-2 w-full bg-white hover:bg-indigo-50 text-indigo-600 border-2 border-indigo-200 font-bold py-3 px-4 rounded-xl shadow-sm transition-colors"
+                >
+                  <span className="text-xl">📊</span>
+                  <span>Xem lại bộ dữ liệu đã nộp</span>
+                </Link>
+              </div>
+
               {/* Sandbox Link */}
-              <div className="mt-6 pt-6 border-t-2 border-gray-100 text-center">
+              <div className="mt-4 pt-4 border-t-2 border-gray-100 text-center">
                 <p className="text-xs text-gray-500 font-semibold mb-3">Hoặc tự tạo nhãn không giới hạn?</p>
                 <Link
                   href="/challenge/sandbox"
@@ -878,7 +932,7 @@ export default function TeachFacePage() {
                     disabled={isSubmitting}
                     className="flex-1 py-3 bg-indigo-600 text-white font-extrabold rounded-xl hover:bg-indigo-700 border-b-4 border-indigo-800 disabled:bg-gray-300"
                   >
-                    {isSubmitting ? 'ĐANG GỬI...' : 'XÁC NHẬN NỘP'}
+                    {isSubmitting ? (uploadProgress || 'ĐANG GỬI...') : 'XÁC NHẬN NỘP'}
                   </button>
                 </div>
               </div>

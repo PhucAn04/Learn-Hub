@@ -70,7 +70,7 @@ export default function StudentProfilePage() {
         {/* Back navigation */}
         <div className="mb-6">
           <Link
-            href="/"
+            href="/dashboard"
             onClick={playClickSound}
             className="inline-flex items-center gap-2 px-5 py-3 rounded-full bg-white border-2 border-purple-200 font-extrabold text-purple-700 hover:bg-purple-50 transition shadow-md"
           >
@@ -102,7 +102,7 @@ export default function StudentProfilePage() {
         {/* Stats Grid */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
           {/* Finger Stats */}
-          <div className="bg-white rounded-3xl p-6 border-4 border-blue-400 shadow-lg hover:shadow-xl transition-all">
+          <div className="bg-white rounded-3xl p-6 border-4 border-blue-400 shadow-lg hover:shadow-xl transition-all flex flex-col h-full">
             <div className="w-12 h-12 bg-blue-100 text-blue-600 rounded-2xl flex items-center justify-center mb-4 border border-blue-200 shadow-inner">
               <Hand className="w-6 h-6" />
             </div>
@@ -110,17 +110,21 @@ export default function StudentProfilePage() {
             <div className="text-3xl font-black text-blue-600 mb-4">{stats.fingers} điểm</div>
             
             {/* Medal badge */}
-            <div className="bg-blue-50/50 rounded-2xl p-3 border border-blue-100 flex items-center gap-3">
+            <div className="bg-blue-50/50 rounded-2xl p-3 border border-blue-100 flex items-center gap-3 mb-4 flex-1">
               <span className="text-3xl">{getMedal(stats.fingers).emoji}</span>
               <div>
                 <div className="text-xs font-extrabold text-blue-800">{getMedal(stats.fingers).label}</div>
                 <div className="text-[10px] font-semibold text-blue-600">{getMedal(stats.fingers).desc}</div>
               </div>
             </div>
+
+            <Link href="/student/history/teach" className="w-full block py-2.5 bg-blue-100 hover:bg-blue-200 text-blue-700 font-extrabold text-center rounded-xl transition-colors text-sm border border-blue-300 border-b-4">
+              Lịch sử nộp bài
+            </Link>
           </div>
 
           {/* Gesture Stats */}
-          <div className="bg-white rounded-3xl p-6 border-4 border-pink-400 shadow-lg hover:shadow-xl transition-all">
+          <div className="bg-white rounded-3xl p-6 border-4 border-pink-400 shadow-lg hover:shadow-xl transition-all flex flex-col h-full">
             <div className="w-12 h-12 bg-pink-100 text-pink-600 rounded-2xl flex items-center justify-center mb-4 border border-pink-200 shadow-inner">
               <Gamepad2 className="w-6 h-6" />
             </div>
@@ -128,17 +132,21 @@ export default function StudentProfilePage() {
             <div className="text-3xl font-black text-pink-600 mb-4">{stats.gestures} điểm</div>
             
             {/* Medal badge */}
-            <div className="bg-pink-50/50 rounded-2xl p-3 border border-pink-100 flex items-center gap-3">
+            <div className="bg-pink-50/50 rounded-2xl p-3 border border-pink-100 flex items-center gap-3 mb-4 flex-1">
               <span className="text-3xl">{getMedal(stats.gestures).emoji}</span>
               <div>
                 <div className="text-xs font-extrabold text-pink-800">{getMedal(stats.gestures).label}</div>
                 <div className="text-[10px] font-semibold text-pink-600">{getMedal(stats.gestures).desc}</div>
               </div>
             </div>
+
+            <Link href="/student/history/teach-gestures" className="w-full block py-2.5 bg-pink-100 hover:bg-pink-200 text-pink-700 font-extrabold text-center rounded-xl transition-colors text-sm border border-pink-300 border-b-4">
+              Lịch sử nộp bài
+            </Link>
           </div>
 
           {/* Face Stats */}
-          <div className="bg-white rounded-3xl p-6 border-4 border-emerald-400 shadow-lg hover:shadow-xl transition-all">
+          <div className="bg-white rounded-3xl p-6 border-4 border-emerald-400 shadow-lg hover:shadow-xl transition-all flex flex-col h-full">
             <div className="w-12 h-12 bg-emerald-100 text-emerald-600 rounded-2xl flex items-center justify-center mb-4 border border-emerald-200 shadow-inner">
               <Smile className="w-6 h-6" />
             </div>
@@ -146,13 +154,17 @@ export default function StudentProfilePage() {
             <div className="text-3xl font-black text-emerald-600 mb-4">{stats.face} ảnh</div>
             
             {/* Medal badge */}
-            <div className="bg-emerald-50/50 rounded-2xl p-3 border border-emerald-100 flex items-center gap-3">
+            <div className="bg-emerald-50/50 rounded-2xl p-3 border border-emerald-100 flex items-center gap-3 mb-4 flex-1">
               <span className="text-3xl">{getMedal(stats.face * 10).emoji}</span>
               <div>
                 <div className="text-xs font-extrabold text-emerald-800">{getMedal(stats.face * 10).label}</div>
                 <div className="text-[10px] font-semibold text-emerald-600">{getMedal(stats.face * 10).desc}</div>
               </div>
             </div>
+
+            <Link href="/student/history/teach-face" className="w-full block py-2.5 bg-emerald-100 hover:bg-emerald-200 text-emerald-700 font-extrabold text-center rounded-xl transition-colors text-sm border border-emerald-300 border-b-4">
+              Lịch sử nộp bài
+            </Link>
           </div>
         </div>
       </div>

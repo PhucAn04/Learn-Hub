@@ -56,7 +56,7 @@ export default function SampleGallery({ samples, onDeleteSample, onClearAll }: S
       </div>
 
       {/* Thumbnail grid - larger size, wrapped */}
-      <div className="flex flex-wrap gap-2 py-2 px-1">
+      <div className="grid grid-cols-4 gap-2 py-2 px-1 max-h-[240px] overflow-y-auto">
         {samples.map((s, index) => {
           const isInvalid = s.isValid === false;
           const key = s.id || `sample-${index}`;
@@ -68,12 +68,11 @@ export default function SampleGallery({ samples, onDeleteSample, onClearAll }: S
                 e.stopPropagation();
                 setPreviewIndex(index);
               }}
-              className={`group relative shrink-0 overflow-hidden rounded-xl shadow-sm cursor-pointer transition-all hover:scale-105 ${
+              className={`group relative overflow-hidden rounded-xl shadow-sm cursor-pointer transition-all hover:scale-105 aspect-square ${
                 isInvalid 
                   ? 'border-4 border-red-500 ring-2 ring-red-300 ring-offset-1' 
                   : 'border-2 border-indigo-100 hover:border-indigo-400'
               }`}
-              style={{ width: 64, height: 64 }}
             >
               {s.thumbnail ? (
                 <img src={s.thumbnail} alt="thumb" className="w-full h-full object-cover" />

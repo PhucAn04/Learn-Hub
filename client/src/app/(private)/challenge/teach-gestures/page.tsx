@@ -7,11 +7,12 @@ import { api } from '@/lib/api';
 import { useCamera } from '@/hooks/useCamera';
 import { useMl5Handpose } from '@/hooks/useMl5Handpose';
 import { drawHandSkeleton } from '@/lib/hand-drawing';
-import { playSuccessSound, speakVietnamese, playClickSound } from '@/lib/audio';
+import { playSuccessSound, speakEnglish, playClickSound } from '@/lib/audio';
 import { normalizeHandKeypoints, classifyKNN, StoredSample } from '@/lib/knn-classifier';
 import { GOLDEN_GESTURES_DATASET } from '@/lib/golden-gestures-dataset';
 import CameraView from '@/components/CameraView';
 import SampleGallery from '@/components/SampleGallery';
+import { uploadSamplesToCloudinary, isCloudinaryConfigured } from '@/lib/cloudinary';
 
 // Predefined classes for teaching
 const CLASSES = [
@@ -41,6 +42,7 @@ export default function TeachGesturesPage() {
   const [submitScore, setSubmitScore] = useState<number | null>(null);
   const [penaltyWarning, setPenaltyWarning] = useState<boolean>(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState('');
   const [submitSuccess, setSubmitSuccess] = useState(false);
 
   // Capture states
@@ -59,9 +61,7 @@ export default function TeachGesturesPage() {
     maxHands: 2,
   });
 
-  // Speak initial instruction
   useEffect(() => {
-    speakVietnamese('Chào mừng bé! Hôm nay bé sẽ làm thầy cô giáo để dạy bạn A I học nhận biết các ngón tay nhé!');
   }, []);
 
   const getVideoThumb = () => {
@@ -102,37 +102,22 @@ export default function TeachGesturesPage() {
           const features = normalizeHandKeypoints(hands[handIndex].keypoints);
           let isValid = true;
 
-          if (goldenCurrentClass.length > 0 && goldenOtherClasses.length > 0) {
-            // Average distance to golden samples of SELECTED class
-            const avgDistToCorrect = goldenCurrentClass.reduce((sum, g) => {
-              let d = 0;
-              for (let i = 0; i < Math.min(features.length, g.features.length); i++) {
-                const diff = g.features[i] - features[i];
-                d += diff * diff;
-              }
-              return sum + Math.sqrt(d);
-            }, 0) / goldenCurrentClass.length;
-
-            // Closest golden sample from ANY OTHER class
-            let minDistToWrong = Infinity;
-            let closestWrongLabel = '';
-            goldenOtherClasses.forEach(g => {
-              let d = 0;
-              for (let i = 0; i < Math.min(features.length, g.features.length); i++) {
-                const diff = g.features[i] - features[i];
-                d += diff * diff;
-              }
-              const dist = Math.sqrt(d);
-              if (dist < minDistToWrong) {
-                minDistToWrong = dist;
-                const cls = CLASSES.find(c => c.id === g.expectedLabel);
-                closestWrongLabel = cls?.label || g.expectedLabel;
-              }
-            });
-
-            // If closer to a WRONG class than to the CORRECT one
-            if (minDistToWrong < avgDistToCorrect * 0.85) {
+          if (GOLDEN_GESTURES_DATASET.length > 0) {
+            const mappedGolden = GOLDEN_GESTURES_DATASET.map(g => ({
+              label: g.expectedLabel,
+              features: g.features
+            }));
+            
+            const result = classifyKNN(features, mappedGolden, 3);
+            const flippedFeatures = features.map((v, i) => i % 2 === 0 ? -v : v);
+            const flippedResult = classifyKNN(flippedFeatures, mappedGolden, 3);
+            
+            if (result.label !== activeClass && flippedResult.label !== activeClass) {
               isValid = false;
+              const finalResult = result.confidence >= flippedResult.confidence ? result : flippedResult;
+              const cls = CLASSES.find(c => c.id === finalResult.label);
+              const closestWrongLabel = cls?.label || finalResult.label;
+              
               if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
               setValidationToast(`⚠️ Cử chỉ này trông giống "${closestWrongLabel}" hơn! Bé thử lại nhé?`);
               toastTimeoutRef.current = setTimeout(() => setValidationToast(null), 4000);
@@ -186,7 +171,17 @@ export default function TeachGesturesPage() {
     const classLabel = CLASSES.find(c => c.id === classId)?.label || classId;
     setSamples(prev => prev.filter(s => s.sourceId ? s.sourceId !== classId : s.label !== classLabel));
     setIsTrained(false);
-    speakVietnamese(`Đã xóa tất cả mẫu`);
+    speakEnglish(`All samples cleared`);
+  };
+
+  // Clear ALL samples across all classes (reset entire dataset)
+  const clearAllSamples = () => {
+    playClickSound();
+    setSamples([]);
+    setIsTrained(false);
+    setPredictedLabel('Chưa nhận diện... 🤔');
+    setConfidence(0);
+    speakEnglish('All data cleared. Start collecting again!');
   };
 
   // Run mock training simulation
@@ -197,7 +192,7 @@ export default function TeachGesturesPage() {
     const c4 = samples.filter(s => s.sourceId === 'class_4').length;
 
     if (c1 < 3 || c2 < 3 || c3 < 3 || c4 < 3) {
-      speakVietnamese('Bé chưa chụp đủ 3 ảnh mẫu cho mỗi nhóm rồi! Bé hãy chụp thêm hình mẫu nhé!');
+      speakEnglish('Need more samples to learn');
       return;
     }
     
@@ -212,7 +207,6 @@ export default function TeachGesturesPage() {
           setIsTraining(false);
           setIsTrained(true);
           playSuccessSound();
-          speakVietnamese('A I đã học xong và ghi nhớ toàn bộ dáng tay của bé rồi! Hãy giơ tay lên để kiểm tra nào!');
           return 100;
         }
         return prev + 10;
@@ -274,7 +268,7 @@ export default function TeachGesturesPage() {
         }
 
         if (msg) {
-          speakVietnamese(msg);
+          speakEnglish('Validation failed');
           setTimeout(() => setEffectEmoji(null), 1200);
         }
       }
@@ -395,17 +389,34 @@ export default function TeachGesturesPage() {
 
     try {
       setIsSubmitting(true);
-      // Save submission record
-      await api.submitAssignment(submitScore, samples, `${reflectionAnswer} | Lời nhắn: ${teacherMessage}`);
-      // Save score to progress/medals
+
+      // Step 1: Upload images to Cloudinary (if configured)
+      let processedSamples = samples;
+      if (isCloudinaryConfigured()) {
+        setUploadProgress('Đang tải ảnh lên Cloud...');
+        processedSamples = await uploadSamplesToCloudinary(
+          samples,
+          'teach-gestures',
+          (uploaded, total) => {
+            setUploadProgress(`Tải ảnh ${uploaded}/${total}...`);
+          }
+        );
+        setUploadProgress('Đang lưu bài...');
+      }
+
+      // Step 2: Save to new Dataset API
+      await api.createDataset('teach-gestures', processedSamples, submitScore, `${reflectionAnswer} | Lời nhắn: ${teacherMessage}`);
+      await api.submitAssignment(submitScore, processedSamples, `${reflectionAnswer} | Lời nhắn: ${teacherMessage}`, 'teach-gestures');
       await api.saveProgress('teach-gestures', submitScore);
       
       setSubmitSuccess(true);
+      setUploadProgress('');
       playSuccessSound();
-      speakVietnamese('Chúc mừng bé đã nộp bài thành công cho thầy cô rồi nhé!');
+      speakEnglish('Submission successful!');
     } catch (err) {
       console.error('Failed to submit assignment', err);
-      speakVietnamese('Nộp bài gặp lỗi rồi bé ơi!');
+      setUploadProgress('');
+      speakEnglish('Submission failed!');
     } finally {
       setIsSubmitting(false);
     }
@@ -454,7 +465,7 @@ export default function TeachGesturesPage() {
                       onClick={() => {
                         playClickSound();
                         setActiveClass(cls.id);
-                        speakVietnamese(cls.voicePrompt);
+                        // speakEnglish(cls.voicePrompt);
                       }}
                       className={`cursor-pointer rounded-2xl p-4 border-2 transition-all flex items-center justify-between ${
                         isSelected
@@ -599,6 +610,31 @@ export default function TeachGesturesPage() {
                   <span>NỘP BÀI CHO THẦY CÔ 🎒</span>
                 </button>
               )}
+
+              {/* Clear All Dataset Button */}
+              {samples.length > 0 && (
+                <div className="mt-4">
+                  <button
+                    onClick={clearAllSamples}
+                    className="w-full bg-red-50 hover:bg-red-100 text-red-600 font-extrabold py-3 px-6 rounded-2xl border-2 border-red-200 flex items-center justify-center gap-2 transition-colors"
+                  >
+                    <Trash2 className="w-5 h-5" />
+                    <span>XÓA TOÀN BỘ DỮ LIỆU & LÀM LẠI 🔄</span>
+                  </button>
+                </div>
+              )}
+
+              {/* View History Link */}
+              <div className="mt-4">
+                <Link
+                  href="/student/history/teach-gestures"
+                  onClick={playClickSound}
+                  className="inline-flex items-center justify-center gap-2 w-full bg-white hover:bg-indigo-50 text-indigo-600 border-2 border-indigo-200 font-bold py-3 px-4 rounded-xl shadow-sm transition-colors"
+                >
+                  <span className="text-xl">📊</span>
+                  <span>Xem lại bộ dữ liệu đã nộp</span>
+                </Link>
+              </div>
 
               {/* Sandbox Link */}
               <div className="mt-6 pt-6 border-t-2 border-gray-100 text-center">
@@ -765,7 +801,7 @@ export default function TeachGesturesPage() {
                     disabled={isSubmitting}
                     className="flex-1 py-3 bg-indigo-600 text-white font-extrabold rounded-xl hover:bg-indigo-700 border-b-4 border-indigo-800 disabled:bg-gray-300"
                   >
-                    {isSubmitting ? 'ĐANG GỬI...' : 'XÁC NHẬN NỘP'}
+                    {isSubmitting ? (uploadProgress || 'ĐANG GỬI...') : 'XÁC NHẬN NỘP'}
                   </button>
                 </div>
               </div>

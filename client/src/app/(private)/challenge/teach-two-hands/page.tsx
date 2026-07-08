@@ -13,12 +13,11 @@ import { normalizeHandKeypoints, classifyKNN, StoredSample, HandKeypoint } from 
 import { GOLDEN_TEST_DATASET } from '@/lib/golden-dataset';
 import CameraView from '@/components/CameraView';
 import SampleGallery from '@/components/SampleGallery';
-import { uploadSamplesToCloudinary, isCloudinaryConfigured } from '@/lib/cloudinary';
 
 // Predefined classes for teaching
 const CLASSES = [
-  { id: 'class_1', label: '1 Ngón Tay ☝️', voicePrompt: 'Hãy dạy bạn A I nhận biết một ngón tay nhé!' },
-  { id: 'class_2', label: '2 Ngón Tay ✌️', voicePrompt: 'Hãy dạy bạn A I nhận biết hai ngón tay nào!' },
+  { id: 'class_3', label: '2 Bàn Tay, 1 Ngón Tay ☝️☝️', voicePrompt: 'Hãy giơ hai bàn tay, mỗi tay một ngón nhé!' },
+  { id: 'class_4', label: '2 Bàn Tay, 2 Ngón Tay ✌️✌️', voicePrompt: 'Hãy giơ hai bàn tay, mỗi tay hai ngón nhé!' },
 ];
 
 // Mapping từ class ID sang golden dataset expectedLabel
@@ -102,7 +101,7 @@ function getExpectedFingerCount(classId: string): number {
 export default function TeachAiPage() {
   const router = useRouter();
   const [samples, setSamples] = useState<StoredSample[]>([]);
-  const [activeClass, setActiveClass] = useState<string>('class_1');
+  const [activeClass, setActiveClass] = useState<string>('class_3');
   const [isTraining, setIsTraining] = useState(false);
   const [isTrained, setIsTrained] = useState(false);
   const [trainingProgress, setTrainingProgress] = useState(0);
@@ -120,7 +119,6 @@ export default function TeachAiPage() {
   const [submitScore, setSubmitScore] = useState<number | null>(null);
   const [penaltyWarning, setPenaltyWarning] = useState<boolean>(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState('');
   const [submitSuccess, setSubmitSuccess] = useState(false);
 
   // Capture states
@@ -141,7 +139,7 @@ export default function TeachAiPage() {
   });
 
   const { handsRef, modelStatus } = useMl5Handpose(videoRef, cameraActive, {
-    maxHands: 1,
+    maxHands: 2,
   });
 
   useEffect(() => {
@@ -160,9 +158,12 @@ export default function TeachAiPage() {
   const captureSample = () => {
     const hands = handsRef.current;
     if (!hands || hands.length === 0) return;
-    
+    if (hands.length < 2) return;
+
     const activeClassLabel = CLASSES.find(c => c.id === activeClass)?.label || 'Không tên';
     let knnLabel = activeClassLabel;
+    if (activeClass === 'class_3') knnLabel = CLASSES[0].label;
+    if (activeClass === 'class_4') knnLabel = CLASSES[1].label;
 
     const thumbnail = getVideoThumb();
     // FIX: Sử dụng CLASS_TO_GOLDEN_LABEL mapping thay vì so sánh trực tiếp activeClass
@@ -247,6 +248,7 @@ export default function TeachAiPage() {
       };
 
       processHand(0);
+      processHand(1);
 
       // Hiển thị cảnh báo nếu có sample bị reject
       if (rejectedAny && rejectionMsg) {
@@ -290,21 +292,11 @@ export default function TeachAiPage() {
     speakEnglish(`All samples cleared`);
   };
 
-  // Clear ALL samples across all classes (reset entire dataset)
-  const clearAllSamples = () => {
-    playClickSound();
-    setSamples([]);
-    setIsTrained(false);
-    setPredictedLabel('Chưa nhận diện... 🤔');
-    setConfidence(0);
-    speakEnglish('All data cleared. Start collecting again!');
-  };
-
-  // Run mock training simulation
   const handleTrain = () => {
-    const c1 = samples.filter(s => s.sourceId === 'class_1' || (s.label === CLASSES[0].label && !s.sourceId)).length;
-    const c2 = samples.filter(s => s.sourceId === 'class_2' || (s.label === CLASSES[1].label && !s.sourceId)).length;
-    if (c1 < 10 || c2 < 10) {
+    const c3 = samples.filter(s => s.sourceId === 'class_3').length;
+    const c4 = samples.filter(s => s.sourceId === 'class_4').length;
+
+    if (c3 < 6 || c4 < 6) { // c3/c4 need 6 samples (3 captures x 2 hands)
       speakEnglish('Need more samples to learn');
       return;
     }
@@ -338,7 +330,7 @@ export default function TeachAiPage() {
       const hands = handsRef.current;
       
       if (hands && hands.length > 0) {
-        if (hands.length >= 2 && false) { // Two-hand mode disabled
+        if (hands.length >= 2) {
           // Dual Hand Prediction logic: classify both hands and count total fingers
           const hand1 = hands[0];
           const hand2 = hands[1];
@@ -430,7 +422,6 @@ export default function TeachAiPage() {
 
           if (hands && hands.length > 0) {
             hands.forEach((hand, idx) => {
-              if (idx > 0) return;
               const kps = hand.keypoints;
               if (kps && kps.length >= 21) {
                 drawHandSkeleton(ctx, kps, video.videoWidth, video.videoHeight, canvas.width, canvas.height, {
@@ -482,7 +473,7 @@ export default function TeachAiPage() {
     });
 
     let hasPenalty = false;
-    const classesToCheck = ['class_1', 'class_2'];
+    const classesToCheck = ['class_3', 'class_4'];
     classesToCheck.forEach(cid => {
       const count = sampleCounts[cid];
       if (count < MIN_SAMPLES_PER_CLASS) {
@@ -504,33 +495,23 @@ export default function TeachAiPage() {
 
     try {
       setIsSubmitting(true);
+      
+      // Strip thumbnails to reduce payload size
+      const payloadSamples = samples.map(s => {
+        const { thumbnail, ...rest } = s;
+        return rest;
+      });
 
-      // Step 1: Upload images to Cloudinary (if configured)
-      let processedSamples = samples;
-      if (isCloudinaryConfigured()) {
-        setUploadProgress('Đang tải ảnh lên Cloud...');
-        processedSamples = await uploadSamplesToCloudinary(
-          samples,
-          'teach',
-          (uploaded, total) => {
-            setUploadProgress(`Tải ảnh ${uploaded}/${total}...`);
-          }
-        );
-        setUploadProgress('Đang lưu bài...');
-      }
-
-      // Step 2: Save to new Dataset API
-      await api.createDataset('teach', processedSamples, submitScore, `${reflectionAnswer} | Lời nhắn: ${teacherMessage}`);
-      await api.submitAssignment(submitScore, processedSamples, `${reflectionAnswer} | Lời nhắn: ${teacherMessage}`, 'teach');
-      await api.saveProgress('teach', submitScore);
+      // Save submission record
+      await api.submitAssignment(submitScore, payloadSamples, `${reflectionAnswer} | Lời nhắn: ${teacherMessage}`, 'teach-two-hands');
+      // Save score to progress/medals
+      await api.saveProgress('teach-two-hands', submitScore);
       
       setSubmitSuccess(true);
-      setUploadProgress('');
       playSuccessSound();
       speakEnglish('Submission successful!');
     } catch (err) {
       console.error('Failed to submit assignment', err);
-      setUploadProgress('');
       speakEnglish('Submission failed!');
     } finally {
       setIsSubmitting(false);
@@ -566,12 +547,12 @@ export default function TeachAiPage() {
               <div className="text-xs font-black text-indigo-600 tracking-wider mb-2 uppercase">Lớp học AI của bé</div>
               <h3 className="text-xl font-bold text-gray-800 mb-4">Các bước dạy học cho AI:</h3>
 
-              {/* Stage 1: One-hand classes */}
+              {/* Stage 2: Two-hand classes */}
               <div className="mb-2">
-                <span className="text-xs font-black text-emerald-600 tracking-wider uppercase">Bước 1: 1 Bàn tay ✋</span>
+                <span className="text-xs font-black text-emerald-600 tracking-wider uppercase">Bước 2: 2 Bàn tay 👐</span>
               </div>
-              <div className="space-y-3 mb-4">
-                {CLASSES.slice(0, 2).map(cls => {
+              <div className="space-y-3 mb-6">
+                {CLASSES.map(cls => {
                   const rawCount = samples.filter(s => s.sourceId === cls.id || (s.label === cls.label && !s.sourceId)).length;
                   const classSampleCount = rawCount;
                   const isSelected = activeClass === cls.id;
@@ -617,6 +598,8 @@ export default function TeachAiPage() {
 
 
 
+
+
               {/* Capture Button */}
               <button
                 onMouseDown={startCapturing}
@@ -652,11 +635,12 @@ export default function TeachAiPage() {
               {/* Requirement notification block */}
               {(() => {
                 const getCount = (id: string, label: string) => {
-                  return samples.filter(s => s.sourceId === id || (s.label === label && !s.sourceId)).length;
+                  const raw = samples.filter(s => s.sourceId === id || (s.label === label && !s.sourceId)).length;
+                  return Math.floor(raw / 2);
                 };
-                const c1 = getCount(CLASSES[0].id, CLASSES[0].label);
-                const c2 = getCount(CLASSES[1].id, CLASSES[1].label);
-                const isReady = c1 >= 10 && c2 >= 10;
+                const c3 = getCount(CLASSES[0].id, CLASSES[0].label);
+                const c4 = getCount(CLASSES[1].id, CLASSES[1].label);
+                const isReady = c3 >= 10 && c4 >= 10;
 
                 if (!isReady) {
                   return (
@@ -664,8 +648,8 @@ export default function TeachAiPage() {
                       <span className="text-red-800 text-sm font-extrabold block">⚠️ Yêu cầu dữ liệu:</span>
                       <span>Bé cần chụp ít nhất 10 ảnh cho mỗi nhóm để AI có thể học tốt nhé:</span>
                       <ul className="list-disc pl-4 space-y-1">
-                        {c1 < 10 && <li>Nhóm "{CLASSES[0].label}": thiếu {10 - c1} ảnh mẫu.</li>}
-                        {c2 < 10 && <li>Nhóm "{CLASSES[1].label}": thiếu {10 - c2} ảnh mẫu.</li>}
+                        {c3 < 10 && <li>Nhóm "{CLASSES[0].label}": thiếu {10 - c3} ảnh mẫu.</li>}
+                        {c4 < 10 && <li>Nhóm "{CLASSES[1].label}": thiếu {10 - c4} ảnh mẫu.</li>}
                       </ul>
                     </div>
                   );
@@ -711,34 +695,9 @@ export default function TeachAiPage() {
                   className="w-full bg-yellow-400 hover:bg-yellow-500 text-yellow-900 font-extrabold py-3 px-6 rounded-2xl shadow-md mt-3 border-b-4 border-yellow-600 flex items-center justify-center gap-2"
                 >
                   <Award className="w-5 h-5" />
-                  <span>NỘP BÀI 1 BÀN TAY 🎒</span>
+                  <span>NỘP BÀI 2 BÀN TAY (HOÀN THÀNH) 🎒</span>
                 </button>
               )}
-
-              {/* Clear All Dataset Button */}
-              {samples.length > 0 && (
-                <div className="mt-4">
-                  <button
-                    onClick={clearAllSamples}
-                    className="w-full bg-red-50 hover:bg-red-100 text-red-600 font-extrabold py-3 px-6 rounded-2xl border-2 border-red-200 flex items-center justify-center gap-2 transition-colors"
-                  >
-                    <Trash2 className="w-5 h-5" />
-                    <span>XÓA TOÀN BỘ DỮ LIỆU & LÀM LẠI 🔄</span>
-                  </button>
-                </div>
-              )}
-
-              {/* View History Link */}
-              <div className="mt-4">
-                <Link
-                  href="/student/history/teach"
-                  onClick={playClickSound}
-                  className="inline-flex items-center justify-center gap-2 w-full bg-white hover:bg-indigo-50 text-indigo-600 border-2 border-indigo-200 font-bold py-3 px-4 rounded-xl shadow-sm transition-colors"
-                >
-                  <span className="text-xl">📊</span>
-                  <span>Xem lại bộ dữ liệu đã nộp</span>
-                </Link>
-              </div>
 
               {/* Sandbox Link */}
               <div className="mt-6 pt-6 border-t-2 border-gray-100 text-center">
@@ -818,20 +777,20 @@ export default function TeachAiPage() {
               <div className="text-center py-8">
                 <span className="text-7xl">🏆🎉</span>
                 <h3 className="text-2xl font-black text-indigo-900 mt-4">
-                  Nộp Bài Bước 1 Hoàn Tất!
+                  Nộp Bài Bước 2 Hoàn Tất!
                 </h3>
                 <p className="text-gray-600 font-semibold mt-2">
-                  Bé đã hoàn thành tốt phần 1 bàn tay! Phần thưởng: Mở khóa thử thách 2 bàn tay 👐
+                  Bài nộp của bé đã được gửi tới hệ thống của thầy cô giáo.
                 </p>
                 <button
                   onClick={() => {
                     setShowSubmitModal(false);
                     setSubmitSuccess(false);
-                    router.push('/challenge/teach-two-hands');
+                    router.push('/dashboard');
                   }}
                   className="mt-6 px-6 py-2.5 bg-indigo-600 text-white font-extrabold rounded-full hover:scale-105 transition-transform"
                 >
-                  Tiếp tục thử thách 2 Bàn Tay 🚀
+                  Tuyệt vời! Về trang chủ thôi
                 </button>
               </div>
             ) : (
@@ -913,7 +872,7 @@ export default function TeachAiPage() {
                     disabled={isSubmitting}
                     className="flex-1 py-3 bg-indigo-600 text-white font-extrabold rounded-xl hover:bg-indigo-700 border-b-4 border-indigo-800 disabled:bg-gray-300"
                   >
-                    {isSubmitting ? (uploadProgress || 'ĐANG GỬI...') : 'XÁC NHẬN NỘP'}
+                    {isSubmitting ? 'ĐANG GỬI...' : 'XÁC NHẬN NỘP'}
                   </button>
                 </div>
               </div>

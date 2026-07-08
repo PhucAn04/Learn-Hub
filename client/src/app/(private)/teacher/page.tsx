@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Sparkles, ArrowLeft, RefreshCw, Eye, Calendar, Award } from 'lucide-react';
 import Link from 'next/link';
 import { api } from '@/lib/api';
-import { playClickSound, speakVietnamese } from '@/lib/audio';
+import { playClickSound } from '@/lib/audio';
 
 // Helper component to render mini hand skeletons from the 42-number normalized array
 function HandMiniSkeleton({ features }: { features: number[] }) {
@@ -109,7 +109,6 @@ export default function TeacherDashboard() {
   const handleRefresh = () => {
     playClickSound();
     fetchSubmissions();
-    speakVietnamese('Đã tải lại danh sách bài nộp của học sinh');
   };
 
   return (
@@ -141,6 +140,48 @@ export default function TeacherDashboard() {
       </div>
 
       <div className="max-w-7xl mx-auto px-4 mt-8">
+
+        {/* Dataset Management Navigation */}
+        <div className="mb-8 bg-white rounded-3xl border border-slate-200 shadow-sm p-5">
+          <h3 className="text-sm font-extrabold text-slate-500 uppercase tracking-wider mb-4 flex items-center gap-1.5">
+            📊 Quản lý Bộ Dữ Liệu theo Bài Tập
+          </h3>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <Link
+              href="/teacher/datasets/teach"
+              onClick={playClickSound}
+              className="p-4 rounded-2xl border-2 border-indigo-100 hover:border-indigo-400 bg-indigo-50/50 hover:bg-indigo-50 transition-all flex items-center gap-3"
+            >
+              <span className="text-3xl">✋</span>
+              <div>
+                <div className="font-extrabold text-indigo-900 text-sm">Ngón tay</div>
+                <div className="text-[10px] text-slate-400 font-semibold">Xem bộ dữ liệu & timeline</div>
+              </div>
+            </Link>
+            <Link
+              href="/teacher/datasets/teach-face"
+              onClick={playClickSound}
+              className="p-4 rounded-2xl border-2 border-purple-100 hover:border-purple-400 bg-purple-50/50 hover:bg-purple-50 transition-all flex items-center gap-3"
+            >
+              <span className="text-3xl">😀</span>
+              <div>
+                <div className="font-extrabold text-purple-900 text-sm">Cảm xúc</div>
+                <div className="text-[10px] text-slate-400 font-semibold">Xem bộ dữ liệu & timeline</div>
+              </div>
+            </Link>
+            <Link
+              href="/teacher/datasets/teach-gestures"
+              onClick={playClickSound}
+              className="p-4 rounded-2xl border-2 border-teal-100 hover:border-teal-400 bg-teal-50/50 hover:bg-teal-50 transition-all flex items-center gap-3"
+            >
+              <span className="text-3xl">🤟</span>
+              <div>
+                <div className="font-extrabold text-teal-900 text-sm">Cử chỉ</div>
+                <div className="text-[10px] text-slate-400 font-semibold">Xem bộ dữ liệu & timeline</div>
+              </div>
+            </Link>
+          </div>
+        </div>
         
         {loading ? (
           <div className="text-center py-20">

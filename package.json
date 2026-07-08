@@ -1,0 +1,22 @@
+{
+  "name": "learn-hub",
+  "version": "1.0.0",
+  "description": "> **Học Viện AI Nhí** — Nền tảng học tập tương tác giúp trẻ em khám phá Trí Tuệ Nhân Tạo (AI) thông qua camera, trò chơi cử chỉ tay và nhận diện khuôn mặt.",
+  "main": "index.js",
+  "scripts": {
+    "clean": "node scripts/clean.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/PhucAn04/Learn-Hub.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/PhucAn04/Learn-Hub/issues"
+  },
+  "homepage": "https://github.com/PhucAn04/Learn-Hub#readme"
+}

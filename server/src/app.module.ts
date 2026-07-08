@@ -7,6 +7,8 @@ import { UsersModule } from './modules/users/users.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { ProgressModule } from './modules/progress/progress.module';
 import { SubmissionsModule } from './modules/submissions/submissions.module';
+import { DatasetsModule } from './modules/datasets/datasets.module';
+import { ModelsModule } from './modules/models/models.module';
 
 @Module({
   imports: [
@@ -16,6 +18,8 @@ import { SubmissionsModule } from './modules/submissions/submissions.module';
     AuthModule,
     ProgressModule,
     SubmissionsModule,
+    DatasetsModule,
+    ModelsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

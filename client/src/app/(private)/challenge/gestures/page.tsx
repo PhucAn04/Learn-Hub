@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { playSuccessSound, speakVietnamese } from '@/lib/audio';
+import { playSuccessSound, speakEnglish } from '@/lib/audio';
 import { recognizeGesture } from '@/lib/hand-utils';
 import { drawHandSkeleton } from '@/lib/hand-drawing';
 import { useCamera } from '@/hooks/useCamera';
@@ -64,12 +64,10 @@ export default function GesturesChallenge() {
       nextIdx = Math.floor(Math.random() * GESTURES.length);
     }
     setTargetGestureIdx(nextIdx);
-    speakVietnamese(GESTURES[nextIdx].voice);
+    speakEnglish(GESTURES[nextIdx].voice);
   };
 
-  // Speak initial instruction
   useEffect(() => {
-    speakVietnamese(`Chào mừng bé! ${GESTURES[targetGestureIdx].voice}`);
   }, []);
 
   // Fetch leaderboard on mount and score change

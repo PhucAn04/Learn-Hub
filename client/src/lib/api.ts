@@ -101,4 +101,47 @@ export const api = {
       method: 'GET',
     });
   },
+
+  // ── Dataset Management ──
+
+  async createDataset(challengeType: string, samples: any[], testScore: number, reflectionAnswer?: string) {
+    return request<any>('/datasets', {
+      method: 'POST',
+      body: JSON.stringify({ challengeType, samples, testScore, reflectionAnswer }),
+    });
+  },
+
+  async getMyDatasets(challengeType: string) {
+    return request<any[]>(`/datasets/my?challengeType=${encodeURIComponent(challengeType)}`, {
+      method: 'GET',
+    });
+  },
+
+  async getDatasetsByChallenge(challengeType: string) {
+    return request<any[]>(`/datasets/by-challenge/${encodeURIComponent(challengeType)}`, {
+      method: 'GET',
+    });
+  },
+
+  async getDatasetFile(datasetId: string) {
+    return request<any>(`/datasets/${datasetId}/file`, {
+      method: 'GET',
+    });
+  },
+
+  // ── Model Management ──
+
+  async getMyModels(challengeType?: string) {
+    const query = challengeType ? `?challengeType=${encodeURIComponent(challengeType)}` : '';
+    return request<any[]>(`/models/my${query}`, {
+      method: 'GET',
+    });
+  },
+
+  async addTeacherFeedback(modelId: string, feedback: string) {
+    return request<any>(`/models/${modelId}/feedback`, {
+      method: 'PATCH',
+      body: JSON.stringify({ feedback }),
+    });
+  },
 };

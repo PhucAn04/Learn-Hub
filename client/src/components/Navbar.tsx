@@ -60,24 +60,14 @@ export default function Navbar() {
         {/* Navigation Links */}
         <div className="hidden md:flex items-center gap-6 font-extrabold text-sm text-gray-700">
           <Link
-            href="/"
+            href={currentUser ? '/dashboard' : '/'}
             onClick={playClickSound}
             className={`flex items-center gap-1 px-4 py-2 rounded-full transition-all ${
-              pathname === '/' ? 'bg-purple-100 text-purple-800' : 'hover:bg-gray-100'
+              pathname === '/' || pathname === '/dashboard' ? 'bg-purple-100 text-purple-800' : 'hover:bg-gray-100'
             }`}
           >
             <Home className="w-4 h-4 text-purple-500" />
             Trang Chủ
-          </Link>
-          <Link
-            href="/concepts"
-            onClick={playClickSound}
-            className={`flex items-center gap-1 px-4 py-2 rounded-full transition-all ${
-              pathname === '/concepts' ? 'bg-yellow-100 text-yellow-800' : 'hover:bg-gray-100'
-            }`}
-          >
-            <Brain className="w-4 h-4 text-yellow-600" />
-            Lớp Học AI
           </Link>
         </div>
 

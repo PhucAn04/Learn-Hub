@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { Star } from 'lucide-react';
-import { playSuccessSound, speakVietnamese } from '@/lib/audio';
+import { playSuccessSound, speakEnglish } from '@/lib/audio';
 import { calculateFingers } from '@/lib/hand-utils';
 import { drawHandSkeleton } from '@/lib/hand-drawing';
 import { useCamera } from '@/hooks/useCamera';
@@ -38,12 +38,9 @@ export default function FingersChallenge() {
       nextNum = Math.floor(Math.random() * 5) + 1; // 1 to 5
     }
     setTargetCount(nextNum);
-    speakVietnamese(`Hãy giơ ${nextNum} ngón tay lên trước camera nào!`);
   };
 
-  // Speak initial instruction
   useEffect(() => {
-    speakVietnamese(`Chào mừng bé! Hãy giơ ${initialTargetCountRef.current} ngón tay lên trước camera nhé!`);
   }, []);
 
   // Fetch leaderboard on mount and score change

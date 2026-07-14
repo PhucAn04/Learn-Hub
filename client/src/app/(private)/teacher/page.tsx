@@ -1,114 +1,144 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
-import { Sparkles, ArrowLeft, RefreshCw, Eye, Calendar, Award } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { ArrowLeft, RefreshCw, Users, FileCheck, Target, CheckCircle2, XCircle } from 'lucide-react';
 import Link from 'next/link';
 import { api } from '@/lib/api';
 import { playClickSound } from '@/lib/audio';
 
-// Helper component to render mini hand skeletons from the 42-number normalized array
-function HandMiniSkeleton({ features }: { features: number[] }) {
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+interface DatasetRecord {
+  id: string;
+  userId: string;
+  challengeType: string;
+  createdAt: string;
+  user: { id: string; username: string; avatar: string; email: string };
+  model?: {
+    testScore: number;
+  };
+}
 
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas || !features || features.length < 42) return;
-
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    
-    // Canvas dimensions are 80x80
-    const cx = canvas.width / 2; // 40
-    const cy = canvas.height / 2; // 40
-    const scale = 25; // fit in canvas
-
-    // Parse the 42 features back into {x, y} keypoints
-    const kps: { x: number; y: number }[] = [];
-    for (let i = 0; i < features.length; i += 2) {
-      // Invert y axis so fingers point upwards properly
-      kps.push({
-        x: cx + features[i] * scale,
-        y: cy - features[i + 1] * scale // inverted Y for screen space coordinate
-      });
-    }
-
-    // Drawing connections helper
-    const drawJointLine = (indices: number[]) => {
-      ctx.beginPath();
-      ctx.moveTo(kps[indices[0]].x, kps[indices[0]].y);
-      for (let i = 1; i < indices.length; i++) {
-        const p = kps[indices[i]];
-        ctx.lineTo(p.x, p.y);
-      }
-      ctx.stroke();
-    };
-
-    // Draw lines
-    ctx.strokeStyle = '#6366f1';
-    ctx.lineWidth = 2.5;
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-
-    // 5 fingers skeletons
-    drawJointLine([0, 1, 2, 3, 4]); // thumb
-    drawJointLine([0, 5, 6, 7, 8]); // index
-    drawJointLine([0, 9, 10, 11, 12]); // middle
-    drawJointLine([0, 13, 14, 15, 16]); // ring
-    drawJointLine([0, 17, 18, 19, 20]); // pinky
-
-    // Palm base connections
-    drawJointLine([5, 9, 13, 17]);
-
-    // Draw dots
-    ctx.fillStyle = '#db2777';
-    kps.forEach(p => {
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, 2, 0, Math.PI * 2);
-      ctx.fill();
-    });
-
-  }, [features]);
-
-  return (
-    <canvas
-      ref={canvasRef}
-      width={80}
-      height={80}
-      className="bg-slate-50 border border-slate-200 rounded-xl"
-      title="Khung xương tay mẫu"
-    />
-  );
+interface StudentProgress {
+  user: { id: string; username: string; avatar: string; email: string };
+  teach: { completed: boolean; bestScore: number };
+  teachFace: { completed: boolean; bestScore: number };
+  teachGestures: { completed: boolean; bestScore: number };
+  teachTwoHands: { completed: boolean; bestScore: number };
 }
 
 export default function TeacherDashboard() {
-  const [submissions, setSubmissions] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedSubmission, setSelectedSubmission] = useState<any | null>(null);
+  const [students, setStudents] = useState<StudentProgress[]>([]);
+  const [stats, setStats] = useState({
+    totalStudents: 0,
+    totalDatasets: 0,
+    averageAccuracy: 0
+  });
 
-  const fetchSubmissions = async () => {
+  const fetchDashboardData = async () => {
     try {
       setLoading(true);
-      const data = await api.getSubmissions();
-      setSubmissions(data);
-      if (data.length > 0 && !selectedSubmission) {
-        setSelectedSubmission(data[0]);
-      }
+      // Fetch all four challenges
+      const [teachRes, faceRes, gesturesRes, twoHandsRes] = await Promise.all([
+        api.getDatasetsByChallenge('teach').catch(() => [] as DatasetRecord[]),
+        api.getDatasetsByChallenge('teach-face').catch(() => [] as DatasetRecord[]),
+        api.getDatasetsByChallenge('teach-gestures').catch(() => [] as DatasetRecord[]),
+        api.getDatasetsByChallenge('teach-two-hands').catch(() => [] as DatasetRecord[])
+      ]);
+
+      const allDatasets = [...teachRes, ...faceRes, ...gesturesRes, ...twoHandsRes];
+      
+      const studentMap = new Map<string, StudentProgress>();
+      
+      let sumAccuracy = 0;
+      let countAccuracy = 0;
+
+      allDatasets.forEach(ds => {
+        if (!ds.user) return;
+        if (!studentMap.has(ds.userId)) {
+          studentMap.set(ds.userId, {
+            user: ds.user,
+            teach: { completed: false, bestScore: 0 },
+            teachFace: { completed: false, bestScore: 0 },
+            teachGestures: { completed: false, bestScore: 0 },
+            teachTwoHands: { completed: false, bestScore: 0 },
+          });
+        }
+        
+        const st = studentMap.get(ds.userId)!;
+        const score = ds.model?.testScore || 0;
+        
+        if (score > 0) {
+          sumAccuracy += score;
+          countAccuracy++;
+        }
+
+        if (ds.challengeType === 'teach') {
+          st.teach.completed = true;
+          if (score > st.teach.bestScore) st.teach.bestScore = score;
+        } else if (ds.challengeType === 'teach-face') {
+          st.teachFace.completed = true;
+          if (score > st.teachFace.bestScore) st.teachFace.bestScore = score;
+        } else if (ds.challengeType === 'teach-gestures') {
+          st.teachGestures.completed = true;
+          if (score > st.teachGestures.bestScore) st.teachGestures.bestScore = score;
+        } else if (ds.challengeType === 'teach-two-hands') {
+          st.teachTwoHands.completed = true;
+          if (score > st.teachTwoHands.bestScore) st.teachTwoHands.bestScore = score;
+        }
+      });
+
+      // Sort students by average score descending
+      const sortedStudents = Array.from(studentMap.values()).sort((a, b) => {
+        const avgA = (a.teach.bestScore + a.teachFace.bestScore + a.teachGestures.bestScore + a.teachTwoHands.bestScore) / 4;
+        const avgB = (b.teach.bestScore + b.teachFace.bestScore + b.teachGestures.bestScore + b.teachTwoHands.bestScore) / 4;
+        return avgB - avgA;
+      });
+
+      setStudents(sortedStudents);
+      setStats({
+        totalStudents: studentMap.size,
+        totalDatasets: allDatasets.length,
+        averageAccuracy: countAccuracy > 0 ? Math.round(sumAccuracy / countAccuracy) : 0
+      });
+
     } catch (err) {
-      console.error('Failed to load submissions', err);
+      console.error('Failed to load dashboard data', err);
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchSubmissions();
+    fetchDashboardData();
   }, []);
 
   const handleRefresh = () => {
     playClickSound();
-    fetchSubmissions();
+    fetchDashboardData();
+  };
+
+  const renderStatus = (challenge: { completed: boolean; bestScore: number }) => {
+    if (!challenge.completed) {
+      return (
+        <div className="flex flex-col items-center justify-center text-slate-300">
+          <XCircle className="w-5 h-5 mb-1 text-slate-300" />
+          <span className="text-[10px] font-semibold">Chưa làm</span>
+        </div>
+      );
+    }
+    
+    return (
+      <div className="flex flex-col items-center justify-center">
+        <CheckCircle2 className="w-5 h-5 mb-1 text-green-500" />
+        <span className={`inline-block px-2 py-0.5 text-[10px] font-black rounded-full ${
+          challenge.bestScore >= 80 ? 'bg-green-100 text-green-700' :
+          challenge.bestScore >= 50 ? 'bg-yellow-100 text-yellow-700' :
+          'bg-red-100 text-red-700'
+        }`}>
+          {challenge.bestScore}%
+        </span>
+      </div>
+    );
   };
 
   return (
@@ -127,7 +157,7 @@ export default function TeacherDashboard() {
           </Link>
           <span className="h-4 w-[2px] bg-slate-200" />
           <h1 className="text-xl font-black text-slate-900 flex items-center gap-2">
-            <span>👩‍🏫</span> Cổng Đánh Giá Của Giáo Viên
+            <span>👩‍🏫</span> Báo Cáo Thành Tích Học Tập
           </h1>
         </div>
         <button
@@ -140,13 +170,13 @@ export default function TeacherDashboard() {
       </div>
 
       <div className="max-w-7xl mx-auto px-4 mt-8">
-
-        {/* Dataset Management Navigation */}
+        
+        {/* Dataset Management Quick Links */}
         <div className="mb-8 bg-white rounded-3xl border border-slate-200 shadow-sm p-5">
           <h3 className="text-sm font-extrabold text-slate-500 uppercase tracking-wider mb-4 flex items-center gap-1.5">
-            📊 Quản lý Bộ Dữ Liệu theo Bài Tập
+            🔍 Truy cập Hình Ảnh Bộ Dữ Liệu
           </h3>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
             <Link
               href="/teacher/datasets/teach"
               onClick={playClickSound}
@@ -154,8 +184,19 @@ export default function TeacherDashboard() {
             >
               <span className="text-3xl">✋</span>
               <div>
-                <div className="font-extrabold text-indigo-900 text-sm">Ngón tay</div>
-                <div className="text-[10px] text-slate-400 font-semibold">Xem bộ dữ liệu & timeline</div>
+                <div className="font-extrabold text-indigo-900 text-sm">Dạy AI Ngón tay</div>
+                <div className="text-[10px] text-slate-400 font-semibold">Xem hình ảnh xương tay</div>
+              </div>
+            </Link>
+            <Link
+              href="/teacher/datasets/teach-two-hands"
+              onClick={playClickSound}
+              className="p-4 rounded-2xl border-2 border-orange-100 hover:border-orange-400 bg-orange-50/50 hover:bg-orange-50 transition-all flex items-center gap-3"
+            >
+              <span className="text-3xl">👐</span>
+              <div>
+                <div className="font-extrabold text-orange-900 text-sm">Dạy AI 2 Bàn Tay</div>
+                <div className="text-[10px] text-slate-400 font-semibold">Xem hình ảnh xương tay</div>
               </div>
             </Link>
             <Link
@@ -165,8 +206,8 @@ export default function TeacherDashboard() {
             >
               <span className="text-3xl">😀</span>
               <div>
-                <div className="font-extrabold text-purple-900 text-sm">Cảm xúc</div>
-                <div className="text-[10px] text-slate-400 font-semibold">Xem bộ dữ liệu & timeline</div>
+                <div className="font-extrabold text-purple-900 text-sm">Dạy AI Cảm xúc</div>
+                <div className="text-[10px] text-slate-400 font-semibold">Xem hình ảnh khung mặt</div>
               </div>
             </Link>
             <Link
@@ -176,165 +217,134 @@ export default function TeacherDashboard() {
             >
               <span className="text-3xl">🤟</span>
               <div>
-                <div className="font-extrabold text-teal-900 text-sm">Cử chỉ</div>
-                <div className="text-[10px] text-slate-400 font-semibold">Xem bộ dữ liệu & timeline</div>
+                <div className="font-extrabold text-teal-900 text-sm">Dạy AI Cử chỉ</div>
+                <div className="text-[10px] text-slate-400 font-semibold">Xem hình ảnh xương tay</div>
               </div>
             </Link>
           </div>
         </div>
-        
-        {loading ? (
-          <div className="text-center py-20">
-            <div className="animate-spin inline-block w-8 h-8 border-4 border-current border-t-transparent text-indigo-600 rounded-full" role="status" />
-            <p className="text-sm font-semibold text-slate-500 mt-2">Đang tải danh sách bài làm...</p>
-          </div>
-        ) : submissions.length === 0 ? (
-          <div className="text-center py-20 bg-white rounded-3xl border border-slate-200 shadow-inner">
-            <span className="text-5xl">📭</span>
-            <h3 className="text-lg font-bold text-slate-700 mt-4">Chưa có bài nộp nào</h3>
-            <p className="text-slate-500 text-xs font-semibold mt-1">Học sinh chưa hoàn thành bài tập Dạy AI nhận diện ngón tay.</p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-            
-            {/* LEFT: Student Submissions list */}
-            <div className="lg:col-span-1 bg-white rounded-3xl border border-slate-200 shadow-sm p-5 space-y-4">
-              <h3 className="text-sm font-extrabold text-slate-500 uppercase tracking-wider">Danh sách học sinh ({submissions.length})</h3>
-              
-              <div className="space-y-3 max-h-[600px] overflow-y-auto pr-1">
-                {submissions.map(sub => {
-                  const isSelected = selectedSubmission?.id === sub.id;
-                  const dateString = new Date(sub.createdAt).toLocaleDateString('vi-VN', {
-                    hour: '2-digit',
-                    minute: '2-digit'
-                  });
-                  const userAvatar = sub.user?.avatar || '🐨';
-                  const username = sub.user?.username || 'Học sinh ẩn danh';
-                  
-                  return (
-                    <div
-                      key={sub.id}
-                      onClick={() => {
-                        playClickSound();
-                        setSelectedSubmission(sub);
-                      }}
-                      className={`cursor-pointer rounded-2xl p-4 border-2 transition-all flex items-center justify-between ${
-                        isSelected
-                          ? 'border-indigo-600 bg-indigo-50/50'
-                          : 'border-slate-100 bg-slate-50 hover:bg-slate-100'
-                      }`}
-                    >
-                      <div className="flex items-center gap-3">
-                        <span className="text-2xl">{userAvatar}</span>
-                        <div>
-                          <div className="font-extrabold text-slate-800 text-sm">{username}</div>
-                          <div className="text-[10px] text-slate-400 font-semibold flex items-center gap-1 mt-0.5">
-                            <Calendar className="w-3 h-3" />
-                            <span>{dateString}</span>
-                          </div>
-                        </div>
-                      </div>
-                      
-                      <div className="text-right">
-                        <span className={`inline-block px-2.5 py-1 text-xs font-black rounded-full ${
-                          sub.accuracy >= 80
-                            ? 'bg-green-100 text-green-700'
-                            : sub.accuracy >= 50
-                              ? 'bg-yellow-100 text-yellow-700'
-                              : 'bg-red-100 text-red-700'
-                        }`}>
-                          {sub.accuracy}%
-                        </span>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
 
-            {/* RIGHT: Detailed view & dataset reconstruction */}
-            <div className="lg:col-span-2 space-y-6">
-              {selectedSubmission && (
-                <div className="bg-white rounded-3xl border border-slate-200 shadow-sm p-6 space-y-6">
-                  
-                  {/* Student Title */}
-                  <div className="flex items-center justify-between border-b border-slate-100 pb-4">
-                    <div className="flex items-center gap-3">
-                      <span className="text-4xl">{selectedSubmission.user?.avatar}</span>
-                      <div>
-                        <h2 className="text-xl font-black text-slate-800">{selectedSubmission.user?.username}</h2>
-                        <span className="text-xs text-slate-400 font-semibold">Tên đăng nhập: {selectedSubmission.user?.email}</span>
-                      </div>
-                    </div>
+        {/* Overview Stats */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+          <div className="bg-white rounded-3xl border border-slate-200 p-6 shadow-sm flex items-center gap-4">
+            <div className="p-4 bg-blue-100 text-blue-600 rounded-2xl">
+              <Users className="w-8 h-8" />
+            </div>
+            <div>
+              <p className="text-sm font-extrabold text-slate-400 uppercase tracking-wider">Học sinh tham gia</p>
+              <h4 className="text-3xl font-black text-slate-800">{loading ? '-' : stats.totalStudents}</h4>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-3xl border border-slate-200 p-6 shadow-sm flex items-center gap-4">
+            <div className="p-4 bg-emerald-100 text-emerald-600 rounded-2xl">
+              <FileCheck className="w-8 h-8" />
+            </div>
+            <div>
+              <p className="text-sm font-extrabold text-slate-400 uppercase tracking-wider">Bài nộp (Bộ dữ liệu)</p>
+              <h4 className="text-3xl font-black text-slate-800">{loading ? '-' : stats.totalDatasets}</h4>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-3xl border border-slate-200 p-6 shadow-sm flex items-center gap-4">
+            <div className="p-4 bg-purple-100 text-purple-600 rounded-2xl">
+              <Target className="w-8 h-8" />
+            </div>
+            <div>
+              <p className="text-sm font-extrabold text-slate-400 uppercase tracking-wider">Độ chính xác TB</p>
+              <h4 className="text-3xl font-black text-slate-800">{loading ? '-' : `${stats.averageAccuracy}%`}</h4>
+            </div>
+          </div>
+        </div>
+
+        {/* Performance Report Table */}
+        <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
+          <div className="px-6 py-5 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
+            <h3 className="font-extrabold text-slate-700 text-lg">Bảng Theo Dõi Quá Trình Học Tập</h3>
+            <span className="text-xs font-semibold text-slate-400">Được sắp xếp theo điểm trung bình tốt nhất</span>
+          </div>
+          
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="bg-slate-50 border-b border-slate-200 text-xs font-extrabold text-slate-500 uppercase tracking-wider">
+                  <th className="px-6 py-4 w-1/4">Học sinh</th>
+                  <th className="px-6 py-4 text-center border-l border-slate-100">🖐️ Ngón tay</th>
+                  <th className="px-6 py-4 text-center border-l border-slate-100">👐 2 Bàn tay</th>
+                  <th className="px-6 py-4 text-center border-l border-slate-100">😀 Cảm xúc</th>
+                  <th className="px-6 py-4 text-center border-l border-slate-100">🤟 Cử chỉ</th>
+                  <th className="px-6 py-4 text-center border-l border-slate-100 bg-indigo-50/30 text-indigo-600">Trung bình</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {loading ? (
+                  <tr>
+                    <td colSpan={6} className="px-6 py-12 text-center">
+                      <div className="inline-block animate-spin w-6 h-6 border-4 border-indigo-600 border-t-transparent rounded-full mb-2"></div>
+                      <p className="text-sm font-semibold text-slate-500">Đang tổng hợp dữ liệu...</p>
+                    </td>
+                  </tr>
+                ) : students.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="px-6 py-12 text-center text-slate-500 font-semibold italic">
+                      Chưa có học sinh nào nộp bài.
+                    </td>
+                  </tr>
+                ) : (
+                  students.map(st => {
+                    let totalScore = 0;
+                    let completedTasks = 0;
+                    if (st.teach.completed) { totalScore += st.teach.bestScore; completedTasks++; }
+                    if (st.teachTwoHands.completed) { totalScore += st.teachTwoHands.bestScore; completedTasks++; }
+                    if (st.teachFace.completed) { totalScore += st.teachFace.bestScore; completedTasks++; }
+                    if (st.teachGestures.completed) { totalScore += st.teachGestures.bestScore; completedTasks++; }
                     
-                    <div className="flex items-center gap-1 bg-indigo-50 border border-indigo-100 rounded-2xl px-4 py-2">
-                      <Award className="w-5 h-5 text-indigo-600" />
-                      <div>
-                        <span className="text-[9px] text-indigo-700 font-bold block uppercase leading-none">Chấm tự động</span>
-                        <span className="text-base font-black text-indigo-900 leading-none">{selectedSubmission.accuracy}% Đạt</span>
-                      </div>
-                    </div>
-                  </div>
+                    const avgScore = completedTasks > 0 ? Math.round(totalScore / 4) : 0;
 
-                  {/* Reflection Question Answer */}
-                  <div className="bg-indigo-50/50 rounded-2xl p-4 border border-indigo-100/50">
-                    <h4 className="text-xs font-black text-indigo-800 uppercase tracking-wide mb-1">
-                      Câu trả lời phản tư và lời nhắn của học sinh:
-                    </h4>
-                    <p className="text-sm font-semibold text-slate-700 italic">
-                      "{selectedSubmission.reflectionAnswer || 'Không để lại lời nhắn.'}"
-                    </p>
-                  </div>
-
-                  {/* Dataset Analysis & Reconstruction */}
-                  <div>
-                    <h3 className="text-sm font-extrabold text-slate-500 uppercase tracking-wider mb-4 flex items-center gap-1.5">
-                      <Eye className="w-4 h-4 text-indigo-500" />
-                      <span>Chi tiết các tư thế tay học sinh đã chụp dạy AI ({selectedSubmission.dataset?.length || 0} mẫu)</span>
-                    </h3>
-
-                    {!selectedSubmission.dataset || selectedSubmission.dataset.length === 0 ? (
-                      <p className="text-sm text-slate-400 font-semibold italic">Không tìm thấy tập dữ liệu đính kèm.</p>
-                    ) : (
-                      <div className="space-y-6">
-                        {/* Group samples by label */}
-                        {['1 Ngón Tay ☝️', '2 Ngón Tay ✌️'].map(label => {
-                          const labelSamples = selectedSubmission.dataset.filter((s: any) => s.label === label);
-                          
-                          return (
-                            <div key={label} className="bg-slate-50/50 rounded-2xl p-4 border border-slate-100">
-                              <h4 className="font-extrabold text-xs text-slate-600 mb-3 flex items-center justify-between">
-                                <span>Nhãn: {label}</span>
-                                <span className="bg-slate-200/80 px-2 py-0.5 rounded text-[10px] text-slate-600">
-                                  {labelSamples.length} mẫu dữ liệu
-                                </span>
-                              </h4>
-                              
-                              {labelSamples.length === 0 ? (
-                                <p className="text-xs text-slate-400 font-semibold italic">Học sinh chưa chụp mẫu cho nhóm này.</p>
-                              ) : (
-                                <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-3">
-                                  {labelSamples.map((sample: any, index: number) => (
-                                    <div key={index} className="flex flex-col items-center gap-1">
-                                      <HandMiniSkeleton features={sample.features} />
-                                      <span className="text-[9px] text-slate-400 font-bold">Mẫu {index + 1}</span>
-                                    </div>
-                                  ))}
-                                </div>
-                              )}
+                    return (
+                      <tr key={st.user.id} className="hover:bg-slate-50/80 transition-colors">
+                        <td className="px-6 py-4">
+                          <div className="flex items-center gap-3">
+                            <span className="text-3xl">{st.user.avatar || '🎓'}</span>
+                            <div>
+                              <div className="font-extrabold text-slate-800">{st.user.username}</div>
+                              <div className="text-xs text-slate-400 font-semibold">{st.user.email}</div>
                             </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-
-                </div>
-              )}
-            </div>
-
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 text-center border-l border-slate-100">
+                          {renderStatus(st.teach)}
+                        </td>
+                        <td className="px-6 py-4 text-center border-l border-slate-100">
+                          {renderStatus(st.teachTwoHands)}
+                        </td>
+                        <td className="px-6 py-4 text-center border-l border-slate-100">
+                          {renderStatus(st.teachFace)}
+                        </td>
+                        <td className="px-6 py-4 text-center border-l border-slate-100">
+                          {renderStatus(st.teachGestures)}
+                        </td>
+                        <td className="px-6 py-4 text-center border-l border-slate-100 bg-indigo-50/20">
+                          {completedTasks === 0 ? (
+                            <span className="text-xs text-slate-400 font-bold">-</span>
+                          ) : (
+                            <span className={`inline-block px-3 py-1 text-sm font-black rounded-xl ${
+                              avgScore >= 80 ? 'bg-green-100 text-green-700' :
+                              avgScore >= 50 ? 'bg-yellow-100 text-yellow-700' :
+                              'bg-red-100 text-red-700'
+                            }`}>
+                              {avgScore}%
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
           </div>
-        )}
+        </div>
 
       </div>
     </div>

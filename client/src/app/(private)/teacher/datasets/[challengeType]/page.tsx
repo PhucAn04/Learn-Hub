@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, RefreshCw, Calendar, TrendingUp, Eye, MessageSquare, ChevronDown, ChevronUp, Send, Users } from 'lucide-react';
+import { ArrowLeft, RefreshCw, Calendar, TrendingUp, Eye, MessageSquare, ChevronDown, ChevronUp, Send, Users, AlertTriangle, X, ChevronLeft as ChevronLeftIcon, ChevronRight as ChevronRightIcon } from 'lucide-react';
 import { api } from '@/lib/api';
 import { playClickSound, playSuccessSound } from '@/lib/audio';
 
@@ -11,6 +11,7 @@ const CHALLENGE_LABELS: Record<string, string> = {
   'teach': 'Dạy AI nhận diện ngón tay ✋',
   'teach-face': 'Dạy AI nhận biết cảm xúc 😀',
   'teach-gestures': 'Dạy AI nhận biết cử chỉ 🤟',
+  'teach-two-hands': 'Dạy AI nhận diện 2 bàn tay 👐',
 };
 
 interface DatasetRecord {
@@ -49,6 +50,8 @@ export default function TeacherDatasetsByChallengePage() {
   const [feedbackText, setFeedbackText] = useState('');
   const [feedbackModelId, setFeedbackModelId] = useState<string | null>(null);
   const [sendingFeedback, setSendingFeedback] = useState(false);
+  const [previewIndex, setPreviewIndex] = useState<number | null>(null);
+  const [showSkeleton, setShowSkeleton] = useState(true);
 
   const challengeLabel = CHALLENGE_LABELS[challengeType] || challengeType;
 
@@ -391,7 +394,11 @@ export default function TeacherDatasetsByChallengePage() {
                                 </div>
                                 <div className="grid grid-cols-5 sm:grid-cols-6 md:grid-cols-8 gap-2">
                                   {expandedSamples.map((sample: any, idx: number) => (
-                                    <div key={idx} className="relative aspect-square rounded-xl overflow-hidden border-2 border-indigo-100 bg-slate-800">
+                                    <div 
+                                      key={idx} 
+                                      onClick={() => setPreviewIndex(idx)}
+                                      className="relative aspect-square rounded-xl overflow-hidden border-2 border-indigo-100 bg-slate-800 cursor-pointer group hover:scale-105 hover:border-indigo-400 transition-all"
+                                    >
                                       {sample.thumbnail ? (
                                         <img src={sample.thumbnail} alt={`Mẫu ${idx + 1}`} className="w-full h-full object-cover" />
                                       ) : (
@@ -403,6 +410,9 @@ export default function TeacherDatasetsByChallengePage() {
                                       {sample.isValid === false && (
                                         <div className="absolute top-0 right-0 bg-red-500 text-white text-[8px] font-bold px-1 rounded-bl-lg">⚠️</div>
                                       )}
+                                      <div className="absolute inset-0 flex items-center justify-center bg-black/40 text-white opacity-0 transition-opacity group-hover:opacity-100">
+                                        <Eye className="w-5 h-5" />
+                                      </div>
                                     </div>
                                   ))}
                                 </div>
@@ -421,6 +431,81 @@ export default function TeacherDatasetsByChallengePage() {
           </div>
         )}
       </div>
+
+      {/* Full-screen preview modal */}
+      {previewIndex !== null && expandedSamples && expandedSamples[previewIndex] && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setPreviewIndex(null)}>
+          <div 
+            className="bg-white rounded-3xl max-w-md w-full p-6 border-4 border-indigo-400 shadow-2xl relative"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Close button */}
+            <button 
+              onClick={() => setPreviewIndex(null)}
+              className="absolute top-3 right-3 p-2 bg-gray-100 hover:bg-gray-200 rounded-full text-gray-600 transition-colors z-10"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <h3 className="text-lg font-black text-indigo-900 mb-3 flex items-center gap-2">
+              📸 Ảnh mẫu #{previewIndex + 1}
+            </h3>
+
+            {/* Toggle button */}
+            {expandedSamples[previewIndex].rawThumbnail && (
+              <button
+                onClick={() => setShowSkeleton(!showSkeleton)}
+                className="absolute top-16 right-4 p-2 bg-white hover:bg-gray-100 rounded-full text-indigo-600 shadow-md border border-indigo-200 transition-colors z-10 flex items-center gap-2"
+                title={showSkeleton ? "Ẩn nét vẽ AI" : "Hiện nét vẽ AI"}
+              >
+                {showSkeleton ? <Eye className="w-5 h-5 text-indigo-600" /> : <Eye className="w-5 h-5 text-gray-400" />}
+              </button>
+            )}
+
+            {/* Large image preview */}
+            <div className={`relative rounded-2xl overflow-hidden border-4 ${expandedSamples[previewIndex].isValid === false ? 'border-red-400' : 'border-gray-200'} mb-4 bg-slate-900`}>
+              {expandedSamples[previewIndex].thumbnail ? (
+                <img 
+                  src={(showSkeleton || !expandedSamples[previewIndex].rawThumbnail) ? expandedSamples[previewIndex].thumbnail : expandedSamples[previewIndex].rawThumbnail} 
+                  alt="Preview" 
+                  className="w-full aspect-square object-cover" 
+                />
+              ) : (
+                <div className="w-full aspect-square flex items-center justify-center text-gray-500">Không có ảnh</div>
+              )}
+
+              {expandedSamples[previewIndex].isValid === false && (
+                <div className="absolute top-3 right-3 bg-red-500 text-white p-2 rounded-full shadow-lg animate-pulse">
+                  <AlertTriangle className="w-6 h-6" />
+                </div>
+              )}
+            </div>
+
+            {/* Navigation */}
+            <div className="flex gap-2 justify-center">
+              <button
+                onClick={() => setPreviewIndex(Math.max(0, previewIndex - 1))}
+                disabled={previewIndex <= 0}
+                className="p-3 bg-gray-100 hover:bg-gray-200 disabled:opacity-30 rounded-xl transition-colors"
+              >
+                <ChevronLeftIcon className="w-5 h-5" />
+              </button>
+              
+              <div className="flex-1 flex items-center justify-center bg-indigo-50 rounded-xl">
+                 <span className="font-extrabold text-indigo-700">Ảnh {previewIndex + 1} / {expandedSamples.length}</span>
+              </div>
+
+              <button
+                onClick={() => setPreviewIndex(Math.min(expandedSamples.length - 1, previewIndex + 1))}
+                disabled={previewIndex >= expandedSamples.length - 1}
+                className="p-3 bg-gray-100 hover:bg-gray-200 disabled:opacity-30 rounded-xl transition-colors"
+              >
+                <ChevronRightIcon className="w-5 h-5" />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -13,6 +13,22 @@ try {
   console.error("❌ Lỗi khi chạy docker-compose down -v:", e.message);
 }
 
+// 1.5 Xóa thư mục lưu trữ datasets local
+try {
+  console.log("👉 Đang xóa các tệp tin lưu trữ trong server/uploads/datasets...");
+  const datasetsPath = path.join(__dirname, '..', 'server', 'uploads', 'datasets');
+  if (fs.existsSync(datasetsPath)) {
+    fs.rmSync(datasetsPath, { recursive: true, force: true });
+    // Tạo lại thư mục trống
+    fs.mkdirSync(datasetsPath, { recursive: true });
+    console.log("✅ Đã xóa sạch thư mục datasets cục bộ.");
+  } else {
+    console.log("✅ Thư mục datasets cục bộ không tồn tại, bỏ qua.");
+  }
+} catch (e) {
+  console.error("❌ Lỗi khi xóa thư mục datasets:", e.message);
+}
+
 // 2. Load biến môi trường từ client/.env.local
 let cloudName, apiKey, apiSecret;
 

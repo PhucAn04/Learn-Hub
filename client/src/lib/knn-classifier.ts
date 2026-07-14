@@ -9,7 +9,8 @@ export interface StoredSample {
   label: string;
   features: number[]; // e.g., 42 for hands, 936 for face
   sourceId?: string;  // Track which UI class generated this (for compound classes)
-  thumbnail?: string; // base64 image data for preview
+  thumbnail?: string; // base64 image data for preview (with skeleton)
+  rawThumbnail?: string; // base64 image data for preview (without skeleton)
   isValid?: boolean;  // whether the sample was validated as correct by AI
 }
 

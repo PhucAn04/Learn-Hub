@@ -67,7 +67,9 @@ export async function uploadSamplesToCloudinary(
   }
 
   const folder = `learn-hub/${challengeType}`;
-  const total = samples.filter(s => s.thumbnail && s.thumbnail.startsWith('data:')).length;
+  const totalThumbnails = samples.filter(s => s.thumbnail && s.thumbnail.startsWith('data:')).length;
+  const totalRawThumbnails = samples.filter(s => s.rawThumbnail && s.rawThumbnail.startsWith('data:')).length;
+  const total = totalThumbnails + totalRawThumbnails;
   let uploaded = 0;
 
   // Process in parallel batches of 5 for speed
@@ -78,17 +80,30 @@ export async function uploadSamplesToCloudinary(
     const batch = result.slice(i, i + BATCH_SIZE);
     const promises = batch.map(async (sample, batchIdx) => {
       const idx = i + batchIdx;
+      let newSample = { ...sample };
+      
       if (sample.thumbnail && sample.thumbnail.startsWith('data:')) {
         try {
           const url = await uploadBase64ToCloudinary(sample.thumbnail, folder);
-          result[idx] = { ...sample, thumbnail: url };
+          newSample.thumbnail = url;
           uploaded++;
-          onProgress?.(uploaded, total);
         } catch (err) {
           console.error(`[Cloudinary] Failed to upload sample ${idx}:`, err);
-          // Keep original base64 on failure
         }
       }
+      
+      if (sample.rawThumbnail && sample.rawThumbnail.startsWith('data:')) {
+        try {
+          const url = await uploadBase64ToCloudinary(sample.rawThumbnail, folder);
+          newSample.rawThumbnail = url;
+          uploaded++;
+        } catch (err) {
+          console.error(`[Cloudinary] Failed to upload raw sample ${idx}:`, err);
+        }
+      }
+      
+      result[idx] = newSample;
+      onProgress?.(uploaded, total);
     });
     await Promise.all(promises);
   }

@@ -525,7 +525,7 @@ export default function TeachAiPage() {
         {/* Navigation / Header */}
         <div className="flex items-center justify-between mb-6">
           <Link
-            href="/"
+            href="/home"
             onClick={playClickSound}
             className="flex items-center gap-2 px-4 py-2 bg-white rounded-full border-2 border-indigo-200 text-indigo-700 font-extrabold shadow-sm hover:scale-105 transition-transform"
           >
@@ -798,7 +798,7 @@ export default function TeachAiPage() {
                   onClick={() => {
                     setShowSubmitModal(false);
                     setSubmitSuccess(false);
-                    router.push('/dashboard');
+                    router.push('/home');
                   }}
                   className="mt-6 px-6 py-2.5 bg-indigo-600 text-white font-extrabold rounded-full hover:scale-105 transition-transform"
                 >

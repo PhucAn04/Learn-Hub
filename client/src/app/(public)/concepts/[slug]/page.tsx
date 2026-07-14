@@ -83,7 +83,7 @@ export default function ConceptSlugPage() {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center">
         <h1 className="text-2xl font-bold mb-4">Không tìm thấy bài học!</h1>
-        <Link href="/dashboard" className="text-blue-500 underline">Quay lại trang chủ</Link>
+        <Link href="/home" className="text-blue-500 underline">Quay lại trang chủ</Link>
       </div>
     );
   }
@@ -125,7 +125,7 @@ export default function ConceptSlugPage() {
         {/* Header navigation */}
         <div className="flex justify-between items-center mb-8">
           <Link
-            href="/dashboard"
+            href="/home"
             onClick={playClickSound}
             className="flex items-center gap-2 px-5 py-3 rounded-full bg-white border-2 border-yellow-300 font-extrabold text-yellow-700 hover:bg-yellow-50 transition shadow-md"
           >

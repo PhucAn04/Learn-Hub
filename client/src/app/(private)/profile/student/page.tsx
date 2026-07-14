@@ -70,7 +70,7 @@ export default function StudentProfilePage() {
         {/* Back navigation */}
         <div className="mb-6">
           <Link
-            href="/dashboard"
+            href="/home"
             onClick={playClickSound}
             className="inline-flex items-center gap-2 px-5 py-3 rounded-full bg-white border-2 border-purple-200 font-extrabold text-purple-700 hover:bg-purple-50 transition shadow-md"
           >

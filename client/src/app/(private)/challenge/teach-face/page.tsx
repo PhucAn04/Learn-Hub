@@ -592,7 +592,7 @@ export default function TeachFacePage() {
         {/* Navigation / Header */}
         <div className="flex items-center justify-between mb-6">
           <Link
-            href="/"
+            href="/home"
             onClick={playClickSound}
             className="flex items-center gap-2 px-4 py-2 bg-white rounded-full border-2 border-indigo-200 text-indigo-700 font-extrabold shadow-sm hover:scale-105 transition-transform"
           >

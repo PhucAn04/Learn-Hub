@@ -61,7 +61,7 @@ export default function TeacherProfilePage() {
         {/* Back navigation */}
         <div className="mb-6">
           <Link
-            href="/dashboard"
+            href="/home"
             onClick={playClickSound}
             className="inline-flex items-center gap-2 px-5 py-3 rounded-full bg-white border-2 border-indigo-200 font-extrabold text-indigo-700 hover:bg-indigo-50 transition shadow-md"
           >

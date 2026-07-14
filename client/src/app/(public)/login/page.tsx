@@ -29,7 +29,7 @@ export default function LoginPage() {
       const response = await api.login(email, password);
       playSuccessSound();
       api.setToken(response.accessToken);
-      router.push('/dashboard');
+      router.push('/home');
     } catch (err: any) {
       setError(err.message || 'Email hoặc mật khẩu không chính xác rồi bé ơi.');
     } finally {

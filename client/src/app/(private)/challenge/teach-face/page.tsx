@@ -76,11 +76,58 @@ export default function TeachFacePage() {
   useEffect(() => {
   }, []);
 
-  const getVideoThumb = () => {
+  const getVideoThumb = (faces?: any[]) => {
     const cv = document.createElement('canvas');
     cv.width = 240; cv.height = 240;
     const ctx = cv.getContext('2d');
-    if (ctx && videoRef.current) ctx.drawImage(videoRef.current, 0, 0, 240, 240);
+    if (ctx && videoRef.current) {
+      ctx.drawImage(videoRef.current, 0, 0, 240, 240);
+      
+      if (faces && faces.length > 0) {
+        faces.forEach((kpsRaw) => {
+          if (kpsRaw.length >= 30) {
+            ctx.save();
+            const kps = normalizeFaceKeypoints(kpsRaw, videoRef.current!, cv);
+            
+            // Colors
+            const ovalColor = '#60a5fa';
+            const eyeColor = '#a78bfa';
+            const lipsColor = '#fbbf24';
+            const noseColor = '#34d399';
+            const dotColor = 'rgba(96,165,250,0.55)';
+
+            // Draw face wireframe
+            if (kps.length > 100) {
+              ctx.strokeStyle = ovalColor;
+              ctx.lineWidth = 1;
+              drawPolyline(ctx, FACE_OVAL, kps);
+
+              ctx.strokeStyle = eyeColor;
+              ctx.lineWidth = 0.8;
+              drawPolyline(ctx, FACE_L_EYE, kps);
+              drawPolyline(ctx, FACE_R_EYE, kps);
+
+              ctx.strokeStyle = lipsColor;
+              ctx.lineWidth = 0.8;
+              drawPolyline(ctx, FACE_LIPS, kps);
+
+              ctx.strokeStyle = noseColor;
+              ctx.lineWidth = 0.6;
+              drawPolyline(ctx, FACE_NOSE, kps);
+            }
+
+            // Draw keypoints
+            ctx.fillStyle = dotColor;
+            for (const point of kps) {
+              ctx.beginPath();
+              ctx.arc(point.x, point.y, 0.8, 0, Math.PI * 2);
+              ctx.fill();
+            }
+            ctx.restore();
+          }
+        });
+      }
+    }
     return cv.toDataURL('image/jpeg', 0.8);
   };
 
@@ -191,7 +238,8 @@ export default function TeachFacePage() {
     if (!kps || kps.length < 468) return;
 
     const features = normalizeFaceFeatures(kps);
-    const thumbnail = getVideoThumb();
+    const rawThumbnail = getVideoThumb();
+    const thumbnail = getVideoThumb(faces);
 
     // Rule-based expression validation using facial ratios
     const validation = validateExpression(kps, activeClass);
@@ -209,6 +257,7 @@ export default function TeachFacePage() {
         features,
         sourceId: activeClass,
         thumbnail,
+        rawThumbnail,
         isValid: validation.isValid
       };
 

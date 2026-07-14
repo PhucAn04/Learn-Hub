@@ -64,11 +64,26 @@ export default function TeachGesturesPage() {
   useEffect(() => {
   }, []);
 
-  const getVideoThumb = () => {
+  const getVideoThumb = (hands?: any[]) => {
     const cv = document.createElement('canvas');
     cv.width = 240; cv.height = 240;
     const ctx = cv.getContext('2d');
-    if (ctx && videoRef.current) ctx.drawImage(videoRef.current, 0, 0, 240, 240);
+    if (ctx && videoRef.current) {
+      ctx.drawImage(videoRef.current, 0, 0, 240, 240);
+      if (hands && hands.length > 0) {
+        hands.forEach((hand, idx) => {
+          const kps = hand.keypoints;
+          if (kps && kps.length >= 21) {
+            drawHandSkeleton(ctx, kps, videoRef.current!.videoWidth || 640, videoRef.current!.videoHeight || 480, 240, 240, {
+              lineColor: idx === 0 ? '#6366f1' : '#ec4899',
+              jointColor1: idx === 0 ? '#4f46e5' : '#db2777',
+              jointColor2: idx === 0 ? '#4f46e5' : '#db2777',
+              jointRadius: 2,
+            });
+          }
+        });
+      }
+    }
     return cv.toDataURL('image/jpeg', 0.8);
   };
 
@@ -87,7 +102,8 @@ export default function TeachGesturesPage() {
     const activeClassLabel = CLASSES.find(c => c.id === activeClass)?.label || activeClass;
     let knnLabel = activeClassLabel;
 
-    const thumbnail = getVideoThumb();
+    const rawThumbnail = getVideoThumb();
+    const thumbnail = getVideoThumb(hands);
 
     setSamples(prev => {
       const newSamples: StoredSample[] = [];
@@ -130,6 +146,7 @@ export default function TeachGesturesPage() {
             features,
             sourceId: activeClass,
             thumbnail,
+            rawThumbnail,
             isValid
           });
         }

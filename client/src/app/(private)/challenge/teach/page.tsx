@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { Sparkles, Brain, ArrowLeft, Trash2, Camera, Award, HelpCircle } from 'lucide-react';
+import { Sparkles, Brain, ArrowLeft, Trash2, Camera, Award, HelpCircle, X } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
@@ -148,11 +148,27 @@ export default function TeachAiPage() {
   }, []);
 
 
-  const getVideoThumb = () => {
+  const getVideoThumb = (hands?: any[]) => {
     const cv = document.createElement('canvas');
     cv.width = 240; cv.height = 240;
     const ctx = cv.getContext('2d');
-    if (ctx && videoRef.current) ctx.drawImage(videoRef.current, 0, 0, 240, 240);
+    if (ctx && videoRef.current) {
+      ctx.drawImage(videoRef.current, 0, 0, 240, 240);
+      if (hands && hands.length > 0) {
+        hands.forEach((hand, idx) => {
+          if (idx > 0) return;
+          const kps = hand.keypoints;
+          if (kps && kps.length >= 21) {
+            drawHandSkeleton(ctx, kps, videoRef.current!.videoWidth || 640, videoRef.current!.videoHeight || 480, 240, 240, {
+              lineColor: idx === 0 ? '#6366f1' : '#ec4899',
+              jointColor1: idx === 0 ? '#4f46e5' : '#db2777',
+              jointColor2: idx === 0 ? '#4f46e5' : '#db2777',
+              jointRadius: 2,
+            });
+          }
+        });
+      }
+    }
     return cv.toDataURL('image/jpeg', 0.8);
   };
 
@@ -164,7 +180,8 @@ export default function TeachAiPage() {
     const activeClassLabel = CLASSES.find(c => c.id === activeClass)?.label || 'Không tên';
     let knnLabel = activeClassLabel;
 
-    const thumbnail = getVideoThumb();
+    const rawThumbnail = getVideoThumb();
+    const thumbnail = getVideoThumb(hands);
     // FIX: Sử dụng CLASS_TO_GOLDEN_LABEL mapping thay vì so sánh trực tiếp activeClass
     const goldenLabel = CLASS_TO_GOLDEN_LABEL[activeClass] || '';
     const goldenCurrentClass = GOLDEN_TEST_DATASET.filter(g => g.expectedLabel === goldenLabel);
@@ -241,6 +258,7 @@ export default function TeachAiPage() {
             features,
             sourceId: activeClass,
             thumbnail,
+            rawThumbnail,
             isValid
           });
         }
@@ -813,7 +831,19 @@ export default function TeachAiPage() {
       {showSubmitModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl max-w-lg w-full p-6 border-4 border-indigo-400 shadow-2xl relative overflow-hidden">
-            
+            {/* Nút tắt popup khi đã nộp thành công */}
+            {submitSuccess && (
+              <button 
+                onClick={() => {
+                  setShowSubmitModal(false);
+                  setSubmitSuccess(false);
+                }}
+                className="absolute top-4 right-4 p-2 bg-gray-100 hover:bg-gray-200 rounded-full text-gray-600 transition-colors z-10"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            )}
+
             {submitSuccess ? (
               <div className="text-center py-8">
                 <span className="text-7xl">🏆🎉</span>

@@ -699,6 +699,18 @@ export default function TeachAiPage() {
                 </button>
               )}
 
+              {/* View History Link */}
+              <div className="mt-4">
+                <Link
+                  href="/student/history/teach-two-hands"
+                  onClick={playClickSound}
+                  className="inline-flex items-center justify-center gap-2 w-full bg-white hover:bg-indigo-50 text-indigo-600 border-2 border-indigo-200 font-bold py-3 px-4 rounded-xl shadow-sm transition-colors"
+                >
+                  <span className="text-xl">📊</span>
+                  <span>Xem lại bộ dữ liệu đã nộp</span>
+                </Link>
+              </div>
+
               {/* Sandbox Link */}
               <div className="mt-6 pt-6 border-t-2 border-gray-100 text-center">
                 <p className="text-xs text-gray-500 font-semibold mb-3">Hoặc tự tạo nhãn không giới hạn?</p>

@@ -11,6 +11,7 @@ const CHALLENGE_LABELS: Record<string, string> = {
   'teach': 'Dạy AI nhận diện ngón tay ✋',
   'teach-face': 'Dạy AI nhận biết cảm xúc 😀',
   'teach-gestures': 'Dạy AI nhận biết cử chỉ 🤟',
+  'teach-two-hands': 'Dạy AI nhận diện 2 bàn tay 👐',
 };
 
 interface DatasetRecord {
@@ -36,6 +37,7 @@ export default function StudentHistoryPage() {
   const [expandedSamples, setExpandedSamples] = useState<any[] | null>(null);
   const [loadingFile, setLoadingFile] = useState(false);
   const [previewIndex, setPreviewIndex] = useState<number | null>(null);
+  const [showSkeleton, setShowSkeleton] = useState(true);
 
   const challengeLabel = CHALLENGE_LABELS[challengeType] || challengeType;
 
@@ -310,10 +312,25 @@ export default function StudentHistoryPage() {
               📸 Ảnh mẫu #{previewIndex + 1}
             </h3>
 
+            {/* Toggle button */}
+            {expandedSamples[previewIndex].rawThumbnail && (
+              <button
+                onClick={() => setShowSkeleton(!showSkeleton)}
+                className="absolute top-16 right-4 p-2 bg-white hover:bg-gray-100 rounded-full text-indigo-600 shadow-md border border-indigo-200 transition-colors z-10 flex items-center gap-2"
+                title={showSkeleton ? "Ẩn nét vẽ AI" : "Hiện nét vẽ AI"}
+              >
+                {showSkeleton ? <Eye className="w-5 h-5 text-indigo-600" /> : <Eye className="w-5 h-5 text-gray-400" />}
+              </button>
+            )}
+
             {/* Large image preview */}
             <div className={`relative rounded-2xl overflow-hidden border-4 ${expandedSamples[previewIndex].isValid === false ? 'border-red-400' : 'border-gray-200'} mb-4 bg-slate-900`}>
               {expandedSamples[previewIndex].thumbnail ? (
-                <img src={expandedSamples[previewIndex].thumbnail} alt="Preview" className="w-full aspect-square object-cover" />
+                <img 
+                  src={(showSkeleton || !expandedSamples[previewIndex].rawThumbnail) ? expandedSamples[previewIndex].thumbnail : expandedSamples[previewIndex].rawThumbnail} 
+                  alt="Preview" 
+                  className="w-full aspect-square object-cover" 
+                />
               ) : (
                 <div className="w-full aspect-square flex items-center justify-center text-gray-500">Không có ảnh</div>
               )}

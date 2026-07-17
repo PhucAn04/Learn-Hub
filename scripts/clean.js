@@ -83,24 +83,31 @@ const deleteCloudinaryFolder = async () => {
 
       console.log(`🗑️ Đang xóa batch ${publicIds.length} ảnh...`);
       
-      const delUrl = `https://api.cloudinary.com/v1_1/${cloudName}/resources/image/upload`;
-      const params = new URLSearchParams();
-      publicIds.forEach(id => params.append('public_ids[]', id));
-      
-      const delRes = await fetch(delUrl, {
-        method: 'DELETE',
-        headers: {
-          'Authorization': `Basic ${auth}`,
-          'Content-Type': 'application/x-www-form-urlencoded'
-        },
-        body: params.toString()
-      });
-      
-      if (!delRes.ok) throw new Error(`Lỗi xóa: ${delRes.status} ${delRes.statusText}`);
-      
-      const delData = await delRes.json();
-      const deletedCount = delData.deleted ? Object.keys(delData.deleted).length : 0;
-      totalDeleted += deletedCount;
+      const chunkSize = 100;
+      for (let i = 0; i < publicIds.length; i += chunkSize) {
+        const chunk = publicIds.slice(i, i + chunkSize);
+        const delUrl = `https://api.cloudinary.com/v1_1/${cloudName}/resources/image/upload`;
+        const params = new URLSearchParams();
+        chunk.forEach(id => params.append('public_ids[]', id));
+        
+        const delRes = await fetch(delUrl, {
+          method: 'DELETE',
+          headers: {
+            'Authorization': `Basic ${auth}`,
+            'Content-Type': 'application/x-www-form-urlencoded'
+          },
+          body: params.toString()
+        });
+        
+        if (!delRes.ok) {
+          const errText = await delRes.text();
+          throw new Error(`Lỗi xóa: ${delRes.status} ${delRes.statusText} - ${errText}`);
+        }
+        
+        const delData = await delRes.json();
+        const deletedCount = delData.deleted ? Object.keys(delData.deleted).length : 0;
+        totalDeleted += deletedCount;
+      }
       
       if (data.next_cursor) {
         nextCursor = data.next_cursor;

@@ -30,4 +30,16 @@ export class UsersService {
   async findById(id: string): Promise<User | null> {
     return this.userRepository.findOne({ where: { id } });
   }
+
+  async findByGoogleId(googleId: string): Promise<User | null> {
+    return this.userRepository.findOne({ where: { googleId } });
+  }
+
+  async updateGoogleTokens(userId: string, accessToken: string, refreshToken?: string): Promise<void> {
+    const update: any = { googleAccessToken: accessToken };
+    if (refreshToken) {
+      update.googleRefreshToken = refreshToken;
+    }
+    await this.userRepository.update(userId, update);
+  }
 }

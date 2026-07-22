@@ -1,0 +1,7 @@
+- `[x]` Nâng cấp Sandbox Mode
+  - `[x]` Thêm 4 class mặc định (1 ngón, 2 ngón, 2 bàn tay 1 ngón, 2 bàn tay 2 ngón).
+  - `[x]` Cập nhật interface Class để hỗ trợ `requiresTwoHands`.
+  - `[x]` Cập nhật UI tạo class có checkbox `[x] Dáng 2 bàn tay`.
+  - `[x]` Cập nhật `captureSample` để tạo feature length 84 cho dáng 2 tay (sắp xếp trái/phải).
+  - `[x]` Cập nhật `runPrediction` để chạy KNN thông minh theo số tay.
+- `[ ]` Kiểm tra hoạt động tạo nhãn, thu thập mẫu và dự đoán.

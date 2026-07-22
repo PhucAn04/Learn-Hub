@@ -81,6 +81,16 @@ export default function SampleGallery({ samples, onDeleteSample, onClearAll }: S
                 <div className="w-full h-full flex items-center justify-center text-[10px] text-gray-400 bg-slate-800">📷</div>
               )}
 
+              {/* Quality Warning Icon (Top Left) */}
+              {(s.quality?.isBlurry || s.quality?.isDark) && (
+                <div 
+                  className="absolute top-1 left-1 bg-yellow-500 text-white p-1 rounded shadow-lg opacity-90 z-10" 
+                  title={s.quality.isBlurry ? 'Ảnh mờ' : 'Ảnh tối'}
+                >
+                  <AlertTriangle className="w-3 h-3" />
+                </div>
+              )}
+
               {isInvalid && (
                 <div className="absolute inset-0 bg-red-500/20 flex items-center justify-center">
                   <div className="bg-red-500 text-white p-1 rounded-full shadow-lg animate-pulse">
@@ -167,6 +177,21 @@ export default function SampleGallery({ samples, onDeleteSample, onClearAll }: S
                 </div>
               </div>
             ) : null}
+
+            {/* Quality Warning */}
+            {(previewSample.quality?.isBlurry || previewSample.quality?.isDark) && (
+              <div className="p-4 rounded-xl border-2 bg-yellow-50 border-yellow-300 mb-4">
+                <div className="flex items-center gap-2 font-extrabold text-yellow-700 text-sm">
+                  <AlertTriangle className="w-5 h-5" />
+                  <span>Cảnh báo chất lượng ảnh!</span>
+                </div>
+                <p className="text-xs text-yellow-600 mt-2 font-semibold leading-relaxed">
+                  {previewSample.quality.isBlurry && '📸 Ảnh này bị mờ, có thể làm AI khó nhận diện chính xác. '}
+                  {previewSample.quality.isDark && '🌙 Ảnh này hơi tối, bé thử di chuyển ra chỗ sáng hơn nhé! '}
+                  Bé nên xóa và chụp lại tấm khác nét hơn để AI học tốt nhất!
+                </p>
+              </div>
+            )}
 
             {/* Navigation and Delete */}
             <div className="flex gap-2">

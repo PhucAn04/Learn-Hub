@@ -1,4 +1,4 @@
-const API_BASE_URL = 'http://localhost:3001';
+const API_BASE_URL = '/api';
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
@@ -104,10 +104,37 @@ export const api = {
 
   // ── Dataset Management ──
 
-  async createDataset(challengeType: string, samples: any[], testScore: number, reflectionAnswer?: string) {
+  async createDataset(
+    challengeType: string, 
+    samples: any[], 
+    testScore: number, 
+    reflectionAnswer?: string,
+    isTemplate?: boolean,
+    teacherNotes?: string,
+    isPublished?: boolean,
+    dataSourceType?: string,
+    customClasses?: any[]
+  ) {
     return request<any>('/datasets', {
       method: 'POST',
-      body: JSON.stringify({ challengeType, samples, testScore, reflectionAnswer }),
+      body: JSON.stringify({ 
+        challengeType, 
+        samples, 
+        testScore, 
+        reflectionAnswer,
+        isTemplate,
+        teacherNotes,
+        isPublished,
+        dataSourceType,
+        customClasses
+      }),
+    });
+  },
+
+  async getTemplates(challengeType?: string) {
+    const query = challengeType ? `?challengeType=${encodeURIComponent(challengeType)}` : '';
+    return request<any[]>(`/datasets/templates${query}`, {
+      method: 'GET',
     });
   },
 
@@ -129,6 +156,12 @@ export const api = {
     });
   },
 
+  async getDatasetById(datasetId: string) {
+    return request<any>(`/datasets/${datasetId}`, {
+      method: 'GET',
+    });
+  },
+
   // ── Model Management ──
 
   async getMyModels(challengeType?: string) {
@@ -142,6 +175,13 @@ export const api = {
     return request<any>(`/models/${modelId}/feedback`, {
       method: 'PATCH',
       body: JSON.stringify({ feedback }),
+    });
+  },
+
+  async togglePublish(datasetId: string, isPublished: boolean) {
+    return request<any>(`/datasets/${datasetId}/publish`, {
+      method: 'PATCH',
+      body: JSON.stringify({ isPublished }),
     });
   },
 };

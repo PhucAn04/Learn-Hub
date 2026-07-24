@@ -10,6 +10,9 @@ import { StoredSample, normalizeHandKeypoints, normalizeFaceFeatures } from '@/l
 import { assessQuality } from '@/lib/image-quality';
 import { normalizeBodyKeypoints } from '@/lib/body-pose-classifier';
 import { HandResult, FaceMeshResult, BodyPoseResult } from '@/types/ml5';
+import { drawHandSkeleton } from '@/lib/hand-drawing';
+import { drawFaceSkeleton, getFaceKeypoints } from '@/lib/face-drawing';
+import { drawBodySkeleton } from '@/lib/body-drawing';
 
 interface DataCollectorProps {
   mode: 'hand-1' | 'hand-2' | 'gesture' | 'emotion' | 'body-pose';
@@ -103,6 +106,20 @@ export default function DataCollector({
         if (hands && hands.length > 0 && hands[0].keypoints) {
           features = normalizeHandKeypoints(hands[0].keypoints);
           isValid = true;
+          const ctx = img.canvas.getContext('2d');
+          if (ctx) {
+            hands.forEach((hand, idx) => {
+              if (hand.keypoints) {
+                drawHandSkeleton(ctx, hand.keypoints, img.canvas.width, img.canvas.height, img.canvas.width, img.canvas.height, {
+                  lineColor: idx === 0 ? '#6366f1' : '#ec4899',
+                  jointColor1: idx === 0 ? '#4f46e5' : '#db2777',
+                  jointColor2: idx === 0 ? '#4f46e5' : '#db2777',
+                  jointRadius: 2,
+                });
+              }
+            });
+            img.thumbnailBase64 = img.canvas.toDataURL('image/jpeg', 0.85);
+          }
         }
       } else if (detectorMode === 'face') {
         const faces = results as FaceMeshResult[];
@@ -111,6 +128,16 @@ export default function DataCollector({
           if (keypoints) {
              features = normalizeFaceFeatures(keypoints);
              isValid = true;
+             const ctx = img.canvas.getContext('2d');
+             if (ctx) {
+               faces.forEach((face) => {
+                 const kps = getFaceKeypoints(face);
+                 if (kps && kps.length >= 30) {
+                   drawFaceSkeleton(ctx, kps, img.canvas.width, img.canvas.height, img.canvas.width, img.canvas.height);
+                 }
+               });
+               img.thumbnailBase64 = img.canvas.toDataURL('image/jpeg', 0.85);
+             }
           }
         }
       } else if (detectorMode === 'body') {
@@ -118,6 +145,15 @@ export default function DataCollector({
         if (poses && poses.length > 0 && poses[0].keypoints) {
           features = normalizeBodyKeypoints(poses[0].keypoints);
           isValid = true;
+          const ctx = img.canvas.getContext('2d');
+          if (ctx) {
+            poses.forEach((pose) => {
+              if (pose.keypoints) {
+                drawBodySkeleton(ctx, pose.keypoints, img.canvas.width, img.canvas.height, img.canvas.width, img.canvas.height);
+              }
+            });
+            img.thumbnailBase64 = img.canvas.toDataURL('image/jpeg', 0.85);
+          }
         }
       }
 

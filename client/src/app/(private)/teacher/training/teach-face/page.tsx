@@ -17,7 +17,8 @@ import {
   normalizeFaceKeypoints,
   getSmileMetricsFromFaceMesh,
   drawFaceStickers,
-  getFaceKeypoints
+  getFaceKeypoints,
+  drawFaceSkeleton
 } from '@/lib/face-drawing';
 import { playSuccessSound, speakEnglish, playClickSound } from '@/lib/audio';
 import { normalizeFaceFeatures, classifyKNN, StoredSample } from '@/lib/knn-classifier';
@@ -89,44 +90,10 @@ export default function TeacherTeachFacePage() {
       
       if (faces && faces.length > 0) {
         faces.forEach((kpsRaw) => {
-          if (kpsRaw.length >= 30) {
+          const kps = getFaceKeypoints(kpsRaw);
+          if (kps && kps.length >= 30) {
             ctx.save();
-            const kps = normalizeFaceKeypoints(kpsRaw, videoRef.current!, cv);
-            
-            // Colors
-            const ovalColor = '#60a5fa';
-            const eyeColor = '#a78bfa';
-            const lipsColor = '#fbbf24';
-            const noseColor = '#34d399';
-            const dotColor = 'rgba(96,165,250,0.55)';
-
-            // Draw face wireframe
-            if (kps.length > 100) {
-              ctx.strokeStyle = ovalColor;
-              ctx.lineWidth = 1;
-              drawPolyline(ctx, FACE_OVAL, kps);
-
-              ctx.strokeStyle = eyeColor;
-              ctx.lineWidth = 0.8;
-              drawPolyline(ctx, FACE_L_EYE, kps);
-              drawPolyline(ctx, FACE_R_EYE, kps);
-
-              ctx.strokeStyle = lipsColor;
-              ctx.lineWidth = 0.8;
-              drawPolyline(ctx, FACE_LIPS, kps);
-
-              ctx.strokeStyle = noseColor;
-              ctx.lineWidth = 0.6;
-              drawPolyline(ctx, FACE_NOSE, kps);
-            }
-
-            // Draw keypoints
-            ctx.fillStyle = dotColor;
-            for (const point of kps) {
-              ctx.beginPath();
-              ctx.arc(point.x, point.y, 0.8, 0, Math.PI * 2);
-              ctx.fill();
-            }
+            drawFaceSkeleton(ctx, kps, videoRef.current!.videoWidth || 640, videoRef.current!.videoHeight || 480, 240, 240);
             ctx.restore();
           }
         });

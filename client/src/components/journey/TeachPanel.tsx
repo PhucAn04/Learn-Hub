@@ -15,6 +15,7 @@ import {
   drawPolyline,
   normalizeFaceKeypoints,
   getFaceKeypoints,
+  drawFaceSkeleton
 } from '@/lib/face-drawing';
 import {
   normalizeHandKeypoints,
@@ -66,14 +67,18 @@ function countExtendedFingers(keypoints: HandKeypoint[]): number {
 
   const wrist = keypoints[0];
   let count = 0;
+  
+  const dist2D = (p1: HandKeypoint, p2: HandKeypoint) => Math.hypot(p1.x - p2.x, p1.y - p2.y);
 
-  // Thumb: compare TIP(4) vs IP(3) along x-axis
+  // Thumb: compare TIP(4) vs IP(3) using 2D distance
   const thumbTip = keypoints[4];
   const thumbIP = keypoints[3];
   const thumbMCP = keypoints[2];
-  const thumbDistTip = Math.abs(thumbTip.x - wrist.x);
-  const thumbDistIP = Math.abs(thumbIP.x - wrist.x);
-  const thumbDistMCP = Math.abs(thumbMCP.x - wrist.x);
+  
+  const thumbDistTip = dist2D(thumbTip, wrist);
+  const thumbDistIP = dist2D(thumbIP, wrist);
+  const thumbDistMCP = dist2D(thumbMCP, wrist);
+  
   if (thumbDistTip > thumbDistIP && thumbDistIP > thumbDistMCP * 1.1) {
     count++;
   }
@@ -87,13 +92,9 @@ function countExtendedFingers(keypoints: HandKeypoint[]): number {
   ];
 
   for (const { tip, pip } of fingerIndices) {
-    const tipDist = Math.sqrt(
-      (keypoints[tip].x - wrist.x) ** 2 + (keypoints[tip].y - wrist.y) ** 2,
-    );
-    const pipDist = Math.sqrt(
-      (keypoints[pip].x - wrist.x) ** 2 + (keypoints[pip].y - wrist.y) ** 2,
-    );
-    if (tipDist > pipDist * 1.05) {
+    const tipDist = dist2D(keypoints[tip], wrist);
+    const pipDist = dist2D(keypoints[pip], wrist);
+    if (tipDist > pipDist * 1.25) { // Tăng ngưỡng từ 1.05 lên 1.25 để lờ đi các ngón cong nhẹ
       count++;
     }
   }
@@ -250,13 +251,36 @@ export default function TeachPanel({
   const modelStatus = isHandMode ? handModelStatus : faceModelStatus;
 
   // ── Thumbnail helper ────────────────
-  const getVideoThumbAndCanvas = useCallback(() => {
+  const getVideoThumbAndCanvas = useCallback((hands?: any[], faces?: any[]) => {
     const cv = document.createElement('canvas');
     cv.width = 240;
     cv.height = 240;
     const ctx = cv.getContext('2d');
-    if (ctx && videoRef.current)
+    if (ctx && videoRef.current) {
       ctx.drawImage(videoRef.current, 0, 0, 240, 240);
+      
+      if (hands && hands.length > 0) {
+        hands.forEach((hand, idx) => {
+          if (hand.keypoints && hand.keypoints.length >= 21) {
+            drawHandSkeleton(ctx, hand.keypoints, videoRef.current!.videoWidth || 640, videoRef.current!.videoHeight || 480, 240, 240, {
+              lineColor: idx === 0 ? '#6366f1' : '#ec4899',
+              jointColor1: idx === 0 ? '#4f46e5' : '#db2777',
+              jointColor2: idx === 0 ? '#4f46e5' : '#db2777',
+              jointRadius: 2,
+            });
+          }
+        });
+      }
+
+      if (faces && faces.length > 0) {
+        faces.forEach((face) => {
+          const kps = getFaceKeypoints(face);
+          if (kps && kps.length >= 30) {
+            drawFaceSkeleton(ctx, kps, videoRef.current!.videoWidth || 640, videoRef.current!.videoHeight || 480, 240, 240);
+          }
+        });
+      }
+    }
     return {
       thumbnail: cv.toDataURL('image/jpeg', 0.8),
       canvas: cv
@@ -291,7 +315,7 @@ export default function TeachPanel({
       if (!kps || kps.length < 468) return;
 
       const features = normalizeFaceFeatures(kps);
-      const { thumbnail, canvas } = getVideoThumbAndCanvas();
+      const { thumbnail, canvas } = getVideoThumbAndCanvas(undefined, faces);
       const activeClassLabel =
         classes.find((c) => c.id === activeClass)?.label || activeClass;
 
@@ -348,7 +372,7 @@ export default function TeachPanel({
         if (activeClass === 'class_4') knnLabel = classes[1]?.label || activeClassLabel;
       }
 
-      const { thumbnail, canvas } = getVideoThumbAndCanvas();
+      const { thumbnail, canvas } = getVideoThumbAndCanvas(hands, undefined);
       const expectedFingers = getExpectedFingerCount(activeClass, mode);
 
       // Pick golden dataset based on mode
@@ -375,6 +399,9 @@ export default function TeachPanel({
         let rejectedAny = false;
         let rejectionMsg = '';
 
+        // ĐÁNH GIÁ CHẤT LƯỢNG ẢNH TRƯỚC (EARLY REJECTION)
+        const quality = assessQuality(canvas);
+
         const processHand = (handIndex: number) => {
           if (
             !hands[handIndex] ||
@@ -385,28 +412,51 @@ export default function TeachPanel({
 
           const features = normalizeHandKeypoints(hands[handIndex].keypoints!);
           let isValid = true;
-
-          // Validation 1: Finger counting (hand-1 / hand-2 only)
-          if (
-            (mode === 'hand-1' || mode === 'hand-2') &&
-            expectedFingers > 0
-          ) {
-            const detected = countExtendedFingers(hands[handIndex].keypoints!);
-            if (detected >= 0 && Math.abs(detected - expectedFingers) > 1) {
-              isValid = false;
-              rejectedAny = true;
-              rejectionMsg = `Bé đang giơ ${detected} ngón, nhưng cần ${expectedFingers} ngón! 🖐️`;
+          
+          // Ưu tiên 1: Nếu ảnh mờ/tối, bỏ qua việc kiểm tra xương (tránh ảo giác)
+          if (quality.isBlurry || quality.isDark) {
+            isValid = false;
+            rejectedAny = true;
+            rejectionMsg = quality.isBlurry 
+              ? 'Ảnh hơi mờ! Bé cố gắng giữ chắc tay nhé 🔍' 
+              : 'Ảnh hơi tối! Bé tìm chỗ sáng hơn xíu nha 🌑';
+          } else {
+            // Validation 1: Finger counting (hand-1 / hand-2 only)
+            if (
+              (mode === 'hand-1' || mode === 'hand-2') &&
+              expectedFingers > 0
+            ) {
+              const detected = countExtendedFingers(hands[handIndex].keypoints!);
+              if (detected >= 0 && Math.abs(detected - expectedFingers) > 1) {
+                isValid = false;
+                rejectedAny = true;
+                rejectionMsg = `Bé đang giơ ${detected} ngón, nhưng cần ${expectedFingers} ngón! 🖐️`;
+              }
             }
-          }
 
-          // Validation 2: Golden dataset distance
-          if (
-            isValid &&
-            goldenCurrentClass.length > 0 &&
-            goldenOtherClasses.length > 0
-          ) {
-            const avgDistToCorrect =
-              goldenCurrentClass.reduce((sum, g) => {
+            // Validation 2: Golden dataset distance
+            if (
+              isValid &&
+              goldenCurrentClass.length > 0 &&
+              goldenOtherClasses.length > 0
+            ) {
+              const avgDistToCorrect =
+                goldenCurrentClass.reduce((sum, g) => {
+                  let d = 0;
+                  for (
+                    let i = 0;
+                    i < Math.min(features.length, g.features.length);
+                    i++
+                  ) {
+                    const diff = g.features[i] - features[i];
+                    d += diff * diff;
+                  }
+                  return sum + Math.sqrt(d);
+                }, 0) / goldenCurrentClass.length;
+
+              let minDistToWrong = Infinity;
+              let closestWrongLabel = '';
+              goldenOtherClasses.forEach((g) => {
                 let d = 0;
                 for (
                   let i = 0;
@@ -416,48 +466,25 @@ export default function TeachPanel({
                   const diff = g.features[i] - features[i];
                   d += diff * diff;
                 }
-                return sum + Math.sqrt(d);
-              }, 0) / goldenCurrentClass.length;
-
-            let minDistToWrong = Infinity;
-            let closestWrongLabel = '';
-            goldenOtherClasses.forEach((g) => {
-              let d = 0;
-              for (
-                let i = 0;
-                i < Math.min(features.length, g.features.length);
-                i++
-              ) {
-                const diff = g.features[i] - features[i];
-                d += diff * diff;
-              }
-              const dist = Math.sqrt(d);
-              if (dist < minDistToWrong) {
-                minDistToWrong = dist;
-                if (mode === 'gesture') {
-                  const cls = classes.find((c) => c.id === g.expectedLabel);
-                  closestWrongLabel = cls?.label || g.expectedLabel;
-                } else {
-                  closestWrongLabel = g.expectedLabel;
+                const dist = Math.sqrt(d);
+                if (dist < minDistToWrong) {
+                  minDistToWrong = dist;
+                  if (mode === 'gesture') {
+                    const cls = classes.find((c) => c.id === g.expectedLabel);
+                    closestWrongLabel = cls?.label || g.expectedLabel;
+                  } else {
+                    closestWrongLabel = g.expectedLabel;
+                  }
                 }
+              });
+
+              const threshold = mode === 'gesture' ? 0.7 : 0.9;
+              if (minDistToWrong < avgDistToCorrect * threshold) {
+                isValid = false;
+                rejectedAny = true;
+                rejectionMsg = `Cử chỉ này trông giống "${closestWrongLabel}" hơn! Bé thử lại nhé? 🤔`;
               }
-            });
-
-            const threshold = mode === 'gesture' ? 0.7 : 0.9;
-            if (minDistToWrong < avgDistToCorrect * threshold) {
-              isValid = false;
-              rejectedAny = true;
-              rejectionMsg = `Cử chỉ này trông giống "${closestWrongLabel}" hơn! Bé thử lại nhé? 🤔`;
             }
-          }
-
-          const quality = assessQuality(canvas);
-          
-          if (isValid && (quality.isBlurry || quality.isDark)) {
-            rejectedAny = true;
-            rejectionMsg = quality.isBlurry 
-              ? 'Ảnh hơi mờ! Bé cố gắng giữ chắc tay nhé 🔍' 
-              : 'Ảnh hơi tối! Bé tìm chỗ sáng hơn xíu nha 🌑';
           }
 
           newSamples.push({

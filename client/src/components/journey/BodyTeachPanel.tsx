@@ -8,6 +8,7 @@ import { drawBodySkeleton } from '@/lib/body-drawing';
 import { normalizeBodyKeypoints } from '@/lib/body-pose-classifier';
 import { classifyKNN, StoredSample } from '@/lib/knn-classifier';
 import { playClickSound, playSuccessSound } from '@/lib/audio';
+import { assessQuality } from '@/lib/image-quality';
 import CameraView from '@/components/CameraView';
 import DataCollector from '@/components/journey/DataCollector';
 import SampleGallery from '@/components/SampleGallery';
@@ -62,6 +63,7 @@ export default function BodyTeachPanel({
   const [isTrained, setIsTrained] = useState(false);
   const [trainingProgress, setTrainingProgress] = useState(0);
   const [predictedLabel, setPredictedLabel] = useState('Chưa nhận diện... 🤔');
+  const [validationToast, setValidationToast] = useState<string | null>(null);
   const [confidence, setConfidence] = useState(0);
   const [activeDataTab, setActiveDataTab] = useState<'camera' | 'upload' | 'video'>('camera');
   const [kValue, setKValue] = useState(3);
@@ -129,6 +131,17 @@ export default function BodyTeachPanel({
     const thumbnail = cv.toDataURL('image/jpeg', 0.8);
     const activeClassLabel = classesState.find(c => c.id === activeClass)?.label || activeClass;
 
+    const quality = assessQuality(cv);
+    let isBadQuality = false;
+    if (quality.isBlurry || quality.isDark) {
+      isBadQuality = true;
+      const msg = quality.isBlurry 
+        ? 'Ảnh hơi mờ! Bé hoặc người đứng mẫu cố gắng đứng yên nhé 🔍' 
+        : 'Ảnh hơi tối! Bé tìm chỗ sáng hơn xíu nha 🌑';
+      setValidationToast(`⚠️ ${msg}`);
+      setTimeout(() => setValidationToast(null), 5000);
+    }
+
     setSamples(prev => [
       ...prev,
       {
@@ -138,7 +151,8 @@ export default function BodyTeachPanel({
         features,
         thumbnail,
         rawThumbnail,
-        isValid: true
+        isValid: true,
+        quality
       }
     ]);
     playClickSound();
@@ -310,14 +324,20 @@ export default function BodyTeachPanel({
           </button>
         )}
 
-        {/* Sample gallery for active class */}
-        <SampleGallery
-          samples={samples.filter((s) => s.sourceId === activeClass || (s.label === (classesState.find(c => c.id === activeClass)?.label || activeClass) && !s.sourceId))}
-          onDeleteSample={(id) => setSamples(prev => prev.filter(s => s.id !== id))}
-          onClearAll={() => handleClearClass(activeClass)}
-        />
+          <SampleGallery
+            samples={samples.filter((s) => s.sourceId === activeClass || (s.label === (classesState.find(c => c.id === activeClass)?.label || activeClass) && !s.sourceId))}
+            onDeleteSample={(id) => setSamples(prev => prev.filter(s => s.id !== id))}
+            onClearAll={() => handleClearClass(activeClass)}
+          />
 
-        <div className="mt-auto pt-4">
+          {validationToast && (
+            <div className="mt-3 p-3 bg-yellow-50 border-2 border-yellow-400 rounded-2xl text-sm font-bold text-yellow-700 flex items-center gap-2 animate-bounce shadow-lg">
+              <span className="text-xl">⚠️</span>
+              <span>{validationToast}</span>
+            </div>
+          )}
+
+          <div className="mt-auto pt-4">
           {isTraining ? (
             <div className="bg-indigo-50 rounded-2xl p-4 border border-indigo-100 animate-pulse">
               <div className="flex items-center justify-between mb-2">

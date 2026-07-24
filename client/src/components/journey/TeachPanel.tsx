@@ -32,6 +32,7 @@ import CameraView from '@/components/CameraView';
 import SampleGallery from '@/components/SampleGallery';
 import DataCollector from './DataCollector';
 import AIFeedbackModal from './AIFeedbackModal';
+import DataBalanceWarning from './DataBalanceWarning';
 
 // ──────────────────────────────────────────────
 // Try to import optional golden datasets
@@ -298,9 +299,18 @@ export default function TeachPanel({
       const quality = assessQuality(canvas);
 
       setSamples((prev) => {
+        let msg = '';
         if (!validation.isValid) {
+          msg = validation.suggestion;
+        } else if (quality.isBlurry) {
+          msg = 'Ảnh hơi mờ! Bé cố gắng giữ chắc tay nhé 🔍';
+        } else if (quality.isDark) {
+          msg = 'Ảnh hơi tối! Bé tìm chỗ sáng hơn xíu nha 🌑';
+        }
+
+        if (msg) {
           if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
-          setValidationToast(`⚠️ ${validation.suggestion}`);
+          setValidationToast(`⚠️ ${msg}`);
           toastTimeoutRef.current = setTimeout(
             () => setValidationToast(null),
             4000,
@@ -442,6 +452,14 @@ export default function TeachPanel({
           }
 
           const quality = assessQuality(canvas);
+          
+          if (isValid && (quality.isBlurry || quality.isDark)) {
+            rejectedAny = true;
+            rejectionMsg = quality.isBlurry 
+              ? 'Ảnh hơi mờ! Bé cố gắng giữ chắc tay nhé 🔍' 
+              : 'Ảnh hơi tối! Bé tìm chỗ sáng hơn xíu nha 🌑';
+          }
+
           newSamples.push({
             id: crypto.randomUUID(),
             label: isTwoHandMode ? knnLabel : activeClassLabel,
@@ -527,25 +545,9 @@ export default function TeachPanel({
     if (!canTrain) return;
     playClickSound();
     
-    // Always show AI feedback modal if teacherTemplate is provided (for Hand/Face modes)
-    if (teacherTemplate) {
-      setShowFeedbackModal(true);
-      return;
-    }
-
-    setIsTraining(true);
-    setTrainingProgress(0);
-
-    const interval = setInterval(() => {
-      setTrainingProgress((prev) => {
-        if (prev >= 100) {
-          clearInterval(interval);
-          return 100;
-        }
-        return prev + 10;
-      });
-    }, 150);
-  }, [canTrain, teacherTemplate]);
+    // Always show AI feedback modal to analyze student data (or compare with teacher if available)
+    setShowFeedbackModal(true);
+  }, [canTrain]);
 
   // Handle train completion
   useEffect(() => {
@@ -982,38 +984,18 @@ export default function TeachPanel({
         </p>
 
         {/* Imbalance Warning */}
-        {(() => {
-          const classCounts = classes.map((c) => {
-            const count = getClassSampleCount(c.id);
-            return {
-              ...c,
-              effectiveCount: isTwoHandMode ? Math.floor(count / 2) : count
-            };
-          });
-          
-          if (classCounts.length === 0) return null;
-          
-          const maxCount = Math.max(...classCounts.map(c => c.effectiveCount));
-          
-          const laggingClasses = classCounts.filter(
-            c => c.effectiveCount > 0 && (maxCount > c.effectiveCount * 1.2)
-          );
-
-          if (laggingClasses.length === 0 || isTrained) return null;
-
-          const laggingNames = laggingClasses.map(c => c.label).join(', ');
-
-          return (
-            <div className="mt-4 bg-yellow-50 border-2 border-yellow-300 text-yellow-800 rounded-2xl p-3 text-xs font-medium shadow-sm leading-relaxed">
-              ⚠️ <b className="font-extrabold text-yellow-900">Chú ý: Số lượng ảnh đang chênh lệch!</b><br/>
-              {laggingClasses.length > 1 ? 'Các nhãn ' : 'Nhãn '} 
-              <b className="font-bold text-yellow-900">[{laggingNames}]</b> đang có quá ít ảnh so với nhãn nhiều nhất. 
-              Tỷ lệ ảnh không đều nhau có thể làm AI bị "thiên vị" và dự đoán kém chính xác. 
-              Bé hãy chụp thêm ảnh cho {laggingClasses.length > 1 ? 'các nhãn này' : 'nhãn này'} để cân bằng nhé!<br/>
-              <span className="text-[10px] italic mt-1 inline-block opacity-80">(Bé vẫn có thể nhấn <b>Dạy bạn AI học</b> nếu muốn thử xem AI sẽ nhầm lẫn thế nào).</span>
-            </div>
-          );
-        })()}
+        {!isTrained && (
+          <DataBalanceWarning 
+            classCounts={classes.map((c) => {
+              const count = getClassSampleCount(c.id);
+              return {
+                id: c.id,
+                label: c.label,
+                count: isTwoHandMode ? Math.floor(count / 2) : count
+              };
+            })} 
+          />
+        )}
 
         {/* Train / Progress */}
         <div className="mt-auto pt-4">
@@ -1173,9 +1155,18 @@ export default function TeachPanel({
         onClose={() => setShowFeedbackModal(false)}
         onProceed={() => {
           setShowFeedbackModal(false);
-          playSuccessSound();
-          setIsTrained(true);
-          onTrainComplete(samples);
+          setIsTraining(true);
+          setTrainingProgress(0);
+
+          const interval = setInterval(() => {
+            setTrainingProgress((prev) => {
+              if (prev >= 100) {
+                clearInterval(interval);
+                return 100;
+              }
+              return prev + 10;
+            });
+          }, 150);
         }}
         studentSamples={samples}
         teacherTemplate={teacherTemplate}

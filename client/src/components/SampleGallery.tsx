@@ -60,6 +60,7 @@ export default function SampleGallery({ samples, onDeleteSample, onClearAll }: S
       <div className="grid grid-cols-4 gap-2 py-2 px-1 max-h-[240px] overflow-y-auto">
         {samples.map((s, index) => {
           const isInvalid = s.isValid === false;
+          const isBadQuality = s.quality?.isBlurry || s.quality?.isDark;
           const key = s.id || `sample-${index}`;
           
           return (
@@ -71,7 +72,9 @@ export default function SampleGallery({ samples, onDeleteSample, onClearAll }: S
               }}
               className={`group relative overflow-hidden rounded-xl shadow-sm cursor-pointer transition-all hover:scale-105 aspect-square ${
                 isInvalid 
-                  ? 'border-4 border-red-500 ring-2 ring-red-300 ring-offset-1' 
+                  ? 'border-4 border-red-500 ring-2 ring-red-300 ring-offset-1 z-10' 
+                  : isBadQuality
+                  ? 'border-4 border-yellow-500 ring-2 ring-yellow-300 ring-offset-1 z-10'
                   : 'border-2 border-indigo-100 hover:border-indigo-400'
               }`}
             >
@@ -91,13 +94,15 @@ export default function SampleGallery({ samples, onDeleteSample, onClearAll }: S
                 </div>
               )}
 
-              {isInvalid && (
+              {isInvalid ? (
                 <div className="absolute inset-0 bg-red-500/20 flex items-center justify-center">
                   <div className="bg-red-500 text-white p-1 rounded-full shadow-lg animate-pulse">
                     <AlertTriangle className="w-4 h-4" />
                   </div>
                 </div>
-              )}
+              ) : isBadQuality ? (
+                <div className="absolute inset-0 bg-yellow-500/10 flex items-center justify-center pointer-events-none" />
+              ) : null}
 
               {!isInvalid && (
                 <div className="absolute inset-0 flex items-center justify-center bg-black/40 text-white opacity-0 transition-opacity group-hover:opacity-100">
@@ -140,7 +145,13 @@ export default function SampleGallery({ samples, onDeleteSample, onClearAll }: S
             )}
 
             {/* Large image preview */}
-            <div className={`relative rounded-2xl overflow-hidden border-4 ${previewSample.isValid === false ? 'border-red-400' : 'border-gray-200'} mb-4 bg-slate-900`}>
+            <div className={`relative rounded-2xl overflow-hidden border-4 ${
+              previewSample.isValid === false 
+                ? 'border-red-500' 
+                : (previewSample.quality?.isBlurry || previewSample.quality?.isDark)
+                ? 'border-yellow-500 shadow-[0_0_15px_rgba(234,179,8,0.3)]'
+                : 'border-gray-200'
+            } mb-4 bg-slate-900`}>
               {previewSample.thumbnail ? (
                 <img 
                   src={(showSkeleton || !previewSample.rawThumbnail) ? previewSample.thumbnail : previewSample.rawThumbnail} 

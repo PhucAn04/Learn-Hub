@@ -529,7 +529,7 @@ export default function TeachPanel({
     playClickSound();
     setIsCapturing(true);
     captureSample();
-    captureIntervalRef.current = setInterval(captureSample, 300);
+    captureIntervalRef.current = setInterval(captureSample, 500);
   }, [modelStatus, captureSample]);
 
   const stopCapturing = useCallback(() => {

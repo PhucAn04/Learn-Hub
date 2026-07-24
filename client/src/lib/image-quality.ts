@@ -100,7 +100,7 @@ export function assessQuality(canvas: HTMLCanvasElement): SampleQualityMeta {
     blurScore,
     isDark: brightness < 60,
     isBright: brightness > 200,
-    isBlurry: blurScore < 800, // Tăng ngưỡng lên 800 (trước đó 200) để bắt được các rung động vừa/mạnh ở webcam có độ nét cao
+    isBlurry: blurScore < 305, // Hạ ngưỡng xuống 305 để tinh chỉnh độ nhạy với rung động nhẹ
   };
 
   console.log(`[Quality Check] Brightness: ${brightness.toFixed(1)} | Blur Score: ${blurScore.toFixed(1)} => isBlurry: ${quality.isBlurry}`);

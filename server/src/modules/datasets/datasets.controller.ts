@@ -1,4 +1,4 @@
-import { Controller, Post, Get, Body, Param, Query, UseGuards } from '@nestjs/common';
+import { Controller, Post, Get, Patch, Body, Param, Query, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBody, ApiResponse, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { DatasetsService } from './datasets.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -33,6 +33,15 @@ export class DatasetsController {
     return this.datasetsService.getDatasetsByUser(user.id, challengeType);
   }
 
+  @Get('templates')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Lấy danh sách các bộ dữ liệu mẫu (templates) của giáo viên' })
+  @ApiQuery({ name: 'challengeType', required: false })
+  async getTemplates(@Query('challengeType') challengeType?: string) {
+    return this.datasetsService.getTemplates(challengeType);
+  }
+
   @Get('by-challenge/:challengeType')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('teacher')
@@ -50,5 +59,28 @@ export class DatasetsController {
   @ApiResponse({ status: 200, description: 'Nội dung file dataset.' })
   async getDatasetFile(@Param('id') id: string) {
     return this.datasetsService.getDatasetFile(id);
+  }
+
+  @Get(':id')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Lấy thông tin chi tiết dataset' })
+  @ApiResponse({ status: 200, description: 'Thông tin chi tiết dataset.' })
+  async getDataset(@Param('id') id: string) {
+    return this.datasetsService.getDatasetById(id);
+  }
+
+  @Patch(':id/publish')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('teacher')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Xuất bản hoặc ẩn template dataset' })
+  @ApiResponse({ status: 200, description: 'Cập nhật trạng thái xuất bản.' })
+  async togglePublish(
+    @CurrentUser() user: User,
+    @Param('id') id: string,
+    @Body() body: { isPublished: boolean }
+  ) {
+    return this.datasetsService.togglePublish(id, user.id, body.isPublished);
   }
 }

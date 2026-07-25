@@ -1,8 +1,8 @@
 /**
  * Cloudinary Unsigned Upload Utility
  * 
- * Uploads images directly from the browser to Cloudinary using unsigned upload.
- * This avoids burdening the backend server with image processing.
+ * Uploads images AND videos directly from the browser to Cloudinary using unsigned upload.
+ * This avoids burdening the backend server with media processing.
  * 
  * Required env vars:
  *   NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME
@@ -11,7 +11,9 @@
 
 const CLOUD_NAME = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME || '';
 const UPLOAD_PRESET = process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET || '';
-const UPLOAD_URL = `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/image/upload`;
+const IMAGE_UPLOAD_URL = `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/image/upload`;
+const VIDEO_UPLOAD_URL = `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/video/upload`;
+const RAW_UPLOAD_URL = `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/raw/upload`;
 
 export function isCloudinaryConfigured(): boolean {
   return !!(CLOUD_NAME && UPLOAD_PRESET && CLOUD_NAME !== 'YOUR_CLOUD_NAME_HERE');
@@ -26,7 +28,6 @@ export async function uploadBase64ToCloudinary(
   folder: string = 'learn-hub/datasets'
 ): Promise<string> {
   if (!isCloudinaryConfigured()) {
-    // Return the original base64 if Cloudinary is not configured
     return base64Data;
   }
 
@@ -34,15 +35,16 @@ export async function uploadBase64ToCloudinary(
   formData.append('file', base64Data);
   formData.append('upload_preset', UPLOAD_PRESET);
   formData.append('folder', folder);
+  // Request high quality
+  formData.append('quality', 'auto:best');
 
-  const response = await fetch(UPLOAD_URL, {
+  const response = await fetch(IMAGE_UPLOAD_URL, {
     method: 'POST',
     body: formData,
   });
 
   if (!response.ok) {
-    console.error('Cloudinary upload failed:', response.status);
-    // Fallback to base64 on error
+    console.error('Cloudinary image upload failed:', response.status);
     return base64Data;
   }
 
@@ -51,10 +53,115 @@ export async function uploadBase64ToCloudinary(
 }
 
 /**
+ * Upload a video Blob to Cloudinary.
+ * Returns the secure URL of the uploaded video.
+ */
+export async function uploadVideoToCloudinary(
+  videoBlob: Blob,
+  folder: string = 'learn-hub/videos',
+  onProgress?: (percent: number) => void
+): Promise<string | null> {
+  if (!isCloudinaryConfigured()) {
+    console.log('[Cloudinary] Not configured, cannot upload video');
+    return null;
+  }
+
+  const formData = new FormData();
+  formData.append('file', videoBlob, `video_${Date.now()}.webm`);
+  formData.append('upload_preset', UPLOAD_PRESET);
+  formData.append('folder', folder);
+  formData.append('resource_type', 'video');
+
+  // Use XMLHttpRequest for progress tracking
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', VIDEO_UPLOAD_URL);
+
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable && onProgress) {
+        onProgress(Math.round((e.loaded / e.total) * 100));
+      }
+    };
+
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          const data = JSON.parse(xhr.responseText);
+          resolve(data.secure_url);
+        } catch {
+          reject(new Error('Failed to parse Cloudinary response'));
+        }
+      } else {
+        console.error('Cloudinary video upload failed:', xhr.status, xhr.responseText);
+        resolve(null);
+      }
+    };
+
+    xhr.onerror = () => {
+      console.error('Cloudinary video upload network error');
+      resolve(null);
+    };
+
+    xhr.send(formData);
+  });
+}
+
+/**
+ * Upload a File (image or video) to Cloudinary.
+ * Auto-detects resource type from file MIME type.
+ */
+export async function uploadFileToCloudinary(
+  file: File | Blob,
+  folder: string = 'learn-hub/uploads',
+  onProgress?: (percent: number) => void
+): Promise<string | null> {
+  if (!isCloudinaryConfigured()) return null;
+
+  const isVideo = file.type.startsWith('video/');
+  const uploadUrl = isVideo ? VIDEO_UPLOAD_URL : IMAGE_UPLOAD_URL;
+  
+  const formData = new FormData();
+  const fileName = file instanceof File ? file.name : `upload_${Date.now()}`;
+  formData.append('file', file, fileName);
+  formData.append('upload_preset', UPLOAD_PRESET);
+  formData.append('folder', folder);
+
+  if (!isVideo) {
+    formData.append('quality', 'auto:best');
+  }
+
+  return new Promise((resolve) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', uploadUrl);
+
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable && onProgress) {
+        onProgress(Math.round((e.loaded / e.total) * 100));
+      }
+    };
+
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          const data = JSON.parse(xhr.responseText);
+          resolve(data.secure_url);
+        } catch {
+          resolve(null);
+        }
+      } else {
+        console.error(`Cloudinary upload failed (${xhr.status}):`, xhr.responseText);
+        resolve(null);
+      }
+    };
+
+    xhr.onerror = () => resolve(null);
+    xhr.send(formData);
+  });
+}
+
+/**
  * Upload all sample thumbnails to Cloudinary in batches.
  * Returns new samples array with thumbnails replaced by Cloudinary URLs.
- * 
- * Shows progress via optional callback.
  */
 export async function uploadSamplesToCloudinary(
   samples: any[],

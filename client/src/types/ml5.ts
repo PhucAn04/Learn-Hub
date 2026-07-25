@@ -8,7 +8,7 @@ export type HandResult = {
 };
 
 export type HandPoseModel = {
-  detect?: (video: HTMLVideoElement) => Promise<HandResult[]>;
+  detect?: (input: HTMLVideoElement | HTMLCanvasElement | HTMLImageElement) => Promise<HandResult[]>;
   detectStart: (video: HTMLVideoElement, callback: (results: HandResult[]) => void) => void;
   detectStop?: () => void;
 };
@@ -32,9 +32,31 @@ export type FaceMeshResult =
     };
 
 export type Ml5FaceMeshModel = {
+  detect?: (input: HTMLVideoElement | HTMLCanvasElement | HTMLImageElement) => Promise<FaceMeshResult[]>;
   detectStart: (video: HTMLVideoElement, callback: (results: FaceMeshResult[]) => void) => void;
   detectStop?: () => void;
 };
+
+// ── Body Pose Types ──────────────────────────────────────────────────────────
+
+export type BodyKeypoint = {
+  x: number;
+  y: number;
+  confidence?: number;
+  name?: string;
+};
+
+export type BodyPoseResult = {
+  keypoints?: BodyKeypoint[];
+};
+
+export type BodyPoseModel = {
+  detect?: (input: HTMLVideoElement | HTMLCanvasElement | HTMLImageElement) => Promise<BodyPoseResult[]>;
+  detectStart: (video: HTMLVideoElement, callback: (results: BodyPoseResult[]) => void) => void;
+  detectStop?: () => void;
+};
+
+// ── Ml5 Module ───────────────────────────────────────────────────────────────
 
 export type Ml5Module = {
   handPose: (
@@ -45,6 +67,11 @@ export type Ml5Module = {
     options: { maxFaces: number; flipHorizontal: boolean; runtime?: string },
     callback: () => void,
   ) => Ml5FaceMeshModel;
+  bodyPose: (
+    modelName?: string,
+    options?: any,
+    callback?: () => void,
+  ) => BodyPoseModel;
 };
 
 export type GestureType = 'like' | 'fist' | 'peace' | 'open';

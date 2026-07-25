@@ -54,6 +54,46 @@ export class AuthService {
     return { user, accessToken };
   }
 
+  async validateOAuthLogin(profile: any): Promise<{ user: User; accessToken: string }> {
+    const { email, firstName, lastName, picture, googleId, accessToken, refreshToken } = profile;
+    const username = `${firstName || ''} ${lastName || ''}`.trim() || email.split('@')[0];
+
+    let user = await this.usersService.findByGoogleId(googleId);
+
+    if (!user) {
+      // Check if user exists by email
+      user = await this.usersService.findByEmail(email);
+      if (user) {
+        // Link google account to existing user
+        user.googleId = googleId;
+        user.avatarUrl = picture;
+      } else {
+        // Create new user
+        user = await this.usersService.create({
+          email,
+          username,
+          googleId,
+          avatarUrl: picture,
+          role: 'student', // default role
+        });
+      }
+    } else {
+      // Update existing user's avatar if changed
+      if (picture && user.avatarUrl !== picture) {
+        user.avatarUrl = picture;
+      }
+    }
+
+    // Always update tokens
+    await this.usersService.updateGoogleTokens(user.id, accessToken, refreshToken);
+    
+    // Refresh user object to return
+    user = await this.usersService.findById(user.id) as User;
+
+    const jwtToken = this.generateToken(user.id);
+    return { user, accessToken: jwtToken };
+  }
+
   private generateToken(userId: string): string {
     return this.jwtService.sign({ sub: userId });
   }

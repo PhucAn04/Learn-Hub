@@ -66,6 +66,26 @@ const CONCEPTS_DATA = {
       nextUrl: '/challenge/teach-face',
       btnText: 'Vào Sandbox Cảm Xúc',
     }
+  },
+  'body-exercises': {
+    slides: [
+      {
+        title: 'Nhận Diện Tư Thế (Body Pose Detection)',
+        content: 'Bé có biết máy tính cũng có thể tập thể dục cùng mình không? Bằng cách theo dõi các khớp xương như vai, khuỷu tay, đầu gối, AI có thể vẽ ra một bộ xương người que ngộ nghĩnh di chuyển theo từng cử động của bé. Kỹ thuật này gọi là "Nhận Diện Tư Thế" đấy!',
+        image: '🤸',
+        color: 'from-amber-400 to-orange-500',
+        borderColor: 'border-amber-400',
+      },
+    ],
+    quiz: {
+      question: 'Để nhận diện tư thế, AI sẽ theo dõi bộ phận nào của bé?',
+      options: ['Quần áo bé đang mặc', 'Các khớp xương (vai, tay, chân)'],
+      correct: 1,
+      successMsg: 'Chính xác! AI tìm kiếm các điểm khớp xương để vẽ ra bộ xương người que.',
+      failMsg: 'Chưa đúng rồi, AI không quan tâm bé mặc áo màu gì đâu, mà quan tâm bé chuyển động thế nào cơ!',
+      nextUrl: '/challenge/teach-body',
+      btnText: 'Tập Thể Dục Nào!',
+    }
   }
 };
 

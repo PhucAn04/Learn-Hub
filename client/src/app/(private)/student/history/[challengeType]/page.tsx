@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, RefreshCw, Calendar, TrendingUp, Eye, MessageSquare, ChevronDown, ChevronUp, X, AlertTriangle, ChevronLeft as ChevronLeftIcon, ChevronRight as ChevronRightIcon } from 'lucide-react';
+import { ArrowLeft, RefreshCw, Calendar, TrendingUp, Eye, EyeOff, MessageSquare, ChevronDown, ChevronUp, X, AlertTriangle, ChevronLeft as ChevronLeftIcon, ChevronRight as ChevronRightIcon } from 'lucide-react';
 import { api } from '@/lib/api';
 import { playClickSound } from '@/lib/audio';
 
@@ -319,7 +319,7 @@ export default function StudentHistoryPage() {
                 className="absolute top-16 right-4 p-2 bg-white hover:bg-gray-100 rounded-full text-indigo-600 shadow-md border border-indigo-200 transition-colors z-10 flex items-center gap-2"
                 title={showSkeleton ? "Ẩn nét vẽ AI" : "Hiện nét vẽ AI"}
               >
-                {showSkeleton ? <Eye className="w-5 h-5 text-indigo-600" /> : <Eye className="w-5 h-5 text-gray-400" />}
+                {showSkeleton ? <Eye className="w-5 h-5 text-indigo-600" /> : <EyeOff className="w-5 h-5 text-gray-400" />}
               </button>
             )}
 

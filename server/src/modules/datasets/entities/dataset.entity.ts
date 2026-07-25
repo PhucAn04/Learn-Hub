@@ -22,6 +22,24 @@ export class Dataset {
   @Column({ type: 'json', nullable: true })
   classSummary: any; // { 'Vui vẻ': 5, 'Buồn bã': 3, ... }
 
+  @Column({ default: false })
+  isTemplate: boolean;
+
+  @Column({ type: 'text', nullable: true })
+  teacherNotes: string;
+
+  @Column({ default: false })
+  isPublished: boolean;
+
+  @Column({ nullable: true })
+  dataSourceType: string; // 'camera', 'upload', 'video'
+
+  @Column({ nullable: true })
+  googleDriveFolderUrl?: string;
+
+  @Column({ type: 'json', nullable: true })
+  customClasses?: any[]; // [{id: 'class_1', label: 'Bước 1', emoji: '✨'}]
+
   @CreateDateColumn()
   createdAt: Date;
 

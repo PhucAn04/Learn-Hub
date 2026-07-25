@@ -15,6 +15,8 @@ import {
   normalizeFaceKeypoints,
   getSmileMetricsFromFaceMesh,
   drawFaceStickers,
+  getFaceKeypoints,
+  drawFaceSkeleton
 } from '@/lib/face-drawing';
 import ScoreHeader from '@/components/ScoreHeader';
 import CameraView from '@/components/CameraView';
@@ -194,8 +196,10 @@ export default function FaceChallenge() {
 
         // Draw stickers on ALL faces into the captured photo
         for (const kpsRaw of allFacesRef.current) {
-          if (kpsRaw.length >= 30) {
-            const kps = normalizeFaceKeypoints(kpsRaw, videoRef.current!, cv);
+          const faceKps = getFaceKeypoints(kpsRaw);
+          if (faceKps && faceKps.length >= 30) {
+            const kps = normalizeFaceKeypoints(faceKps, videoRef.current!, cv);
+            drawFaceSkeleton(ctx, faceKps, videoRef.current!.videoWidth || 640, videoRef.current!.videoHeight || 480, cv.width, cv.height);
             drawFaceStickers(ctx, kps, [activeFilter]);
           }
         }

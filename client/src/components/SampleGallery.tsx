@@ -16,7 +16,7 @@ export default function SampleGallery({ samples, onDeleteSample, onClearAll }: S
 
   if (samples.length === 0) return null;
 
-  const invalidSamples = samples.filter(s => s.isValid === false);
+  const invalidSamples = samples.filter(s => s.isValid === false || s.aiFeedback?.isMisclassified === true);
   const invalidCount = invalidSamples.length;
   const previewSample = previewIndex !== null ? samples[previewIndex] : null;
 
@@ -32,7 +32,7 @@ export default function SampleGallery({ samples, onDeleteSample, onClearAll }: S
                 ⚠️ Có {invalidCount} ảnh cần kiểm tra lại!
               </p>
               <p className="text-xs text-red-600 mt-1">
-                AI nghĩ {invalidCount > 1 ? 'những' : ''} ảnh có viền nổi bật (đỏ/vàng) không giống với nhãn bé đang dạy hoặc bị mờ.
+                AI nghĩ {invalidCount > 1 ? 'những' : ''} ảnh có viền nổi bật (đỏ/vàng) không đúng nhãn bé đang dạy hoặc bị mờ.
                 Bé hãy bấm vào ảnh để xem chi tiết và xóa ảnh bị lỗi nhé!
               </p>
             </div>
@@ -59,7 +59,7 @@ export default function SampleGallery({ samples, onDeleteSample, onClearAll }: S
       {/* Thumbnail grid - larger size, wrapped */}
       <div className="grid grid-cols-4 gap-2 py-2 px-1 max-h-[240px] overflow-y-auto">
         {samples.map((s, index) => {
-          const isInvalid = s.isValid === false;
+          const isInvalid = s.isValid === false || s.aiFeedback?.isMisclassified === true;
           const isBadQuality = s.quality?.isBlurry || s.quality?.isDark;
           const key = s.id || `sample-${index}`;
           

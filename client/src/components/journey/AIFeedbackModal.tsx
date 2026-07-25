@@ -1,8 +1,9 @@
 'use client';
 
 import React, { useMemo, useState } from 'react';
-import { X, AlertCircle, CheckCircle, Brain, Target, Info, ChevronRight, RefreshCw, Search } from 'lucide-react';
+import { X, AlertCircle, CheckCircle, Brain, Target, Info, ChevronRight, RefreshCw, Search, Eye } from 'lucide-react';
 import { StoredSample, classifyKNNDetailed } from '@/lib/knn-classifier';
+import SamplePreviewModal from '@/components/SamplePreviewModal';
 
 interface AIFeedbackModalProps {
   isOpen: boolean;
@@ -13,6 +14,7 @@ interface AIFeedbackModalProps {
   kValue: number;
   threshold: number;
   classes: { id: string; label: string }[];
+  onDeleteSample?: (id: string) => void;
 }
 
 export default function AIFeedbackModal({
@@ -24,7 +26,10 @@ export default function AIFeedbackModal({
   kValue,
   threshold,
   classes,
+  onDeleteSample,
 }: AIFeedbackModalProps) {
+  const [previewSample, setPreviewSample] = useState<StoredSample | null>(null);
+
   const { balanceIssues, correctnessIssues, qualityIssues, counts, hasTeacherTemplate } = useMemo(() => {
     const counts: Record<string, number> = {};
     classes.forEach(c => counts[c.id] = 0);
@@ -233,6 +238,12 @@ export default function AIFeedbackModal({
                               <div className="absolute top-1 right-1 bg-black/60 text-white text-[10px] font-bold px-1.5 py-0.5 rounded backdrop-blur-sm border border-white/20">
                                 Yêu cầu: {threshold} phiếu
                               </div>
+                              <div 
+                                onClick={() => setPreviewSample(issue.studentSample)}
+                                className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity cursor-pointer text-white"
+                              >
+                                <Eye className="w-8 h-8" />
+                              </div>
                             </div>
                             <div className="mt-2 text-xs font-bold bg-amber-100 text-amber-800 px-2 py-1 rounded-lg">Bé Gắn: {issue.studentClassLabel}</div>
                           </div>
@@ -250,8 +261,14 @@ export default function AIFeedbackModal({
                             <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 block">AI phát hiện {issue.matchingNearest.length} ảnh chung nhãn này</span>
                             <div className="flex flex-wrap gap-2 justify-center max-w-[200px]">
                               {issue.matchingNearest.map((n: any, nidx: number) => (
-                                <div key={nidx} className="relative w-14 h-14 rounded-lg overflow-hidden border-2 border-indigo-400 shadow-sm">
+                                <div key={nidx} className="relative w-14 h-14 rounded-lg overflow-hidden border-2 border-indigo-400 shadow-sm group">
                                   <img src={n.thumbnail} alt="Giáo viên" className="w-full h-full object-cover" />
+                                  <div 
+                                    onClick={() => setPreviewSample({ ...n, isValid: true } as any)}
+                                    className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer text-white"
+                                  >
+                                    <Eye className="w-5 h-5" />
+                                  </div>
                                 </div>
                               ))}
                             </div>
@@ -300,6 +317,19 @@ export default function AIFeedbackModal({
           </button>
         </div>
       </div>
+      
+      <SamplePreviewModal 
+        isOpen={!!previewSample} 
+        onClose={() => setPreviewSample(null)} 
+        sample={previewSample} 
+        readonly={!previewSample?.id}
+        onDelete={() => {
+          if (previewSample?.id && onDeleteSample) {
+            onDeleteSample(previewSample.id);
+          }
+          setPreviewSample(null);
+        }} 
+      />
     </div>
   );
 }

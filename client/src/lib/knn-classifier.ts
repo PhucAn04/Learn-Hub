@@ -21,6 +21,11 @@ export interface StoredSample {
   rawThumbnail?: string; // base64 image data for preview (without skeleton)
   isValid?: boolean;  // whether the sample was validated as correct by AI
   quality?: SampleQualityMeta; // Image quality metadata (brightness, blur)
+  aiFeedback?: {      // Feedback set by AI evaluation after training
+    isMisclassified: boolean;
+    predictedLabel: string;
+    nearestMatchThumbnail?: string;
+  };
 }
 
 /**

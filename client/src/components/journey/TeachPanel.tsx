@@ -21,6 +21,7 @@ import {
   normalizeHandKeypoints,
   normalizeFaceFeatures,
   classifyKNN,
+  classifyKNNDetailed,
   classifyKNNWithVotes,
   StoredSample,
   HandKeypoint,
@@ -577,19 +578,115 @@ export default function TeachPanel({
     if (!canTrain) return;
     playClickSound();
     
-    // Always show AI feedback modal to analyze student data (or compare with teacher if available)
-    setShowFeedbackModal(true);
+    setIsTraining(true);
+    setTrainingProgress(0);
+
+    const interval = setInterval(() => {
+      setTrainingProgress((prev) => {
+        if (prev >= 100) {
+          clearInterval(interval);
+          return 100;
+        }
+        return prev + 10;
+      });
+    }, 150);
   }, [canTrain]);
 
-  // Handle train completion
+  // Handle train completion & re-evaluation
   useEffect(() => {
     if (isTraining && trainingProgress >= 100) {
       setIsTraining(false);
       setIsTrained(true);
       playSuccessSound();
-      onTrainComplete(samples);
+      
+      // Perform initial evaluation immediately
+      const targetDataset = (teacherTemplate?.samples?.length > 0) ? teacherTemplate.samples : samples;
+      let hasMisclassified = false;
+      
+      const evaluated = samples.map(sample => {
+        const refDataset = (targetDataset === samples) ? samples.filter(s => s.id !== sample.id) : targetDataset;
+        if (refDataset.length === 0) return sample;
+        
+        const result = classifyKNNDetailed(sample.features, refDataset, kValue);
+        const actualThreshold = Math.min(threshold, kValue);
+        const bestVotes = (result.counts as Record<string, number>)[result.label] || 0;
+        
+        let predictedLabel = 'Chưa rõ ràng';
+        if (bestVotes >= actualThreshold) {
+          predictedLabel = result.label;
+        }
+        
+        const studentClassId = sample.sourceId;
+        const classDef = classes.find(c => c.id === studentClassId);
+        const expectedLabel = classDef ? classDef.label : sample.label;
+        
+        const isMisclassified = predictedLabel !== expectedLabel;
+        if (isMisclassified) hasMisclassified = true;
+        
+        return {
+          ...sample,
+          aiFeedback: {
+            isMisclassified,
+            predictedLabel,
+            nearestMatchThumbnail: result.nearest[0]?.thumbnail
+          }
+        };
+      });
+      
+      setSamples(evaluated);
+      
+      if (!hasMisclassified) {
+        onTrainComplete(evaluated);
+      }
     }
-  }, [isTraining, trainingProgress, samples, onTrainComplete]);
+  }, [isTraining, trainingProgress, classes, kValue, threshold, teacherTemplate, samples, onTrainComplete]);
+
+  // Re-evaluate when K or threshold changes
+  useEffect(() => {
+    if (isTrained && !isTraining) {
+      setSamples(prevSamples => {
+        let hasChanges = false;
+        const targetDataset = (teacherTemplate?.samples?.length > 0) ? teacherTemplate.samples : prevSamples;
+        
+        const evaluated = prevSamples.map(sample => {
+          const refDataset = (targetDataset === prevSamples) ? prevSamples.filter(s => s.id !== sample.id) : targetDataset;
+          if (refDataset.length === 0) return sample;
+          
+          const result = classifyKNNDetailed(sample.features, refDataset, kValue);
+          const actualThreshold = Math.min(threshold, kValue);
+          
+          const bestVotes = (result.counts as Record<string, number>)[result.label] || 0;
+          let predictedLabel = 'Chưa rõ ràng';
+          if (bestVotes >= actualThreshold) {
+            predictedLabel = result.label;
+          }
+          
+          const studentClassId = sample.sourceId;
+          const classDef = classes.find(c => c.id === studentClassId);
+          const expectedLabel = classDef ? classDef.label : sample.label;
+          
+          const isMisclassified = predictedLabel !== expectedLabel;
+          
+          const currentFeedback = sample.aiFeedback;
+          if (!currentFeedback || currentFeedback.isMisclassified !== isMisclassified || currentFeedback.predictedLabel !== predictedLabel) {
+            hasChanges = true;
+            return {
+              ...sample,
+              aiFeedback: {
+                isMisclassified,
+                predictedLabel,
+                nearestMatchThumbnail: result.nearest[0]?.thumbnail
+              }
+            };
+          }
+          
+          return sample;
+        });
+        
+        return hasChanges ? evaluated : prevSamples;
+      });
+    }
+  }, [kValue, threshold, isTrained, isTraining]);
 
   // ══════════════════════════════════════
   // PREDICTION LOOP
@@ -1049,20 +1146,32 @@ export default function TeachPanel({
               </div>
             </div>
           ) : (
-            <button
-              onClick={handleTrain}
-              disabled={!canTrain || isTrained}
-              className={`w-full font-extrabold py-3.5 px-6 rounded-2xl shadow-lg border-b-4 flex items-center justify-center gap-2 text-lg transition-all ${
-                canTrain && !isTrained
-                  ? 'bg-emerald-500 hover:bg-emerald-600 border-emerald-700 text-white'
-                  : 'bg-gray-300 border-gray-400 text-gray-500 cursor-not-allowed'
-              }`}
-            >
-              <Brain className="w-6 h-6" />
-              <span>
-                {isTrained ? 'ĐÃ DẠY XONG ✅' : 'Dạy bạn AI học 🧠'}
-              </span>
-            </button>
+            <div className="flex flex-col gap-2">
+              <button
+                onClick={handleTrain}
+                disabled={!canTrain || isTrained}
+                className={`w-full font-extrabold py-3.5 px-6 rounded-2xl shadow-lg border-b-4 flex items-center justify-center gap-2 text-lg transition-all ${
+                  canTrain && !isTrained
+                    ? 'bg-emerald-500 hover:bg-emerald-600 border-emerald-700 text-white'
+                    : 'bg-gray-300 border-gray-400 text-gray-500 cursor-not-allowed'
+                }`}
+              >
+                <Brain className="w-6 h-6" />
+                <span>
+                  {isTrained ? 'ĐÃ DẠY XONG ✅' : 'Dạy bạn AI học 🧠'}
+                </span>
+              </button>
+              
+              {isTrained && (
+                <button
+                  onClick={() => setShowFeedbackModal(true)}
+                  className="w-full font-extrabold py-3 px-6 rounded-2xl shadow-md border-b-4 bg-indigo-100 hover:bg-indigo-200 border-indigo-300 text-indigo-700 flex items-center justify-center gap-2 text-base transition-all"
+                >
+                  <span className="text-xl">📊</span>
+                  <span>Xem Phân Tích Tổng Thể</span>
+                </button>
+              )}
+            </div>
           )}
         </div>
       </div>
@@ -1187,24 +1296,14 @@ export default function TeachPanel({
         onClose={() => setShowFeedbackModal(false)}
         onProceed={() => {
           setShowFeedbackModal(false);
-          setIsTraining(true);
-          setTrainingProgress(0);
-
-          const interval = setInterval(() => {
-            setTrainingProgress((prev) => {
-              if (prev >= 100) {
-                clearInterval(interval);
-                return 100;
-              }
-              return prev + 10;
-            });
-          }, 150);
+          onTrainComplete(samples);
         }}
         studentSamples={samples}
         teacherTemplate={teacherTemplate}
         kValue={kValue}
         threshold={threshold}
         classes={classes}
+        onDeleteSample={deleteSample}
       />
     </div>
   );

@@ -96,6 +96,7 @@ export default function DataCollector({
     let failCount = 0;
 
     for (const img of processedImages) {
+      const rawThumb = img.thumbnailBase64;
       const results = await detect(img.canvas);
       
       let features: number[] | null = null;
@@ -166,7 +167,7 @@ export default function DataCollector({
           sourceId: activeClassId,
           features,
           thumbnail: img.thumbnailBase64,
-          rawThumbnail: img.thumbnailBase64,
+          rawThumbnail: rawThumb,
           isValid: true,
           quality,
         });

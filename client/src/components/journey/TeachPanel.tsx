@@ -256,8 +256,10 @@ export default function TeachPanel({
     cv.width = 240;
     cv.height = 240;
     const ctx = cv.getContext('2d');
+    let rawThumbnail = '';
     if (ctx && videoRef.current) {
       ctx.drawImage(videoRef.current, 0, 0, 240, 240);
+      rawThumbnail = cv.toDataURL('image/jpeg', 0.8);
       
       if (hands && hands.length > 0) {
         hands.forEach((hand, idx) => {
@@ -283,6 +285,7 @@ export default function TeachPanel({
     }
     return {
       thumbnail: cv.toDataURL('image/jpeg', 0.8),
+      rawThumbnail,
       canvas: cv
     };
   }, [videoRef]);
@@ -315,7 +318,7 @@ export default function TeachPanel({
       if (!kps || kps.length < 468) return;
 
       const features = normalizeFaceFeatures(kps);
-      const { thumbnail, canvas } = getVideoThumbAndCanvas(undefined, faces);
+      const { thumbnail, rawThumbnail, canvas } = getVideoThumbAndCanvas(undefined, faces);
       const activeClassLabel =
         classes.find((c) => c.id === activeClass)?.label || activeClass;
 
@@ -349,6 +352,7 @@ export default function TeachPanel({
             features,
             sourceId: activeClass,
             thumbnail,
+            rawThumbnail,
             isValid: validation.isValid,
             quality,
           },
@@ -372,7 +376,7 @@ export default function TeachPanel({
         if (activeClass === 'class_4') knnLabel = classes[1]?.label || activeClassLabel;
       }
 
-      const { thumbnail, canvas } = getVideoThumbAndCanvas(hands, undefined);
+      const { thumbnail, rawThumbnail, canvas } = getVideoThumbAndCanvas(hands, undefined);
       const expectedFingers = getExpectedFingerCount(activeClass, mode);
 
       // Pick golden dataset based on mode
@@ -493,6 +497,7 @@ export default function TeachPanel({
             features,
             sourceId: activeClass,
             thumbnail,
+            rawThumbnail,
             isValid,
             quality,
           });

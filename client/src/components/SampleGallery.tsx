@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Trash2, AlertTriangle, Eye, X, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Trash2, AlertTriangle, Eye, EyeOff, X, ChevronLeft, ChevronRight } from 'lucide-react';
 import { StoredSample } from '@/lib/knn-classifier';
 
 interface SampleGalleryProps {
@@ -140,7 +140,7 @@ export default function SampleGallery({ samples, onDeleteSample, onClearAll }: S
                 className="absolute top-16 right-4 p-2 bg-white hover:bg-gray-100 rounded-full text-indigo-600 shadow-md border border-indigo-200 transition-colors z-10 flex items-center gap-2"
                 title={showSkeleton ? "Ẩn nét vẽ AI" : "Hiện nét vẽ AI"}
               >
-                {showSkeleton ? <Eye className="w-5 h-5 text-indigo-600" /> : <Eye className="w-5 h-5 text-gray-400" />}
+                {showSkeleton ? <Eye className="w-5 h-5 text-indigo-600" /> : <EyeOff className="w-5 h-5 text-gray-400" />}
               </button>
             )}
 

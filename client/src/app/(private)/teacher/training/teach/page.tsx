@@ -59,9 +59,13 @@ function countExtendedFingers(keypoints: HandKeypoint[]): number {
   const thumbDistIP = Math.abs(thumbIP.x - wrist.x);
   const thumbDistMCP = Math.abs(thumbMCP.x - wrist.x);
   // Ngón cái duỗi khi TIP xa hơn cả IP và IP xa hơn MCP đáng kể
+  // Bỏ qua ngón cái (thumb) vì việc phát hiện ngón cái cụp/xòe rất thiếu ổn định
+  // Tạm comment logic đếm ngón cái
+  /*
   if (thumbDistTip > thumbDistIP && thumbDistIP > thumbDistMCP * 1.1) {
     count++;
   }
+  */
 
   // Ngón trỏ đến ngón út: so sánh TIP vs PIP theo khoảng cách từ wrist
   // Ngón duỗi khi TIP ở xa wrist hơn PIP
@@ -206,50 +210,32 @@ export default function TeacherTeachPage() {
           if (expectedFingers > 0) {
             const detectedFingers = countExtendedFingers(hands[handIndex].keypoints);
             if (detectedFingers >= 0) {
-              // Cho phép sai lệch ±0 ngón (phải chính xác)
-              // Nhưng bỏ qua ngón cái (thumb) - chỉ so sánh ngón trỏ + giữa
-              // detectedFingers bao gồm cả thumb, nên:
-              //   - "1 ngón" (index only): detectedFingers thường = 1 (không thumb) hoặc 2 (có thumb)
-              //   - "2 ngón" (index + middle): detectedFingers thường = 2 hoặc 3 (có thumb)
-              // → Dùng khoảng cho phép: expected ± 1 (vì thumb detection không ổn định)
-              if (Math.abs(detectedFingers - expectedFingers) > 1) {
+              // Bỏ qua ngón cái khi đếm, nên bây giờ có thể so sánh chính xác số ngón
+              if (detectedFingers !== expectedFingers) {
                 isValid = false;
                 rejectedAny = true;
-                rejectionMsg = `Bạn đang giơ ${detectedFingers} ngón tay, nhưng nhãn "${activeClassLabel}" cần ${expectedFingers} ngón! 🖐️`;
+                rejectionMsg = `Bạn đang giơ ${detectedFingers} ngón tay chính, nhưng nhãn "${activeClassLabel}" cần ${expectedFingers} ngón! 🖐️`;
               }
             }
           }
 
-          // Validation 2: So sánh khoảng cách với golden dataset
+          // Validation 2: So sánh khoảng cách với golden dataset bằng KNN chuẩn
           // Chỉ chạy nếu validation 1 pass
-          if (isValid && goldenCurrentClass.length > 0 && goldenOtherClasses.length > 0) {
-            const avgDistToCorrect = goldenCurrentClass.reduce((sum, g) => {
-              let d = 0;
-              for (let i = 0; i < Math.min(features.length, g.features.length); i++) {
-                const diff = g.features[i] - features[i]; d += diff * diff;
-              }
-              return sum + Math.sqrt(d);
-            }, 0) / goldenCurrentClass.length;
-
-            let minDistToWrong = Infinity;
-            let closestWrongLabel = '';
-            goldenOtherClasses.forEach(g => {
-              let d = 0;
-              for (let i = 0; i < Math.min(features.length, g.features.length); i++) {
-                const diff = g.features[i] - features[i]; d += diff * diff;
-              }
-              const dist = Math.sqrt(d);
-              if (dist < minDistToWrong) {
-                minDistToWrong = dist;
-                closestWrongLabel = g.expectedLabel;
-              }
-            });
-
-            // Tăng ngưỡng từ 0.85 lên 0.9 để chặt hơn
-            if (minDistToWrong < avgDistToCorrect * 0.9) {
+          if (isValid && GOLDEN_TEST_DATASET.length > 0) {
+            const mappedGolden = GOLDEN_TEST_DATASET.map(g => ({
+              label: g.expectedLabel,
+              features: g.features
+            }));
+            
+            const result = classifyKNN(features, mappedGolden, 3);
+            const flippedFeatures = features.map((v, i) => i % 2 === 0 ? -v : v);
+            const flippedResult = classifyKNN(flippedFeatures, mappedGolden, 3);
+            
+            if (result.label !== goldenLabel && flippedResult.label !== goldenLabel) {
               isValid = false;
               rejectedAny = true;
-              rejectionMsg = `Cử chỉ này trông giống "${closestWrongLabel}" hơn là "${activeClassLabel}"! Bạn thử lại nhé? 🤔`;
+              const finalResult = result.confidence >= flippedResult.confidence ? result : flippedResult;
+              rejectionMsg = `Cử chỉ này trông giống "${finalResult.label}" hơn là "${activeClassLabel}"! Bạn thử lại nhé? 🤔`;
             }
           }
 

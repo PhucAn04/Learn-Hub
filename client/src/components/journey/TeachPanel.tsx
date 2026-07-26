@@ -429,7 +429,6 @@ export default function TeachPanel({
           
           // Ưu tiên 1: Nếu ảnh mờ/tối, bỏ qua việc kiểm tra xương (tránh ảo giác)
           if (quality.isBlurry || quality.isDark) {
-            isValid = false;
             rejectedAny = true;
             rejectionMsg = quality.isBlurry 
               ? 'Ảnh hơi mờ! Bé cố gắng giữ chắc tay nhé 🔍' 

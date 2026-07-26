@@ -8,7 +8,7 @@ import { drawBodySkeleton } from '@/lib/body-drawing';
 import { normalizeBodyKeypoints } from '@/lib/body-pose-classifier';
 import { classifyKNN, classifyKNNDetailed, StoredSample } from '@/lib/knn-classifier';
 import { playClickSound, playSuccessSound } from '@/lib/audio';
-import { assessQuality } from '@/lib/image-quality';
+import { assessQuality, calculateROI } from '@/lib/image-quality';
 import CameraView from '@/components/CameraView';
 import DataCollector from '@/components/journey/DataCollector';
 import SampleGallery from '@/components/SampleGallery';
@@ -125,13 +125,16 @@ export default function BodyTeachPanel({
     if (ctx && videoRef.current) ctx.drawImage(videoRef.current, 0, 0, 240, 240);
     const rawThumbnail = cv.toDataURL('image/jpeg', 0.8);
     
+    // Đánh giá chất lượng TRƯỚC KHI vẽ bộ xương lên canvas
+    const roi = calculateROI(pose.keypoints as any, cv.width, cv.height, 0.1);
+    const quality = assessQuality(cv, roi);
+    
     if (ctx && pose.keypoints && videoRef.current) {
         drawBodySkeleton(ctx, pose.keypoints, videoRef.current.videoWidth, videoRef.current.videoHeight, 240, 240);
     }
     const thumbnail = cv.toDataURL('image/jpeg', 0.8);
     const activeClassLabel = classesState.find(c => c.id === activeClass)?.label || activeClass;
 
-    const quality = assessQuality(cv);
     let isBadQuality = false;
     if (quality.isBlurry || quality.isDark) {
       isBadQuality = true;
@@ -250,7 +253,9 @@ export default function BodyTeachPanel({
         const classDef = classesState.find(c => c.id === studentClassId);
         const expectedLabel = classDef ? classDef.label : sample.label;
         
-        const isMisclassified = predictedLabel !== expectedLabel;
+        const isMisclassified = (sample.quality?.isBlurry || sample.quality?.isDark) 
+          ? false 
+          : predictedLabel !== expectedLabel;
         if (isMisclassified) hasMisclassified = true;
         
         return {
@@ -295,7 +300,9 @@ export default function BodyTeachPanel({
           const classDef = classesState.find(c => c.id === studentClassId);
           const expectedLabel = classDef ? classDef.label : sample.label;
           
-          const isMisclassified = predictedLabel !== expectedLabel;
+          const isMisclassified = (sample.quality?.isBlurry || sample.quality?.isDark)
+            ? false
+            : predictedLabel !== expectedLabel;
           
           const currentFeedback = sample.aiFeedback;
           if (!currentFeedback || currentFeedback.isMisclassified !== isMisclassified || currentFeedback.predictedLabel !== predictedLabel) {

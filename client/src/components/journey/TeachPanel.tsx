@@ -26,7 +26,7 @@ import {
   StoredSample,
   HandKeypoint,
 } from '@/lib/knn-classifier';
-import { assessQuality } from '@/lib/image-quality';
+import { assessQuality, calculateROI } from '@/lib/image-quality';
 import KnnScatterPlot from './KnnScatterPlot';
 import { GOLDEN_TEST_DATASET, GoldenTestSample } from '@/lib/golden-dataset';
 import { playClickSound, playSuccessSound } from '@/lib/audio';
@@ -257,10 +257,17 @@ export default function TeachPanel({
     cv.width = 240;
     cv.height = 240;
     const ctx = cv.getContext('2d');
+    
+    const rawCv = document.createElement('canvas');
+    rawCv.width = 240;
+    rawCv.height = 240;
+    const rawCtx = rawCv.getContext('2d');
+    
     let rawThumbnail = '';
-    if (ctx && videoRef.current) {
-      ctx.drawImage(videoRef.current, 0, 0, 240, 240);
-      rawThumbnail = cv.toDataURL('image/jpeg', 0.8);
+    if (ctx && rawCtx && videoRef.current) {
+      rawCtx.drawImage(videoRef.current, 0, 0, 240, 240);
+      ctx.drawImage(rawCv, 0, 0); // copy raw to cv
+      rawThumbnail = rawCv.toDataURL('image/jpeg', 0.8);
       
       if (hands && hands.length > 0) {
         hands.forEach((hand, idx) => {
@@ -287,7 +294,8 @@ export default function TeachPanel({
     return {
       thumbnail: cv.toDataURL('image/jpeg', 0.8),
       rawThumbnail,
-      canvas: cv
+      canvas: cv,
+      rawCanvas: rawCv
     };
   }, [videoRef]);
 
@@ -377,7 +385,7 @@ export default function TeachPanel({
         if (activeClass === 'class_4') knnLabel = classes[1]?.label || activeClassLabel;
       }
 
-      const { thumbnail, rawThumbnail, canvas } = getVideoThumbAndCanvas(hands, undefined);
+      const { thumbnail, rawThumbnail, canvas, rawCanvas } = getVideoThumbAndCanvas(hands, undefined);
       const expectedFingers = getExpectedFingerCount(activeClass, mode);
 
       // Pick golden dataset based on mode
@@ -404,9 +412,6 @@ export default function TeachPanel({
         let rejectedAny = false;
         let rejectionMsg = '';
 
-        // ĐÁNH GIÁ CHẤT LƯỢNG ẢNH TRƯỚC (EARLY REJECTION)
-        const quality = assessQuality(canvas);
-
         const processHand = (handIndex: number) => {
           if (
             !hands[handIndex] ||
@@ -415,7 +420,11 @@ export default function TeachPanel({
           )
             return;
 
-          const features = normalizeHandKeypoints(hands[handIndex].keypoints!);
+          const keypoints = hands[handIndex].keypoints!;
+          const roi = calculateROI(keypoints as any, rawCanvas.width, rawCanvas.height, 0.1);
+          const quality = assessQuality(rawCanvas, roi);
+
+          const features = normalizeHandKeypoints(keypoints);
           let isValid = true;
           
           // Ưu tiên 1: Nếu ảnh mờ/tối, bỏ qua việc kiểm tra xương (tránh ảo giác)
@@ -445,19 +454,14 @@ export default function TeachPanel({
               goldenCurrentClass.length > 0 &&
               goldenOtherClasses.length > 0
             ) {
-              const avgDistToCorrect =
-                goldenCurrentClass.reduce((sum, g) => {
-                  let d = 0;
-                  for (
-                    let i = 0;
-                    i < Math.min(features.length, g.features.length);
-                    i++
-                  ) {
-                    const diff = g.features[i] - features[i];
-                    d += diff * diff;
-                  }
-                  return sum + Math.sqrt(d);
-                }, 0) / goldenCurrentClass.length;
+              const minDistToCorrect = goldenCurrentClass.reduce((min, g) => {
+                let d = 0;
+                for (let i = 0; i < Math.min(features.length, g.features.length); i++) {
+                  const diff = g.features[i] - features[i];
+                  d += diff * diff;
+                }
+                return Math.min(min, Math.sqrt(d));
+              }, Infinity);
 
               let minDistToWrong = Infinity;
               let closestWrongLabel = '';
@@ -484,7 +488,7 @@ export default function TeachPanel({
               });
 
               const threshold = mode === 'gesture' ? 0.7 : 0.9;
-              if (minDistToWrong < avgDistToCorrect * threshold) {
+              if (minDistToWrong < minDistToCorrect * threshold) {
                 isValid = false;
                 rejectedAny = true;
                 rejectionMsg = `Cử chỉ này trông giống "${closestWrongLabel}" hơn! Bé thử lại nhé? 🤔`;
@@ -620,7 +624,9 @@ export default function TeachPanel({
         const classDef = classes.find(c => c.id === studentClassId);
         const expectedLabel = classDef ? classDef.label : sample.label;
         
-        const isMisclassified = predictedLabel !== expectedLabel;
+        const isMisclassified = (sample.quality?.isBlurry || sample.quality?.isDark) 
+          ? false 
+          : predictedLabel !== expectedLabel;
         if (isMisclassified) hasMisclassified = true;
         
         return {
@@ -665,7 +671,9 @@ export default function TeachPanel({
           const classDef = classes.find(c => c.id === studentClassId);
           const expectedLabel = classDef ? classDef.label : sample.label;
           
-          const isMisclassified = predictedLabel !== expectedLabel;
+          const isMisclassified = (sample.quality?.isBlurry || sample.quality?.isDark)
+            ? false
+            : predictedLabel !== expectedLabel;
           
           const currentFeedback = sample.aiFeedback;
           if (!currentFeedback || currentFeedback.isMisclassified !== isMisclassified || currentFeedback.predictedLabel !== predictedLabel) {

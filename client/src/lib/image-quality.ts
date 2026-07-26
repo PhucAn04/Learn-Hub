@@ -1,23 +1,69 @@
+export interface ROI {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+export function calculateROI(
+  keypoints: { x: number; y: number }[],
+  canvasWidth: number,
+  canvasHeight: number,
+  paddingPercent: number = 0.1
+): ROI | undefined {
+  if (!keypoints || keypoints.length === 0) return undefined;
+
+  let minX = 1, minY = 1, maxX = 0, maxY = 0;
+
+  for (const kp of keypoints) {
+    if (kp.x < minX) minX = kp.x;
+    if (kp.y < minY) minY = kp.y;
+    if (kp.x > maxX) maxX = kp.x;
+    if (kp.y > maxY) maxY = kp.y;
+  }
+
+  const width = maxX - minX;
+  const height = maxY - minY;
+
+  const padX = width * paddingPercent;
+  const padY = height * paddingPercent;
+
+  minX = Math.max(0, minX - padX);
+  minY = Math.max(0, minY - padY);
+  maxX = Math.min(1, maxX + padX);
+  maxY = Math.min(1, maxY + padY);
+
+  return {
+    x: Math.floor(minX * canvasWidth),
+    y: Math.floor(minY * canvasHeight),
+    w: Math.floor((maxX - minX) * canvasWidth),
+    h: Math.floor((maxY - minY) * canvasHeight),
+  };
+}
+
 import { SampleQualityMeta } from './knn-classifier';
 
 /**
  * Tính độ sáng trung bình của ảnh từ Canvas.
  * Chuyển mỗi pixel sang grayscale rồi lấy trung bình.
+ * Nếu có roi, chỉ tính toán trong khu vực roi.
  * @returns Giá trị 0-255 (0 = đen hoàn toàn, 255 = trắng hoàn toàn)
  */
-export function analyzeBrightness(canvas: HTMLCanvasElement): number {
+export function analyzeBrightness(canvas: HTMLCanvasElement, roi?: ROI): number {
   const ctx = canvas.getContext('2d');
   if (!ctx) return 128;
 
-  const w = canvas.width;
-  const h = canvas.height;
-  if (w === 0 || h === 0) return 128;
+  const x = roi ? Math.max(0, Math.floor(roi.x)) : 0;
+  const y = roi ? Math.max(0, Math.floor(roi.y)) : 0;
+  const w = roi ? Math.min(canvas.width - x, Math.floor(roi.w)) : canvas.width;
+  const h = roi ? Math.min(canvas.height - y, Math.floor(roi.h)) : canvas.height;
 
-  const imageData = ctx.getImageData(0, 0, w, h);
-  const data = imageData.data; // [R, G, B, A, R, G, B, A, ...]
+  if (w <= 0 || h <= 0) return 128;
+
+  const imageData = ctx.getImageData(x, y, w, h);
+  const data = imageData.data; // [R, G, B, A, ...]
 
   let sum = 0;
-  const pixelCount = w * h;
 
   // Sample every 4th pixel for performance (still accurate enough)
   const step = 4;
@@ -34,109 +80,94 @@ export function analyzeBrightness(canvas: HTMLCanvasElement): number {
 
 /**
  * Tính độ nét của ảnh bằng Laplacian Variance.
- * Áp dụng kernel Laplacian 3x3 lên ảnh grayscale, rồi tính variance.
- * Variance thấp = ít cạnh = ảnh mờ.
- * @returns Giá trị variance (thường 0-5000+). Dưới ~100 được coi là mờ.
+ * Nếu truyền roi, chỉ tính trên các pixel trong roi (Bounding Box của tay/cơ thể).
+ * @returns Điểm số Variance.
  */
-export function analyzeBlur(canvas: HTMLCanvasElement): number {
+export function analyzeBlur(canvas: HTMLCanvasElement, roi?: ROI, brightness: number = 128): { variance: number; maxLaplacian: number; isBlurry: boolean; edgeRatio: number } {
   const ctx = canvas.getContext('2d');
-  if (!ctx) return 500;
+  if (!ctx) return { variance: 0, maxLaplacian: 0, isBlurry: true, edgeRatio: 0 };
 
-  const w = canvas.width;
-  const h = canvas.height;
-  if (w < 3 || h < 3) return 500;
+  const x = roi ? Math.max(0, Math.floor(roi.x)) : 0;
+  const y = roi ? Math.max(0, Math.floor(roi.y)) : 0;
+  const w = roi ? Math.min(canvas.width - x, Math.floor(roi.w)) : canvas.width;
+  const h = roi ? Math.min(canvas.height - y, Math.floor(roi.h)) : canvas.height;
 
-  const imageData = ctx.getImageData(0, 0, w, h);
+  // Tránh lỗi khi bounding box quá nhỏ hoặc ảo
+  if (w < 3 || h < 3) return { variance: 0, maxLaplacian: 0, isBlurry: true, edgeRatio: 0 };
+
+  // Lấy ảnh của vùng ROI
+  const imageData = ctx.getImageData(x, y, w, h);
   const data = imageData.data;
 
-  // Convert to grayscale array
+  // Chuyển đổi sang grayscale
   const gray = new Float32Array(w * h);
   for (let i = 0; i < w * h; i++) {
     const idx = i * 4;
     gray[i] = data[idx] * 0.299 + data[idx + 1] * 0.587 + data[idx + 2] * 0.114;
   }
 
-  // Apply 3x3 Laplacian kernel: [0, -1, 0, -1, 4, -1, 0, -1, 0]
-  // Grid-based Maximum Variance (Giải pháp B)
-  // Chia ảnh thành lưới 4x4, tính variance cho từng ô và lấy ô có variance cao nhất.
-  // Giúp tìm ra vùng chứa bàn tay mà không bị nhiễu hạt toàn màng hình thổi phồng điểm số.
-  const gridX = 4;
-  const gridY = 4;
-  const blockW = Math.floor(w / gridX);
-  const blockH = Math.floor(h / gridY);
-  
-  let maxVariance = 0;
-  const step = 2; // Sample every 2nd pixel
+  let laplacianSum = 0;
+  let laplacianSqSum = 0;
+  let validPixels = 0;
+  let maxLaplacian = 0;
 
-  for (let gy = 0; gy < gridY; gy++) {
-    for (let gx = 0; gx < gridX; gx++) {
-      let sum = 0;
-      let sumSq = 0;
-      let count = 0;
+  const step = 2; // Sample every 2nd pixel to save CPU
 
-      const startY = Math.max(1, gy * blockH);
-      const endY = Math.min(h - 1, (gy + 1) * blockH);
-      const startX = Math.max(1, gx * blockW);
-      const endX = Math.min(w - 1, (gx + 1) * blockW);
+  for (let row = 1; row < h - 1; row += step) {
+    for (let col = 1; col < w - 1; col += step) {
+      const idx = row * w + col;
 
-      for (let y = startY; y < endY; y += step) {
-        for (let x = startX; x < endX; x += step) {
-          const idx = y * w + x;
-          let laplacian =
-            -gray[idx - w]     // top
-            - gray[idx - 1]    // left
-            + 4 * gray[idx]    // center
-            - gray[idx + 1]    // right
-            - gray[idx + w];   // bottom
+      let laplacian =
+        - gray[idx - w]     // top
+        - gray[idx - 1]     // left
+        + 4 * gray[idx]     // center
+        - gray[idx + 1]     // right
+        - gray[idx + w];    // bottom
 
-          // [QUAN TRỌNG] Bộ lọc triệt tiêu nhiễu và viền nhòe
-          // Nếu ảnh bị mờ do rung tay, sự chuyển màu ở viền sẽ thoai thoải -> laplacian rất nhỏ (VD: 5-10)
-          // Nếu có nhiễu hạt (noise), chênh lệch cũng nhỏ.
-          // Ta ép tất cả về 0, để kéo sập điểm variance của ảnh mờ, nhưng vẫn giữ nguyên điểm của viền sắc nét.
-          if (Math.abs(laplacian) < 15) {
-            laplacian = 0;
-          }
-
-          sum += laplacian;
-          sumSq += laplacian * laplacian;
-          count++;
-        }
+      const absLap = Math.abs(laplacian);
+      if (absLap > maxLaplacian) {
+        maxLaplacian = absLap;
       }
 
-      if (count > 0) {
-        const mean = sum / count;
-        const variance = (sumSq / count) - (mean * mean);
-        if (variance > maxVariance) {
-          maxVariance = variance;
-        }
-      }
+      // KHÔNG triệt tiêu nhiễu (noise suppression) nữa!
+      // Bề mặt da nét có rất nhiều micro-texture (lỗ chân lông, nhiễu camera). 
+      // Khi ảnh mờ (motion blur), các micro-texture này bị san phẳng thành Laplacian = 0.
+      // Việc giữ lại các giá trị nhỏ này giúp Variance của ảnh NÉT lớn hơn hẳn ảnh MỜ.
+      laplacianSum += laplacian;
+      laplacianSqSum += laplacian * laplacian;
+      validPixels++;
     }
   }
 
-  return maxVariance;
+  if (validPixels === 0) return { variance: 0, maxLaplacian: 0, isBlurry: true, edgeRatio: 0 };
+
+  const mean = laplacianSum / validPixels;
+  const variance = Math.max(0, (laplacianSqSum / validPixels) - (mean * mean));
+  
+  // Dynamic Threshold
+  const THRESH_SHARP_ROI = brightness > 80 ? 250 : 120;
+  
+  const isBlurry = variance < THRESH_SHARP_ROI || maxLaplacian < 80;
+
+  return { variance, maxLaplacian, isBlurry, edgeRatio: 0 };
 }
 
 /**
- * Đánh giá tổng thể chất lượng ảnh.
- * Chỉ GẮN TAG metadata, KHÔNG chặn người dùng lưu ảnh.
+ * Đánh giá tổng thể chất lượng ảnh trong một vùng ROI.
  */
-export function assessQuality(canvas: HTMLCanvasElement): SampleQualityMeta {
-  const brightness = analyzeBrightness(canvas);
-  const blurScore = analyzeBlur(canvas);
+export function assessQuality(canvas: HTMLCanvasElement, roi?: ROI): SampleQualityMeta {
+  const brightness = analyzeBrightness(canvas, roi);
+  const blurResult = analyzeBlur(canvas, roi, brightness);
 
   const quality = {
     brightness,
-    blurScore,
+    blurScore: blurResult.variance,
     isDark: brightness < 60,
     isBright: brightness > 200,
-    // Căn chỉnh theo kết quả thực tế:
-    // Nét (sáng 101.8): ~555
-    // Mờ (tối 73.4): ~351
-    // Dùng dynamic threshold: ảnh tối nhiều nhiễu -> ngưỡng cao hơn (450), ảnh sáng -> ngưỡng thấp hơn (400)
-    isBlurry: blurScore < (brightness < 85 ? 450 : 400), 
+    isBlurry: blurResult.isBlurry, 
   };
 
-  console.log(`[Quality Check Grid] Brightness: ${brightness.toFixed(1)} | Blur Max Score: ${blurScore.toFixed(1)} => isBlurry: ${quality.isBlurry}`);
+  console.log(`[Quality FINAL] Bright: ${brightness.toFixed(1)} | Var: ${blurResult.variance.toFixed(1)} | MaxLap: ${blurResult.maxLaplacian.toFixed(1)} => isBlurry: ${quality.isBlurry}`);
   
   return quality;
 }

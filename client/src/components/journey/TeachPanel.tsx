@@ -1063,6 +1063,7 @@ export default function TeachPanel({
           samples={samples.filter((s) => s.sourceId === activeClass)}
           onDeleteSample={deleteSample}
           onClearAll={() => clearClassSamples(activeClass)}
+          isTrained={isTrained}
         />
 
         {/* Validation toast */}

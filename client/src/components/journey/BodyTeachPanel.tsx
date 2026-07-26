@@ -443,6 +443,7 @@ export default function BodyTeachPanel({
             samples={samples.filter((s) => s.sourceId === activeClass || (s.label === (classesState.find(c => c.id === activeClass)?.label || activeClass) && !s.sourceId))}
             onDeleteSample={(id) => setSamples(prev => prev.filter(s => s.id !== id))}
             onClearAll={() => handleClearClass(activeClass)}
+            isTrained={isTrained}
           />
 
           {validationToast && (

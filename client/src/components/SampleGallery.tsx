@@ -8,9 +8,10 @@ interface SampleGalleryProps {
   samples: StoredSample[];
   onDeleteSample: (id: string) => void;
   onClearAll: () => void;
+  isTrained?: boolean;
 }
 
-export default function SampleGallery({ samples, onDeleteSample, onClearAll }: SampleGalleryProps) {
+export default function SampleGallery({ samples, onDeleteSample, onClearAll, isTrained = false }: SampleGalleryProps) {
   const [previewIndex, setPreviewIndex] = useState<number | null>(null);
   const [showSkeleton, setShowSkeleton] = useState(true);
 
@@ -137,7 +138,7 @@ export default function SampleGallery({ samples, onDeleteSample, onClearAll }: S
             {previewSample.rawThumbnail && (
               <button
                 onClick={() => setShowSkeleton(!showSkeleton)}
-                className="absolute top-16 right-4 p-2 bg-white hover:bg-gray-100 rounded-full text-indigo-600 shadow-md border border-indigo-200 transition-colors z-10 flex items-center gap-2"
+                className="absolute top-16 right-4 p-2 bg-white hover:bg-gray-100 rounded-full text-indigo-600 shadow-md border border-indigo-200 transition-colors z-[60] flex items-center gap-2"
                 title={showSkeleton ? "Ẩn nét vẽ AI" : "Hiện nét vẽ AI"}
               >
                 {showSkeleton ? <Eye className="w-5 h-5 text-indigo-600" /> : <EyeOff className="w-5 h-5 text-gray-400" />}
@@ -145,26 +146,53 @@ export default function SampleGallery({ samples, onDeleteSample, onClearAll }: S
             )}
 
             {/* Large image preview */}
-            <div className={`relative rounded-2xl overflow-hidden border-4 ${
-              (previewSample.quality?.isBlurry || previewSample.quality?.isDark)
-                ? 'border-yellow-500 shadow-[0_0_15px_rgba(234,179,8,0.3)]'
-                : previewSample.isValid === false 
-                ? 'border-red-500' 
-                : 'border-gray-200'
-            } mb-4 bg-slate-900`}>
-              {previewSample.thumbnail ? (
-                <img 
-                  src={(showSkeleton || !previewSample.rawThumbnail) ? previewSample.thumbnail : previewSample.rawThumbnail} 
-                  alt="Preview" 
-                  className="w-full aspect-square object-cover" 
-                />
-              ) : (
-                <div className="w-full aspect-square flex items-center justify-center text-gray-500">Không có ảnh</div>
-              )}
+            <div className="flex gap-3 mb-4">
+              <div className={`relative flex-1 rounded-2xl overflow-hidden border-4 ${
+                (previewSample.quality?.isBlurry || previewSample.quality?.isDark)
+                  ? 'border-yellow-500 shadow-[0_0_15px_rgba(234,179,8,0.3)]'
+                  : previewSample.isValid === false 
+                  ? 'border-red-500' 
+                  : 'border-gray-200'
+              } bg-slate-900`}>
+                {isTrained && previewSample.aiFeedback?.isMisclassified && (
+                  <div className="absolute top-0 inset-x-0 bg-red-500/80 backdrop-blur-sm text-white text-xs py-1 text-center font-bold z-10 truncate shadow-sm">
+                    Ảnh của bé
+                  </div>
+                )}
+                {previewSample.thumbnail ? (
+                  <img 
+                    src={(showSkeleton || !previewSample.rawThumbnail) ? previewSample.thumbnail : previewSample.rawThumbnail} 
+                    alt="Preview" 
+                    className="w-full aspect-square object-cover" 
+                  />
+                ) : (
+                  <div className="w-full aspect-square flex items-center justify-center text-gray-500">Không có ảnh</div>
+                )}
 
-              {previewSample.isValid === false && (
-                <div className="absolute top-3 right-3 bg-red-500 text-white p-2 rounded-full shadow-lg animate-pulse">
-                  <AlertTriangle className="w-6 h-6" />
+                {previewSample.isValid === false && (
+                  <div className="absolute bottom-3 right-3 bg-red-500 text-white p-2 rounded-full shadow-lg animate-pulse z-10">
+                    <AlertTriangle className="w-5 h-5" />
+                  </div>
+                )}
+              </div>
+
+              {/* AI nearest match for misclassified */}
+              {isTrained && previewSample.isValid === false && previewSample.aiFeedback?.isMisclassified && (
+                <div className="relative flex-1 rounded-2xl overflow-hidden border-4 border-indigo-400 bg-slate-900 shadow-inner">
+                  <div className="absolute top-0 inset-x-0 bg-indigo-500/80 backdrop-blur-sm text-white text-xs py-1 text-center font-bold z-10 truncate shadow-sm">
+                    Mẫu ({previewSample.aiFeedback.predictedLabel})
+                  </div>
+                  {previewSample.aiFeedback.nearestMatchThumbnail ? (
+                    <img 
+                      src={previewSample.aiFeedback.nearestMatchThumbnail} 
+                      className="w-full aspect-square object-cover" 
+                      alt="Nearest match"
+                    />
+                  ) : (
+                    <div className="w-full aspect-square flex items-center justify-center text-xs text-indigo-400 font-bold bg-indigo-50/5">
+                      Không có mẫu
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -183,14 +211,24 @@ export default function SampleGallery({ samples, onDeleteSample, onClearAll }: S
                     Bé nên xóa tấm này và chụp lại tấm khác nét hơn để AI học tốt nhất nhé!
                   </p>
                 </div>
+              ) : (isTrained && previewSample.aiFeedback?.isMisclassified) ? (
+                <div className="p-4 rounded-xl border-2 bg-red-50 border-red-300 mb-4">
+                  <div className="flex items-center gap-2 font-extrabold text-red-700 text-sm">
+                    <AlertTriangle className="w-5 h-5" />
+                    <span>AI đã nhầm lẫn ảnh này!</span>
+                  </div>
+                  <p className="text-xs text-red-600 mt-2 font-semibold leading-relaxed">
+                    Ảnh này quá giống với mẫu của nhóm <span className="font-bold">"{previewSample.aiFeedback.predictedLabel}"</span> nên AI đã đoán sai. Bé hãy XÓA đi và chụp lại góc khác nhé!
+                  </p>
+                </div>
               ) : (
                 <div className="p-4 rounded-xl border-2 bg-red-50 border-red-300 mb-4">
                   <div className="flex items-center gap-2 font-extrabold text-red-700 text-sm">
                     <AlertTriangle className="w-5 h-5" />
-                    <span>AI nghĩ ảnh này KHÔNG ĐÚNG nhãn!</span>
+                    <span>Ảnh chưa đạt chuẩn!</span>
                   </div>
                   <p className="text-xs text-red-600 mt-2 font-semibold leading-relaxed">
-                    Bạn AI đã xem ảnh này và thấy nó không giống với nhãn &quot;{previewSample.label}&quot; mà bé đang dạy.
+                    Bạn AI đã xem ảnh này và thấy nó không giống với nhãn "{previewSample.label}" mà bé đang dạy.
                     Bé nên xóa ảnh này đi và chụp lại cho đúng nhé! 🤗
                   </p>
                 </div>

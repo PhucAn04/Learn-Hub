@@ -11,6 +11,8 @@ import ScoreHeader from '@/components/ScoreHeader';
 import CameraView from '@/components/CameraView';
 import MatchProgressBar from '@/components/MatchProgressBar';
 import { api } from '@/lib/api';
+import { TfTrainer } from '@/lib/tf-trainer';
+import { normalizeHandKeypoints } from '@/lib/knn-classifier';
 
 export default function FingersChallenge() {
   const [targetCount, setTargetCount] = useState<number>(3); // start with 3
@@ -40,7 +42,35 @@ export default function FingersChallenge() {
     setTargetCount(nextNum);
   };
 
+  // Load custom Neural Network model from user's "teach" dataset
+  const trainerRef = useRef<TfTrainer | null>(null);
+  const [isLoadingModel, setIsLoadingModel] = useState(true);
+
   useEffect(() => {
+    const fetchMyModel = async () => {
+      try {
+        const datasets = await api.getMyDatasets('teach');
+        if (datasets && datasets.length > 0) {
+          const fileRes = await api.getDatasetFile(datasets[0].id);
+          let loadedSamples: any[] = [];
+          if (fileRes && fileRes.data && Array.isArray(fileRes.data)) {
+            loadedSamples = fileRes.data;
+          } else if (fileRes && Array.isArray(fileRes.samples)) {
+            loadedSamples = fileRes.samples;
+          }
+          
+          if (loadedSamples.length > 0) {
+            trainerRef.current = new TfTrainer();
+            await trainerRef.current.train(loadedSamples);
+          }
+        }
+      } catch (err) {
+        console.error('Failed to fetch teach model', err);
+      } finally {
+        setIsLoadingModel(false);
+      }
+    };
+    fetchMyModel();
   }, []);
 
   // Fetch leaderboard on mount and score change
@@ -88,8 +118,19 @@ export default function FingersChallenge() {
                 jointColor2: '#60a5fa',
               });
 
-              // Count fingers using helper utility
-              const count = calculateFingers(kps);
+              // Count fingers using helper utility (Heuristic)
+              let count = calculateFingers(kps);
+
+              // Override with Neural Network if available and applicable (it was only trained for 1 and 2 fingers)
+              if (trainerRef.current && (count === 1 || count === 2 || count === 0)) {
+                 const features = normalizeHandKeypoints(kps);
+                 const pred = trainerRef.current.predict(features);
+                 if (pred) {
+                   if (pred.label === 'class_1') count = 1;
+                   if (pred.label === 'class_2') count = 2;
+                 }
+              }
+
               setDetectedCount(count);
             }
           } else {
@@ -194,9 +235,9 @@ export default function FingersChallenge() {
             <CameraView
               videoRef={videoRef}
               canvasRef={canvasRef}
-              modelStatus={modelStatus}
+              modelStatus={isLoadingModel ? 'loading' : modelStatus}
               cameraError={cameraError}
-              loadingText="ĐANG KHỞI ĐỘNG CAMERA AI..."
+              loadingText={isLoadingModel ? "ĐANG TẢI AI MÀ BÉ VỪA DẠY..." : "ĐANG KHỞI ĐỘNG CAMERA AI..."}
               hudText={hudText}
               theme="blue"
               onRetry={retryCamera}

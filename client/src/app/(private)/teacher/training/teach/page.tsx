@@ -14,8 +14,8 @@ import { GOLDEN_TEST_DATASET } from '@/lib/golden-dataset';
 import CameraView from '@/components/CameraView';
 import SampleGallery from '@/components/SampleGallery';
 import DataCollector from '@/components/journey/DataCollector';
+import { TfTrainer } from '@/lib/tf-trainer';
 import { uploadSamplesToCloudinary, isCloudinaryConfigured } from '@/lib/cloudinary';
-
 // Predefined classes for teaching
 const CLASSES = [
   { id: 'class_1', label: '1 Ngón Tay ☝️', voicePrompt: 'Hãy dạy bạn A I nhận biết một ngón tay nhé!' },
@@ -136,6 +136,12 @@ export default function TeacherTeachPage() {
   const toastTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [showUnlockCelebration, setShowUnlockCelebration] = useState(false);
   const prevUnlockedRef = useRef(false);
+
+  const trainerRef = useRef<TfTrainer | null>(null);
+
+  useEffect(() => {
+    trainerRef.current = new TfTrainer();
+  }, []);
 
   // Challenge Stages
 
@@ -306,8 +312,8 @@ export default function TeacherTeachPage() {
     speakEnglish('All data cleared. Start collecting again!');
   };
 
-  // Run mock training simulation
-  const handleTrain = () => {
+  // Run real model training
+  const handleTrain = async () => {
     const c1 = samples.filter(s => s.sourceId === 'class_1' || (s.label === CLASSES[0].label && !s.sourceId)).length;
     const c2 = samples.filter(s => s.sourceId === 'class_2' || (s.label === CLASSES[1].label && !s.sourceId)).length;
     if (c1 < 10 || c2 < 10) {
@@ -319,40 +325,43 @@ export default function TeacherTeachPage() {
     setIsTraining(true);
     setTrainingProgress(0);
 
-    const interval = setInterval(() => {
-      setTrainingProgress(prev => {
-        if (prev >= 100) {
-          clearInterval(interval);
-          setIsTraining(false);
-          setIsTrained(true);
-          playSuccessSound();
-          speakEnglish('Learning complete. Let us test!');
-          return 100;
-        }
-        return prev + 10;
-      });
-    }, 150);
+    try {
+      if (trainerRef.current) {
+        await trainerRef.current.train(samples, (epoch, progress, loss, acc) => {
+          setTrainingProgress(progress);
+        });
+        
+        setIsTraining(false);
+        setIsTrained(true);
+        playSuccessSound();
+        speakEnglish('Learning complete. Let us test!');
+      }
+    } catch (err) {
+      console.error('Training failed', err);
+      setIsTraining(false);
+      alert('Quá trình huấn luyện thất bại. Xem console log.');
+    }
   };
 
   // Prediction loop
   useEffect(() => {
-    if (!isTrained || modelStatus !== 'ready') return;
+    if (!isTrained || modelStatus !== 'ready' || !trainerRef.current) return;
 
     let rafId: number;
 
-    const runPrediction = () => {
+    const runPrediction = async () => {
       const hands = handsRef.current;
       
       if (hands && hands.length > 0) {
         if (hands.length >= 2 && false) { // Two-hand mode disabled
-          // Dual Hand Prediction logic: classify both hands and count total fingers
+          // Dual Hand Prediction logic
           const hand1 = hands[0];
           const hand2 = hands[1];
           const f1 = normalizeHandKeypoints(hand1?.keypoints || []);
           const f2 = normalizeHandKeypoints(hand2?.keypoints || []);
 
-          const pred1 = classifyKNN(f1, samples, 3);
-          const pred2 = classifyKNN(f2, samples, 3);
+          const pred1 = await trainerRef.current!.predict(f1);
+          const pred2 = await trainerRef.current!.predict(f2);
 
           const isHand1One = pred1.label.includes('1');
           const isHand2One = pred2.label.includes('1');
@@ -369,7 +378,7 @@ export default function TeacherTeachPage() {
           const kps = hand.keypoints;
           if (kps && kps.length >= 21) {
             const features = normalizeHandKeypoints(kps);
-            const result = classifyKNN(features, samples, 3);
+            const result = await trainerRef.current!.predict(features);
             setPredictedLabel(result.label);
             setConfidence(result.confidence);
           }

@@ -145,7 +145,8 @@ export function analyzeBlur(canvas: HTMLCanvasElement, roi?: ROI, brightness: nu
   const variance = Math.max(0, (laplacianSqSum / validPixels) - (mean * mean));
   
   // Dynamic Threshold
-  const THRESH_SHARP_ROI = brightness > 80 ? 250 : 120;
+  // Tinh chỉnh theo dữ liệu thực tế (ảnh rung nhẹ có variance ~288-306)
+  const THRESH_SHARP_ROI = brightness > 80 ? 320 : 150;
   
   const isBlurry = variance < THRESH_SHARP_ROI || maxLaplacian < 80;
 

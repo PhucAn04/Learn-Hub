@@ -14,8 +14,8 @@ import { GOLDEN_TEST_DATASET } from '@/lib/golden-dataset';
 import CameraView from '@/components/CameraView';
 import SampleGallery from '@/components/SampleGallery';
 import DataCollector from '@/components/journey/DataCollector';
+import { TfTrainer } from '@/lib/tf-trainer';
 import { uploadSamplesToCloudinary, isCloudinaryConfigured } from '@/lib/cloudinary';
-
 // Predefined classes for teaching
 const CLASSES = [
   { id: 'class_3', label: '2 Bàn Tay, 1 Ngón Tay ☝️☝️', voicePrompt: 'Hãy giơ hai bàn tay, mỗi tay một ngón nhé!' },
@@ -136,6 +136,12 @@ export default function TeacherTeachTwoHandsPage() {
   const toastTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [showUnlockCelebration, setShowUnlockCelebration] = useState(false);
   const prevUnlockedRef = useRef(false);
+
+  const trainerRef = useRef<TfTrainer | null>(null);
+
+  useEffect(() => {
+    trainerRef.current = new TfTrainer();
+  }, []);
 
   // Challenge Stages
 
@@ -282,7 +288,7 @@ export default function TeacherTeachTwoHandsPage() {
     speakEnglish(`All samples cleared`);
   };
 
-  const handleTrain = () => {
+  const handleTrain = async () => {
     const c3 = samples.filter(s => s.sourceId === 'class_3').length;
     const c4 = samples.filter(s => s.sourceId === 'class_4').length;
 
@@ -295,28 +301,31 @@ export default function TeacherTeachTwoHandsPage() {
     setIsTraining(true);
     setTrainingProgress(0);
 
-    const interval = setInterval(() => {
-      setTrainingProgress(prev => {
-        if (prev >= 100) {
-          clearInterval(interval);
-          setIsTraining(false);
-          setIsTrained(true);
-          playSuccessSound();
-          speakEnglish('Learning complete. Let us test!');
-          return 100;
-        }
-        return prev + 10;
-      });
-    }, 150);
+    try {
+      if (trainerRef.current) {
+        await trainerRef.current.train(samples, (epoch, progress, loss, acc) => {
+          setTrainingProgress(progress);
+        });
+        
+        setIsTraining(false);
+        setIsTrained(true);
+        playSuccessSound();
+        speakEnglish('Learning complete. Let us test!');
+      }
+    } catch (err) {
+      console.error('Training failed', err);
+      setIsTraining(false);
+      alert('Quá trình huấn luyện thất bại. Xem console log.');
+    }
   };
 
   // Prediction loop
   useEffect(() => {
-    if (!isTrained || modelStatus !== 'ready') return;
+    if (!isTrained || modelStatus !== 'ready' || !trainerRef.current) return;
 
     let rafId: number;
 
-    const runPrediction = () => {
+    const runPrediction = async () => {
       const hands = handsRef.current;
       
       if (hands && hands.length > 0) {
@@ -327,8 +336,8 @@ export default function TeacherTeachTwoHandsPage() {
           const f1 = normalizeHandKeypoints(hand1?.keypoints || []);
           const f2 = normalizeHandKeypoints(hand2?.keypoints || []);
 
-          const pred1 = classifyKNN(f1, samples, 3);
-          const pred2 = classifyKNN(f2, samples, 3);
+          const pred1 = await trainerRef.current!.predict(f1);
+          const pred2 = await trainerRef.current!.predict(f2);
 
           const isHand1One = pred1.label.includes('1');
           const isHand2One = pred2.label.includes('1');
@@ -345,7 +354,7 @@ export default function TeacherTeachTwoHandsPage() {
           const kps = hand.keypoints;
           if (kps && kps.length >= 21) {
             const features = normalizeHandKeypoints(kps);
-            const result = classifyKNN(features, samples, 3);
+            const result = await trainerRef.current!.predict(features);
             setPredictedLabel(result.label);
             setConfidence(result.confidence);
           }

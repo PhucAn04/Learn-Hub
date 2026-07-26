@@ -14,6 +14,7 @@ import DataCollector from '@/components/journey/DataCollector';
 import SampleGallery from '@/components/SampleGallery';
 import AIFeedbackModal from '@/components/journey/AIFeedbackModal';
 import { BodyKeypoint } from '@/types/ml5';
+import { TfTrainer } from '@/lib/tf-trainer';
 
 interface BodyTeachPanelProps {
   mode: 'body-pose';
@@ -61,6 +62,7 @@ export default function BodyTeachPanel({
   };
   const [isTraining, setIsTraining] = useState(false);
   const [isTrained, setIsTrained] = useState(false);
+  const [isModelOutdated, setIsModelOutdated] = useState(false);
   const [trainingProgress, setTrainingProgress] = useState(0);
   const [predictedLabel, setPredictedLabel] = useState('Chưa nhận diện... 🤔');
   const [validationToast, setValidationToast] = useState<string | null>(null);
@@ -70,6 +72,11 @@ export default function BodyTeachPanel({
   const [threshold, setThreshold] = useState(2);
   const [countdown, setCountdown] = useState<number | null>(null);
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
+
+  const trainerRef = useRef<TfTrainer | null>(null);
+  useEffect(() => {
+    trainerRef.current = new TfTrainer();
+  }, []);
 
   // ── Camera ──────────────────────────
   const { videoRef, canvasRef, cameraActive, cameraError, retryCamera } =
@@ -177,21 +184,21 @@ export default function BodyTeachPanel({
   // ── Prediction loop ─────────────────
   useEffect(() => {
     let interval: NodeJS.Timeout;
-    if (samples.length > 0) {
-      interval = setInterval(() => {
+    if (samples.length > 0 && trainerRef.current) {
+      interval = setInterval(async () => {
         const poses = posesRef.current || [];
         if (poses.length > 0 && poses[0].keypoints) {
           const features = normalizeBodyKeypoints(poses[0].keypoints);
           if (features && features.length > 0) {
-             const result = classifyKNN(features, samples, kValue);
-             if (result) {
-                const actualThreshold = Math.min(threshold, kValue);
-                if (result.maxCount < actualThreshold) {
+             const resultKNN = classifyKNN(features, samples, kValue);
+             const resultNN = await trainerRef.current!.predict(features);
+             if (resultKNN) {
+                if (resultNN.confidence < 50 || resultKNN.maxCount < Math.min(threshold, kValue)) {
                   setPredictedLabel('Chưa rõ ràng... 🤔');
-                  setConfidence(result.confidence);
+                  setConfidence(resultNN.confidence);
                 } else {
-                  setPredictedLabel(result.label);
-                  setConfidence(result.confidence);
+                  setPredictedLabel(resultNN.label);
+                  setConfidence(resultNN.confidence);
                 }
              }
           }
@@ -202,7 +209,7 @@ export default function BodyTeachPanel({
       }, 300);
     }
     return () => clearInterval(interval);
-  }, [samples, posesRef]);
+  }, [samples, posesRef, kValue, threshold]);
 
   // ── Actions ─────────────────────────
   const handleTrain = async () => {
@@ -214,15 +221,18 @@ export default function BodyTeachPanel({
     setIsTraining(true);
     setTrainingProgress(0);
 
-    const interval = setInterval(() => {
-      setTrainingProgress((prev) => {
-        if (prev >= 100) {
-          clearInterval(interval);
-          return 100;
-        }
-        return prev + 10;
-      });
-    }, 150);
+    try {
+      if (trainerRef.current) {
+        await trainerRef.current.train(samples, (epoch, progress) => {
+          setTrainingProgress(progress);
+        });
+        // progress reaches 100 here, which will trigger the useEffect below
+      }
+    } catch (err) {
+      console.error('Training failed', err);
+      setIsTraining(false);
+      alert('Lỗi huấn luyện mô hình. Vui lòng thử lại.');
+    }
   };
 
   // Handle train completion & re-evaluation
@@ -234,7 +244,7 @@ export default function BodyTeachPanel({
       
       // Perform initial evaluation immediately
       const targetDataset = (teacherTemplate?.samples?.length > 0) ? teacherTemplate.samples : samples;
-      let hasMisclassified = false;
+      let hasIssues = false;
       
       const evaluated = samples.map(sample => {
         const refDataset = (targetDataset === samples) ? samples.filter(s => s.id !== sample.id) : targetDataset;
@@ -256,7 +266,10 @@ export default function BodyTeachPanel({
         const isMisclassified = (sample.quality?.isBlurry || sample.quality?.isDark) 
           ? false 
           : predictedLabel !== expectedLabel;
-        if (isMisclassified) hasMisclassified = true;
+        
+        if (isMisclassified || sample.quality?.isBlurry || sample.quality?.isDark || sample.isValid === false) {
+          hasIssues = true;
+        }
         
         return {
           ...sample,
@@ -269,9 +282,12 @@ export default function BodyTeachPanel({
       });
       
       setSamples(evaluated);
+      setIsModelOutdated(false);
       
-      if (!hasMisclassified) {
+      if (!hasIssues) {
         onTrainComplete(evaluated);
+      } else {
+        setShowFeedbackModal(true);
       }
     }
   }, [isTraining, trainingProgress, classesState, kValue, threshold, teacherTemplate, samples, onTrainComplete]);
@@ -330,6 +346,7 @@ export default function BodyTeachPanel({
       const classLabel = classesState.find(c => c.id === classId)?.label || classId;
       setSamples((prev) => prev.filter((s) => s.sourceId ? s.sourceId !== classId : s.label !== classLabel));
       setIsTrained(false);
+      setIsModelOutdated(false);
     }
   };
 
@@ -441,7 +458,10 @@ export default function BodyTeachPanel({
 
           <SampleGallery
             samples={samples.filter((s) => s.sourceId === activeClass || (s.label === (classesState.find(c => c.id === activeClass)?.label || activeClass) && !s.sourceId))}
-            onDeleteSample={(id) => setSamples(prev => prev.filter(s => s.id !== id))}
+            onDeleteSample={(id) => {
+              setSamples(prev => prev.filter(s => s.id !== id));
+              setIsModelOutdated(true);
+            }}
             onClearAll={() => handleClearClass(activeClass)}
             isTrained={isTrained}
           />
@@ -466,9 +486,17 @@ export default function BodyTeachPanel({
             </div>
           ) : (
             <div className="flex flex-col gap-2">
-              <button onClick={handleTrain} disabled={!canTrain || isTrained} className={`w-full font-extrabold py-3.5 px-6 rounded-2xl shadow-lg border-b-4 flex items-center justify-center gap-2 text-lg transition-all ${canTrain && !isTrained ? 'bg-emerald-500 hover:bg-emerald-600 border-emerald-700 text-white' : 'bg-gray-300 border-gray-400 text-gray-500 cursor-not-allowed'}`}>
+              <button 
+                onClick={handleTrain} 
+                disabled={!canTrain || (isTrained && !isModelOutdated)} 
+                className={`w-full font-extrabold py-3.5 px-6 rounded-2xl shadow-lg border-b-4 flex items-center justify-center gap-2 text-lg transition-all ${
+                  canTrain && (!isTrained || isModelOutdated) 
+                    ? 'bg-emerald-500 hover:bg-emerald-600 border-emerald-700 text-white' 
+                    : 'bg-gray-300 border-gray-400 text-gray-500 cursor-not-allowed'
+                }`}
+              >
                 <Brain className="w-6 h-6" />
-                <span>{isTrained ? 'ĐÃ DẠY XONG ✅' : 'DẠY BẠN AI HỌC 🚀'}</span>
+                <span>{isModelOutdated && isTrained ? 'Cập nhật mô hình (Re-train) 🔄' : isTrained ? 'ĐÃ DẠY XONG ✅' : 'DẠY BẠN AI HỌC 🚀'}</span>
               </button>
               
               {isTrained && (
@@ -494,7 +522,10 @@ export default function BodyTeachPanel({
             activeClassLabel={classesState.find(c => c.id === activeClass)?.label || activeClass}
             activeTab={activeDataTab}
             onTabChange={setActiveDataTab}
-            onSamplesCollected={(newSamples) => { setSamples(prev => [...prev, ...newSamples]); }}
+            onSamplesCollected={(newSamples) => { 
+              setSamples(prev => [...prev, ...newSamples]); 
+              setIsModelOutdated(true);
+            }}
           >
             <CameraView
               videoRef={videoRef}

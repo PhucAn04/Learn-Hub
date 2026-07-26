@@ -11,6 +11,7 @@ import { useMl5BodyPose } from '@/hooks/useMl5BodyPose';
 import { drawBodySkeleton } from '@/lib/body-drawing';
 import { normalizeBodyKeypoints } from '@/lib/body-pose-classifier';
 import { classifyKNN, StoredSample } from '@/lib/knn-classifier';
+import { TfTrainer } from '@/lib/tf-trainer';
 import ScoreHeader from '@/components/ScoreHeader';
 import CameraView from '@/components/CameraView';
 import MatchProgressBar from '@/components/MatchProgressBar';
@@ -40,6 +41,8 @@ export default function BodyExerciseChallenge() {
   const { posesRef, modelStatus } = useMl5BodyPose(videoRef, cameraActive);
 
   // Load custom KNN model from user's "teach-body" dataset
+  const trainerRef = useRef<TfTrainer | null>(null);
+
   useEffect(() => {
     const fetchMyModel = async () => {
       try {
@@ -47,10 +50,17 @@ export default function BodyExerciseChallenge() {
         if (datasets && datasets.length > 0) {
           // get the most recent dataset
           const fileRes = await api.getDatasetFile(datasets[0].id);
+          let loadedSamples: StoredSample[] = [];
           if (fileRes && fileRes.data && Array.isArray(fileRes.data)) {
-            setSamples(fileRes.data); // data contains StoredSample[]
+            loadedSamples = fileRes.data;
           } else if (fileRes && Array.isArray(fileRes.samples)) {
-            setSamples(fileRes.samples);
+            loadedSamples = fileRes.samples;
+          }
+          
+          if (loadedSamples.length > 0) {
+            setSamples(loadedSamples);
+            trainerRef.current = new TfTrainer();
+            await trainerRef.current.train(loadedSamples);
           }
         }
       } catch (err) {
@@ -85,7 +95,7 @@ export default function BodyExerciseChallenge() {
   useEffect(() => {
     let rafId: number;
 
-    const runFrame = () => {
+    const runFrame = async () => {
       const video = videoRef.current;
       const canvas = canvasRef.current;
       if (video && canvas && modelStatus === 'ready') {
@@ -102,10 +112,10 @@ export default function BodyExerciseChallenge() {
           if (poses && poses.length > 0 && poses[0].keypoints) {
             drawBodySkeleton(ctx, poses[0].keypoints, video.videoWidth, video.videoHeight, canvas.width, canvas.height);
             
-            if (samples.length > 0) {
+            if (samples.length > 0 && trainerRef.current) {
               const features = normalizeBodyKeypoints(poses[0].keypoints);
-              const result = classifyKNN(features, samples, 3);
-              if (result && result.confidence >= 0.5) {
+              const result = await trainerRef.current.predict(features);
+              if (result && result.confidence >= 50) {
                 setDetectedPose(result.label);
               } else {
                 setDetectedPose('Không rõ');

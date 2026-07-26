@@ -35,6 +35,7 @@ import SampleGallery from '@/components/SampleGallery';
 import DataCollector from './DataCollector';
 import AIFeedbackModal from './AIFeedbackModal';
 import DataBalanceWarning from './DataBalanceWarning';
+import { TfTrainer } from '@/lib/tf-trainer';
 
 // ──────────────────────────────────────────────
 // Try to import optional golden datasets
@@ -218,6 +219,7 @@ export default function TeachPanel({
   const [isCapturing, setIsCapturing] = useState(false);
   const [isTraining, setIsTraining] = useState(false);
   const [isTrained, setIsTrained] = useState(false);
+  const [isModelOutdated, setIsModelOutdated] = useState(false);
   const [trainingProgress, setTrainingProgress] = useState(0);
   const [validationToast, setValidationToast] = useState<string | null>(null);
   const [predictedLabel, setPredictedLabel] = useState('Chưa nhận diện... 🤔');
@@ -231,6 +233,11 @@ export default function TeachPanel({
 
   const captureIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const toastTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  const trainerRef = useRef<TfTrainer | null>(null);
+  useEffect(() => {
+    trainerRef.current = new TfTrainer();
+  }, []);
 
   // ── Camera ──────────────────────────
   const { videoRef, canvasRef, cameraActive, cameraError, retryCamera } =
@@ -551,6 +558,7 @@ export default function TeachPanel({
 
   const deleteSample = useCallback((id: string) => {
     setSamples((prev) => prev.filter((s) => s.id !== id));
+    setIsModelOutdated(true);
   }, []);
 
   const clearClassSamples = useCallback(
@@ -564,6 +572,7 @@ export default function TeachPanel({
         ),
       );
       setIsTrained(false);
+      setIsModelOutdated(false);
     },
     [classes],
   );
@@ -577,23 +586,26 @@ export default function TeachPanel({
     return effective >= minSamplesPerClass;
   });
 
-  const handleTrain = useCallback(() => {
+  const handleTrain = useCallback(async () => {
     if (!canTrain) return;
     playClickSound();
     
     setIsTraining(true);
     setTrainingProgress(0);
 
-    const interval = setInterval(() => {
-      setTrainingProgress((prev) => {
-        if (prev >= 100) {
-          clearInterval(interval);
-          return 100;
-        }
-        return prev + 10;
-      });
-    }, 150);
-  }, [canTrain]);
+    try {
+      if (trainerRef.current) {
+        await trainerRef.current.train(samples, (epoch, progress) => {
+          setTrainingProgress(progress);
+        });
+        // progress reaches 100 here, which will trigger the useEffect below
+      }
+    } catch (err) {
+      console.error('Training failed', err);
+      setIsTraining(false);
+      alert('Lỗi huấn luyện mô hình. Vui lòng thử lại.');
+    }
+  }, [canTrain, samples]);
 
   // Handle train completion & re-evaluation
   useEffect(() => {
@@ -604,7 +616,7 @@ export default function TeachPanel({
       
       // Perform initial evaluation immediately
       const targetDataset = (teacherTemplate?.samples?.length > 0) ? teacherTemplate.samples : samples;
-      let hasMisclassified = false;
+      let hasIssues = false;
       
       const evaluated = samples.map(sample => {
         const refDataset = (targetDataset === samples) ? samples.filter(s => s.id !== sample.id) : targetDataset;
@@ -626,7 +638,10 @@ export default function TeachPanel({
         const isMisclassified = (sample.quality?.isBlurry || sample.quality?.isDark) 
           ? false 
           : predictedLabel !== expectedLabel;
-        if (isMisclassified) hasMisclassified = true;
+        
+        if (isMisclassified || sample.quality?.isBlurry || sample.quality?.isDark || sample.isValid === false) {
+          hasIssues = true;
+        }
         
         return {
           ...sample,
@@ -639,9 +654,12 @@ export default function TeachPanel({
       });
       
       setSamples(evaluated);
+      setIsModelOutdated(false);
       
-      if (!hasMisclassified) {
+      if (!hasIssues) {
         onTrainComplete(evaluated);
+      } else {
+        setShowFeedbackModal(true);
       }
     }
   }, [isTraining, trainingProgress, classes, kValue, threshold, teacherTemplate, samples, onTrainComplete]);
@@ -703,30 +721,26 @@ export default function TeachPanel({
 
     let rafId: number;
 
-    const runPrediction = () => {
+    const runPrediction = async () => {
       if (isFaceMode) {
         const faces = allFacesRef.current;
         if (faces && faces.length > 0) {
           const kps = getFaceKeypoints(faces[0]);
           if (kps && kps.length >= 468) {
             const features = normalizeFaceFeatures(kps);
-            const result = classifyKNNWithVotes(features, samples, kValue);
+            const resultKNN = classifyKNNWithVotes(features, samples, kValue);
+            const resultNN = await trainerRef.current!.predict(features);
             
-            if (result.minDistance > 3.5) {
+            if (resultKNN.minDistance > 3.5 || resultNN.confidence < 50) {
               setPredictedLabel('Khác thường... 👽');
-              setConfidence(0);
+              setConfidence(resultNN.confidence);
               setKNearestIds([]);
               setVoteCounts({});
             } else {
-              const actualThreshold = Math.min(threshold, kValue);
-              if (result.maxCount < actualThreshold) {
-                setPredictedLabel('Chưa rõ ràng... 🤔');
-              } else {
-                setPredictedLabel(result.label);
-              }
-              setConfidence(result.confidence);
-              setKNearestIds(result.kNearestIds);
-              setVoteCounts(result.voteCounts);
+              setPredictedLabel(resultNN.label);
+              setConfidence(resultNN.confidence);
+              setKNearestIds(resultKNN.kNearestIds);
+              setVoteCounts(resultKNN.voteCounts);
             }
           }
         } else {
@@ -741,11 +755,14 @@ export default function TeachPanel({
           if (isTwoHandMode && hands.length >= 2) {
             const f1 = normalizeHandKeypoints(hands[0]?.keypoints || []);
             const f2 = normalizeHandKeypoints(hands[1]?.keypoints || []);
-            const pred1 = classifyKNNWithVotes(f1, samples, kValue);
-            const pred2 = classifyKNNWithVotes(f2, samples, kValue);
+            const pred1KNN = classifyKNNWithVotes(f1, samples, kValue);
+            const pred2KNN = classifyKNNWithVotes(f2, samples, kValue);
             
-            const isAnomaly1 = pred1.minDistance > 0.7;
-            const isAnomaly2 = pred2.minDistance > 0.7;
+            const pred1NN = await trainerRef.current!.predict(f1);
+            const pred2NN = await trainerRef.current!.predict(f2);
+            
+            const isAnomaly1 = pred1KNN.minDistance > 0.7;
+            const isAnomaly2 = pred2KNN.minDistance > 0.7;
 
             if (isAnomaly1 && isAnomaly2) {
               setPredictedLabel('Khác thường... 👽');
@@ -753,41 +770,33 @@ export default function TeachPanel({
               setKNearestIds([]);
               setVoteCounts({});
             } else if (isAnomaly1) {
-              const actualThreshold = Math.min(threshold, kValue);
-              if (pred2.maxCount < actualThreshold) {
-                setPredictedLabel('Chưa rõ ràng... 🤔');
-              } else {
-                setPredictedLabel(`Tay 2: ${pred2.label}`);
-              }
-              setConfidence(pred2.confidence);
-              setKNearestIds(pred2.kNearestIds);
-              setVoteCounts(pred2.voteCounts);
+              if (pred2NN.confidence < 50) setPredictedLabel('Chưa rõ ràng... 🤔');
+              else setPredictedLabel(`Tay 2: ${pred2NN.label}`);
+              
+              setConfidence(pred2NN.confidence);
+              setKNearestIds(pred2KNN.kNearestIds);
+              setVoteCounts(pred2KNN.voteCounts);
             } else if (isAnomaly2) {
-              const actualThreshold = Math.min(threshold, kValue);
-              if (pred1.maxCount < actualThreshold) {
-                setPredictedLabel('Chưa rõ ràng... 🤔');
-              } else {
-                setPredictedLabel(`Tay 1: ${pred1.label}`);
-              }
-              setConfidence(pred1.confidence);
-              setKNearestIds(pred1.kNearestIds);
-              setVoteCounts(pred1.voteCounts);
+              if (pred1NN.confidence < 50) setPredictedLabel('Chưa rõ ràng... 🤔');
+              else setPredictedLabel(`Tay 1: ${pred1NN.label}`);
+              
+              setConfidence(pred1NN.confidence);
+              setKNearestIds(pred1KNN.kNearestIds);
+              setVoteCounts(pred1KNN.voteCounts);
             } else {
-              const avgCount = Math.round((pred1.maxCount + pred2.maxCount) / 2);
-              const avgConf = Math.round((pred1.confidence + pred2.confidence) / 2);
-              const actualThreshold = Math.min(threshold, kValue);
+              const avgConf = Math.round((pred1NN.confidence + pred2NN.confidence) / 2);
 
-              if (avgCount < actualThreshold) {
+              if (avgConf < 50) {
                 setPredictedLabel('Chưa rõ ràng... 🤔');
-              } else if (pred1.label === pred2.label) {
-                setPredictedLabel(pred1.label);
+              } else if (pred1NN.label === pred2NN.label) {
+                setPredictedLabel(pred1NN.label);
               } else {
-                setPredictedLabel(`Tay 1: ${pred1.label} | Tay 2: ${pred2.label}`);
+                setPredictedLabel(`Tay 1: ${pred1NN.label} | Tay 2: ${pred2NN.label}`);
               }
               setConfidence(avgConf);
-              setKNearestIds([...pred1.kNearestIds, ...pred2.kNearestIds]);
-              const merged: Record<string, number> = { ...pred1.voteCounts };
-              Object.entries(pred2.voteCounts).forEach(([k, v]) => {
+              setKNearestIds([...pred1KNN.kNearestIds, ...pred2KNN.kNearestIds]);
+              const merged: Record<string, number> = { ...pred1KNN.voteCounts };
+              Object.entries(pred2KNN.voteCounts).forEach(([k, v]) => {
                 merged[k] = (merged[k] || 0) + v;
               });
               setVoteCounts(merged);
@@ -796,24 +805,19 @@ export default function TeachPanel({
             const kps = hands[0].keypoints;
             if (kps && kps.length >= 21) {
               const features = normalizeHandKeypoints(kps);
-              const result = classifyKNNWithVotes(features, samples, kValue);
+              const resultKNN = classifyKNNWithVotes(features, samples, kValue);
+              const resultNN = await trainerRef.current!.predict(features);
               
-              if (result.minDistance > 0.7) {
+              if (resultKNN.minDistance > 0.7 || resultNN.confidence < 50) {
                 setPredictedLabel('Khác thường... 👽');
-                setConfidence(0);
+                setConfidence(resultNN.confidence);
                 setKNearestIds([]);
                 setVoteCounts({});
               } else {
-                const actualThreshold = Math.min(threshold, kValue);
-
-                if (result.maxCount < actualThreshold) {
-                  setPredictedLabel('Chưa rõ ràng... 🤔');
-                } else {
-                  setPredictedLabel(result.label);
-                }
-                setConfidence(result.confidence);
-                setKNearestIds(result.kNearestIds);
-                setVoteCounts(result.voteCounts);
+                setPredictedLabel(resultNN.label);
+                setConfidence(resultNN.confidence);
+                setKNearestIds(resultKNN.kNearestIds);
+                setVoteCounts(resultKNN.voteCounts);
               }
             }
           }
@@ -1157,16 +1161,16 @@ export default function TeachPanel({
             <div className="flex flex-col gap-2">
               <button
                 onClick={handleTrain}
-                disabled={!canTrain || isTrained}
+                disabled={!canTrain || (isTrained && !isModelOutdated)}
                 className={`w-full font-extrabold py-3.5 px-6 rounded-2xl shadow-lg border-b-4 flex items-center justify-center gap-2 text-lg transition-all ${
-                  canTrain && !isTrained
+                  canTrain && (!isTrained || isModelOutdated)
                     ? 'bg-emerald-500 hover:bg-emerald-600 border-emerald-700 text-white'
                     : 'bg-gray-300 border-gray-400 text-gray-500 cursor-not-allowed'
                 }`}
               >
                 <Brain className="w-6 h-6" />
                 <span>
-                  {isTrained ? 'ĐÃ DẠY XONG ✅' : 'Dạy bạn AI học 🧠'}
+                  {isModelOutdated && isTrained ? 'Cập nhật mô hình (Re-train) 🔄' : isTrained ? 'ĐÃ DẠY XONG ✅' : 'Dạy bạn AI học 🧠'}
                 </span>
               </button>
               
@@ -1197,6 +1201,7 @@ export default function TeachPanel({
             onTabChange={setActiveTab}
             onSamplesCollected={(newSamples) => {
               setSamples((prev) => [...prev, ...newSamples]);
+              setIsModelOutdated(true);
             }}
             videoRef={videoRef}
           >

@@ -56,7 +56,7 @@ export class TfTrainer {
       batchSize: Math.min(32, samples.length),
       shuffle: true,
       callbacks: {
-        onEpochEnd: (epoch, logs) => {
+        onEpochEnd: (epoch: number, logs?: any) => {
           if (onProgress && logs) {
             const progress = Math.round(((epoch + 1) / epochs) * 100);
             onProgress(epoch + 1, progress, logs.loss, logs.acc || logs.accuracy);

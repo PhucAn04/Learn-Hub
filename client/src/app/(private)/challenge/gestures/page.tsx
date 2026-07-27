@@ -152,17 +152,19 @@ export default function GesturesChallenge() {
               // Override with Neural Network if available
               if (trainerRef.current) {
                  const features = normalizeHandKeypoints(kps);
-                 const pred = trainerRef.current.predict(features);
-                 if (pred && pred.label) {
-                   if (pred.label === 'class_1') gesture = 'like';
-                   else if (pred.label === 'class_2') gesture = 'fist';
-                   else if (pred.label === 'class_3') gesture = 'peace';
-                   else if (pred.label === 'class_4') gesture = 'open';
-                   else gesture = 'unknown'; // ignore class_5 and class_6 for this game
-                 }
+                 trainerRef.current.predict(features).then(pred => {
+                   if (pred && pred.label) {
+                     if (pred.label === 'class_1') gesture = 'like';
+                     else if (pred.label === 'class_2') gesture = 'fist';
+                     else if (pred.label === 'class_3') gesture = 'peace';
+                     else if (pred.label === 'class_4') gesture = 'open';
+                     else gesture = 'unknown'; // ignore class_5 and class_6 for this game
+                   }
+                   setDetectedGesture(gesture);
+                 });
+              } else {
+                 setDetectedGesture(gesture);
               }
-
-              setDetectedGesture(gesture);
 
               // Draw overlay emoji floating near index tip (landmark 8) or thumb tip (4)
               const sx = canvas.width / video.videoWidth;

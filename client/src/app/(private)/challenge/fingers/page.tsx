@@ -124,14 +124,16 @@ export default function FingersChallenge() {
               // Override with Neural Network if available and applicable (it was only trained for 1 and 2 fingers)
               if (trainerRef.current && (count === 1 || count === 2 || count === 0)) {
                  const features = normalizeHandKeypoints(kps);
-                 const pred = trainerRef.current.predict(features);
-                 if (pred) {
-                   if (pred.label === 'class_1') count = 1;
-                   if (pred.label === 'class_2') count = 2;
-                 }
+                 trainerRef.current.predict(features).then(pred => {
+                   if (pred) {
+                     if (pred.label === 'class_1') count = 1;
+                     if (pred.label === 'class_2') count = 2;
+                   }
+                   setDetectedCount(count);
+                 });
+              } else {
+                 setDetectedCount(count);
               }
-
-              setDetectedCount(count);
             }
           } else {
             setDetectedCount(0);

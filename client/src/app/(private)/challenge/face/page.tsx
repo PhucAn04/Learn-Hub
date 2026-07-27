@@ -13,12 +13,12 @@ import {
   FACE_NOSE,
   drawPolyline,
   normalizeFaceKeypoints,
-  normalizeFaceFeatures,
   getSmileMetricsFromFaceMesh,
   drawFaceStickers,
   getFaceKeypoints,
   drawFaceSkeleton
 } from '@/lib/face-drawing';
+import { normalizeFaceFeatures } from '@/lib/knn-classifier';
 import ScoreHeader from '@/components/ScoreHeader';
 import CameraView from '@/components/CameraView';
 import { FaceFilter, SmileMetrics } from '@/types/ml5';
@@ -181,21 +181,15 @@ export default function FaceChallenge() {
                 const faceKps = getFaceKeypoints(kpsRaw);
                 if (faceKps && faceKps.length >= 468) {
                   const features = normalizeFaceFeatures(faceKps);
-                  const pred = trainerRef.current.predict(features);
-                  // In teach-face, 'class_1' is usually mapped to 'Vui vẻ 😀'
-                  // We check if the highest confidence class matches a "smile" class taught by teacher
-                  // For simplicity, let's use the confidence of class_1 (if it exists) as progress
-                  if (pred && pred.confidences && typeof pred.confidences['class_1'] === 'number') {
-                    const confidenceVal = pred.confidences['class_1'] * 100;
-                    faceSmile.progress = confidenceVal;
-                    faceSmile.isSmiling = confidenceVal > 80;
-                  } else if (pred && pred.label === 'class_1') {
-                     faceSmile.isSmiling = true;
-                     faceSmile.progress = 100;
-                  } else if (pred && pred.label !== 'class_1') {
-                     faceSmile.isSmiling = false;
-                     faceSmile.progress = 0;
-                  }
+                  trainerRef.current.predict(features).then(pred => {
+                    if (pred && pred.label === 'class_1') {
+                       faceSmile.isSmiling = true;
+                       faceSmile.progress = pred.confidence;
+                    } else {
+                       faceSmile.isSmiling = false;
+                       faceSmile.progress = 0;
+                    }
+                  });
                 }
               }
 

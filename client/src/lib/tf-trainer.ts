@@ -73,7 +73,7 @@ export class TfTrainer {
   /**
    * Dự đoán nhãn từ tọa độ mới
    */
-  async predict(features: number[]): Promise<{ label: string, confidence: number }> {
+  async predict(features: number[]): Promise<{ label: string, confidence: number, confidences?: Record<string, number> }> {
     await this.init();
     if (!this.model || this.classNames.length === 0) {
       return { label: 'Chưa huấn luyện', confidence: 0 };
@@ -86,7 +86,10 @@ export class TfTrainer {
       
       let maxScore = -1;
       let maxIndex = 0;
+      const confidences: Record<string, number> = {};
+      
       for (let i = 0; i < scores.length; i++) {
+        confidences[this.classNames[i]] = scores[i];
         if (scores[i] > maxScore) {
           maxScore = scores[i];
           maxIndex = i;
@@ -95,7 +98,8 @@ export class TfTrainer {
 
       return {
         label: this.classNames[maxIndex],
-        confidence: Math.round(maxScore * 100)
+        confidence: Math.round(maxScore * 100),
+        confidences
       };
     });
   }

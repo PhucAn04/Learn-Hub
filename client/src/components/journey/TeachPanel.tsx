@@ -30,11 +30,12 @@ import { assessQuality, calculateROI } from '@/lib/image-quality';
 import KnnScatterPlot from './KnnScatterPlot';
 import { GOLDEN_TEST_DATASET, GoldenTestSample } from '@/lib/golden-dataset';
 import { playClickSound, playSuccessSound } from '@/lib/audio';
-import CameraView from '@/components/CameraView';
+import CameraView from '../CameraView';
 import SampleGallery from '@/components/SampleGallery';
 import DataCollector from './DataCollector';
 import AIFeedbackModal from './AIFeedbackModal';
 import DataBalanceWarning from './DataBalanceWarning';
+import AIConfidenceEnergyBars from './AIConfidenceEnergyBars';
 import { TfTrainer } from '@/lib/tf-trainer';
 
 // ──────────────────────────────────────────────
@@ -223,11 +224,11 @@ export default function TeachPanel({
   const [trainingProgress, setTrainingProgress] = useState(0);
   const [validationToast, setValidationToast] = useState<string | null>(null);
   const [predictedLabel, setPredictedLabel] = useState('Chưa nhận diện... 🤔');
-  const [confidence, setConfidence] = useState(0);
   const [kValue, setKValue] = useState<number>(3);
   const [threshold, setThreshold] = useState<number>(2);
   const [kNearestIds, setKNearestIds] = useState<string[]>([]);
   const [voteCounts, setVoteCounts] = useState<Record<string, number>>({});
+  const [nnConfidences, setNnConfidences] = useState<Record<string, number> | null>(null);
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
   const [activeTab, setActiveTab] = useState<'camera' | 'upload' | 'video'>('camera');
 
@@ -526,7 +527,11 @@ export default function TeachPanel({
           );
         }
 
-        return newSamples.length > 0 ? [...prev, ...newSamples] : prev;
+        if (newSamples.length > 0) {
+          setTimeout(() => setIsModelOutdated(true), 0);
+          return [...prev, ...newSamples];
+        }
+        return prev;
       });
     }
   }, [
@@ -656,11 +661,7 @@ export default function TeachPanel({
       setSamples(evaluated);
       setIsModelOutdated(false);
       
-      if (!hasIssues) {
-        onTrainComplete(evaluated);
-      } else {
-        setShowFeedbackModal(true);
-      }
+      // Removed auto-popup and auto-submit so the user can test the camera freely
     }
   }, [isTraining, trainingProgress, classes, kValue, threshold, teacherTemplate, samples, onTrainComplete]);
 
@@ -731,21 +732,25 @@ export default function TeachPanel({
             const resultKNN = classifyKNNWithVotes(features, samples, kValue);
             const resultNN = await trainerRef.current!.predict(features);
             
+            if (resultNN && resultNN.label) {
+              setPredictedLabel(classes.find(c => c.id === resultNN.label)?.label || 'Chưa rõ ràng... 🤔');
+            }
+            if (resultNN && resultNN.confidences) {
+              setNnConfidences(resultNN.confidences);
+            }
+
             if (resultKNN.minDistance > 3.5 || resultNN.confidence < 50) {
               setPredictedLabel('Khác thường... 👽');
-              setConfidence(resultNN.confidence);
               setKNearestIds([]);
               setVoteCounts({});
             } else {
-              setPredictedLabel(resultNN.label);
-              setConfidence(resultNN.confidence);
               setKNearestIds(resultKNN.kNearestIds);
               setVoteCounts(resultKNN.voteCounts);
             }
           }
         } else {
           setPredictedLabel('AI đang đợi khuôn mặt bé... 👀');
-          setConfidence(0);
+          setNnConfidences(null);
           setKNearestIds([]);
           setVoteCounts({});
         }
@@ -761,26 +766,38 @@ export default function TeachPanel({
             const pred1NN = await trainerRef.current!.predict(f1);
             const pred2NN = await trainerRef.current!.predict(f2);
             
+            // Lấy kết quả tự tin cao hơn
+            let bestPred = pred1NN;
+            let bestConf = pred1NN?.confidences?.[pred1NN.label] || 0;
+            const conf2 = pred2NN?.confidences?.[pred2NN.label] || 0;
+            if (conf2 > bestConf) {
+              bestPred = pred2NN;
+            }
+
+            if (bestPred && bestPred.label) {
+              setPredictedLabel(classes.find(c => c.id === bestPred.label)?.label || 'Chưa rõ ràng... 🤔');
+            }
+            if (bestPred && bestPred.confidences) {
+              setNnConfidences(bestPred.confidences);
+            }
+            
             const isAnomaly1 = pred1KNN.minDistance > 0.7;
             const isAnomaly2 = pred2KNN.minDistance > 0.7;
 
             if (isAnomaly1 && isAnomaly2) {
               setPredictedLabel('Khác thường... 👽');
-              setConfidence(0);
               setKNearestIds([]);
               setVoteCounts({});
             } else if (isAnomaly1) {
               if (pred2NN.confidence < 50) setPredictedLabel('Chưa rõ ràng... 🤔');
               else setPredictedLabel(`Tay 2: ${pred2NN.label}`);
               
-              setConfidence(pred2NN.confidence);
               setKNearestIds(pred2KNN.kNearestIds);
               setVoteCounts(pred2KNN.voteCounts);
             } else if (isAnomaly2) {
               if (pred1NN.confidence < 50) setPredictedLabel('Chưa rõ ràng... 🤔');
               else setPredictedLabel(`Tay 1: ${pred1NN.label}`);
               
-              setConfidence(pred1NN.confidence);
               setKNearestIds(pred1KNN.kNearestIds);
               setVoteCounts(pred1KNN.voteCounts);
             } else {
@@ -793,7 +810,6 @@ export default function TeachPanel({
               } else {
                 setPredictedLabel(`Tay 1: ${pred1NN.label} | Tay 2: ${pred2NN.label}`);
               }
-              setConfidence(avgConf);
               setKNearestIds([...pred1KNN.kNearestIds, ...pred2KNN.kNearestIds]);
               const merged: Record<string, number> = { ...pred1KNN.voteCounts };
               Object.entries(pred2KNN.voteCounts).forEach(([k, v]) => {
@@ -808,14 +824,18 @@ export default function TeachPanel({
               const resultKNN = classifyKNNWithVotes(features, samples, kValue);
               const resultNN = await trainerRef.current!.predict(features);
               
+              if (resultNN && resultNN.label) {
+                setPredictedLabel(classes.find(c => c.id === resultNN.label)?.label || 'Chưa rõ ràng... 🤔');
+              }
+              if (resultNN && resultNN.confidences) {
+                setNnConfidences(resultNN.confidences);
+              }
+              
               if (resultKNN.minDistance > 0.7 || resultNN.confidence < 50) {
                 setPredictedLabel('Khác thường... 👽');
-                setConfidence(resultNN.confidence);
                 setKNearestIds([]);
                 setVoteCounts({});
               } else {
-                setPredictedLabel(resultNN.label);
-                setConfidence(resultNN.confidence);
                 setKNearestIds(resultKNN.kNearestIds);
                 setVoteCounts(resultKNN.voteCounts);
               }
@@ -827,7 +847,7 @@ export default function TeachPanel({
               ? 'AI đang đợi khuôn mặt bé... 👀'
               : 'AI đang đợi tay bé... ✋',
           );
-          setConfidence(0);
+          setNnConfidences(null);
           setKNearestIds([]);
           setVoteCounts({});
         }
@@ -1179,8 +1199,8 @@ export default function TeachPanel({
                   onClick={() => setShowFeedbackModal(true)}
                   className="w-full font-extrabold py-3 px-6 rounded-2xl shadow-md border-b-4 bg-indigo-100 hover:bg-indigo-200 border-indigo-300 text-indigo-700 flex items-center justify-center gap-2 text-base transition-all"
                 >
-                  <span className="text-xl">📊</span>
-                  <span>Xem Phân Tích Tổng Thể</span>
+                  <span className="text-xl">🚀</span>
+                  <span>Hoàn thành & Nộp Bài</span>
                 </button>
               )}
             </div>
@@ -1285,7 +1305,8 @@ export default function TeachPanel({
       </div>
 
       {/* ── RIGHT PANEL: KNN Scatter Plot (Always visible on desktop) ── */}
-      <div className="hidden lg:col-span-4 lg:flex flex-col">
+      {/* ── RIGHT PANEL: KNN Scatter Plot + Energy Bars ── */}
+      <div className="hidden lg:col-span-4 lg:flex flex-col gap-4">
         <div className="bg-white rounded-3xl p-4 border-4 border-indigo-400 shadow-[0_20px_50px_rgba(79,70,229,0.2)] flex flex-col h-[600px]">
           <h4 className="font-extrabold text-sm text-indigo-900 tracking-widest uppercase mb-2 text-center flex items-center justify-center gap-2">
             <span>📊</span> Không gian phân loại kNN
@@ -1302,6 +1323,11 @@ export default function TeachPanel({
             />
           </div>
         </div>
+
+        {/* Energy Bars Component (Only show if trained) */}
+        {isTrained && (
+          <AIConfidenceEnergyBars classes={classes} confidences={nnConfidences} />
+        )}
       </div>
       
       <AIFeedbackModal

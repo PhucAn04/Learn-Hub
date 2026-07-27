@@ -16,13 +16,13 @@ export interface MediaRecorderHookResult {
 /**
  * Hook quay video trực tiếp từ camera stream.
  * - Ghi video WebM (VP8/VP9)
- * - Giới hạn tối đa 60 giây (tự động dừng)
+ * - Giới hạn tối đa 10 giây (tự động dừng)
  * - Timer real-time
  * - Output: Blob video để chạy frame extraction
  */
 export function useMediaRecorder(
   videoRef: React.RefObject<HTMLVideoElement | null>,
-  maxDurationSec: number = 60
+  maxDurationSec: number = 10
 ): MediaRecorderHookResult {
   const [isRecording, setIsRecording] = useState(false);
   const [recordingDuration, setRecordingDuration] = useState(0);

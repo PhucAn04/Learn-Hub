@@ -48,7 +48,26 @@ export default function DataCollector({
   const { isReady, isLoading: isModelLoading, detect, initModel } = useOfflineDetector(detectorMode);
 
   const [countdown, setCountdown] = useState<number | null>(null);
-  const { isRecording, recordingDuration, startRecording, stopRecording } = useMediaRecorder(videoRef || { current: null }, 60);
+  const { isRecording, recordingDuration, startRecording, stopRecording, recordedBlob } = useMediaRecorder(videoRef || { current: null }, 10);
+  
+  const [lastProcessedBlob, setLastProcessedBlob] = useState<Blob | null>(null);
+
+  useEffect(() => {
+    if (recordedBlob && recordedBlob !== lastProcessedBlob) {
+      setLastProcessedBlob(recordedBlob);
+      const processBlob = async () => {
+        try {
+          const frames = await extractFrames(recordedBlob, 2, 20); // 10s max = 20 frames
+          await processDetectedFrames(frames);
+        } catch (err) {
+          console.error(err);
+          alert('Có lỗi xảy ra khi xử lý video quay được.');
+        }
+      };
+      processBlob();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [recordedBlob, lastProcessedBlob, extractFrames]);
 
   useEffect(() => {
     if (countdown === null) return;
@@ -69,16 +88,11 @@ export default function DataCollector({
 
   const handleStopRecording = async () => {
     try {
-      const blob = await stopRecording();
-      if (blob) {
-        // Use recordingDuration to cap frames, preventing the 120-frame Infinity duration bug
-        const maxFrames = Math.max(1, recordingDuration * 2);
-        const frames = await extractFrames(blob, 2, maxFrames);
-        await processDetectedFrames(frames);
-      }
+      await stopRecording();
+      // Việc trích xuất frame sẽ được useEffect ở trên tự động thực hiện khi recordedBlob thay đổi
     } catch (err) {
       console.error(err);
-      alert('Có lỗi xảy ra khi xử lý video quay được.');
+      alert('Có lỗi xảy ra khi dừng quay video.');
     }
   };
 

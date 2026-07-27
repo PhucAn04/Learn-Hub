@@ -145,10 +145,10 @@ export function analyzeBlur(canvas: HTMLCanvasElement, roi?: ROI, brightness: nu
   const variance = Math.max(0, (laplacianSqSum / validPixels) - (mean * mean));
   
   // Dynamic Threshold
-  // Tinh chỉnh theo dữ liệu thực tế (ảnh rung nhẹ có variance ~288-306)
-  const THRESH_SHARP_ROI = brightness > 80 ? 320 : 150;
+  // Tinh chỉnh lại theo dữ liệu thực tế (ảnh rõ có variance ~245-270)
+  const THRESH_SHARP_ROI = brightness > 80 ? 200 : 100;
   
-  const isBlurry = variance < THRESH_SHARP_ROI || maxLaplacian < 80;
+  const isBlurry = variance < THRESH_SHARP_ROI || maxLaplacian < 60;
 
   return { variance, maxLaplacian, isBlurry, edgeRatio: 0 };
 }
@@ -163,8 +163,8 @@ export function assessQuality(canvas: HTMLCanvasElement, roi?: ROI): SampleQuali
   const quality = {
     brightness,
     blurScore: blurResult.variance,
-    isDark: brightness < 60,
-    isBright: brightness > 200,
+    isDark: brightness < 40,
+    isBright: brightness > 220,
     isBlurry: blurResult.isBlurry, 
   };
 

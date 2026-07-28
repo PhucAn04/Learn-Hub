@@ -83,9 +83,9 @@ export function analyzeBrightness(canvas: HTMLCanvasElement, roi?: ROI): number 
  * Nếu truyền roi, chỉ tính trên các pixel trong roi (Bounding Box của tay/cơ thể).
  * @returns Điểm số Variance.
  */
-export function analyzeBlur(canvas: HTMLCanvasElement, roi?: ROI, brightness: number = 128): { variance: number; maxLaplacian: number; isBlurry: boolean; edgeRatio: number } {
+export function analyzeBlur(canvas: HTMLCanvasElement, roi?: ROI, brightness: number = 128): { variance: number; maxLaplacian: number; isBlurry: boolean; sharpnessRatio: number } {
   const ctx = canvas.getContext('2d');
-  if (!ctx) return { variance: 0, maxLaplacian: 0, isBlurry: true, edgeRatio: 0 };
+  if (!ctx) return { variance: 0, maxLaplacian: 0, isBlurry: true, sharpnessRatio: 0 };
 
   const x = roi ? Math.max(0, Math.floor(roi.x)) : 0;
   const y = roi ? Math.max(0, Math.floor(roi.y)) : 0;
@@ -93,7 +93,7 @@ export function analyzeBlur(canvas: HTMLCanvasElement, roi?: ROI, brightness: nu
   const h = roi ? Math.min(canvas.height - y, Math.floor(roi.h)) : canvas.height;
 
   // Tránh lỗi khi bounding box quá nhỏ hoặc ảo
-  if (w < 3 || h < 3) return { variance: 0, maxLaplacian: 0, isBlurry: true, edgeRatio: 0 };
+  if (w < 3 || h < 3) return { variance: 0, maxLaplacian: 0, isBlurry: true, sharpnessRatio: 0 };
 
   // Lấy ảnh của vùng ROI
   const imageData = ctx.getImageData(x, y, w, h);
@@ -108,7 +108,8 @@ export function analyzeBlur(canvas: HTMLCanvasElement, roi?: ROI, brightness: nu
 
   let laplacianSum = 0;
   let laplacianSqSum = 0;
-  let validPixels = 0;
+  let activePixels = 0;
+  let strongPixels = 0;
   let maxLaplacian = 0;
 
   const step = 2; // Sample every 2nd pixel to save CPU
@@ -129,28 +130,42 @@ export function analyzeBlur(canvas: HTMLCanvasElement, roi?: ROI, brightness: nu
         maxLaplacian = absLap;
       }
 
-      // KHÔNG triệt tiêu nhiễu (noise suppression) nữa!
-      // Bề mặt da nét có rất nhiều micro-texture (lỗ chân lông, nhiễu camera). 
-      // Khi ảnh mờ (motion blur), các micro-texture này bị san phẳng thành Laplacian = 0.
-      // Việc giữ lại các giá trị nhỏ này giúp Variance của ảnh NÉT lớn hơn hẳn ảnh MỜ.
-      laplacianSum += laplacian;
-      laplacianSqSum += laplacian * laplacian;
-      validPixels++;
+      // Nâng mức nhiễu lên 10 để loại bỏ hoàn toàn các dao động siêu nhỏ của phông nền
+      if (absLap > 10) {
+        laplacianSum += laplacian;
+        laplacianSqSum += laplacian * laplacian;
+        activePixels++;
+        
+        // Đếm số lượng pixel có độ nét cao (cạnh cứng)
+        if (absLap > 50) {
+          strongPixels++;
+        }
+      }
     }
   }
 
-  if (validPixels === 0) return { variance: 0, maxLaplacian: 0, isBlurry: true, edgeRatio: 0 };
+  if (activePixels === 0) return { variance: 0, maxLaplacian: 0, isBlurry: true, sharpnessRatio: 0 };
 
-  const mean = laplacianSum / validPixels;
-  const variance = Math.max(0, (laplacianSqSum / validPixels) - (mean * mean));
+  const mean = laplacianSum / activePixels;
+  const variance = Math.max(0, (laplacianSqSum / activePixels) - (mean * mean));
   
-  // Dynamic Threshold
-  // Tinh chỉnh lại theo dữ liệu thực tế (ảnh rõ có variance ~245-270)
-  const THRESH_SHARP_ROI = brightness > 80 ? 200 : 100;
+  // Tỉ lệ cạnh sắc (Sharpness Ratio):
+  // Motion blur làm viền bị nhòe rộng ra -> activePixels tăng mạnh nhưng strongPixels giảm -> Tỉ lệ cực thấp!
+  // Ảnh nét có viền mảnh và gắt -> Tỉ lệ cao. (Không phụ thuộc vào kích thước ngón tay to hay nhỏ)
+  const sharpnessRatio = (strongPixels / activePixels) * 100;
   
-  const isBlurry = variance < THRESH_SHARP_ROI || maxLaplacian < 60;
+  // Căn chỉnh không quá khắt khe:
+  // Nếu Variance > 1100 => Chắc chắn nét
+  // Nếu Variance < 800 => Chắc chắn mờ
+  // Ở khoảng giữa (800 - 1100), xét thêm SharpnessRatio (nếu > 10% là nét)
+  let isBlurry = true;
+  if (variance >= 1100) {
+    isBlurry = false;
+  } else if (variance >= 800 && sharpnessRatio >= 10) {
+    isBlurry = false;
+  }
 
-  return { variance, maxLaplacian, isBlurry, edgeRatio: 0 };
+  return { variance, maxLaplacian, isBlurry, sharpnessRatio };
 }
 
 /**
@@ -168,7 +183,7 @@ export function assessQuality(canvas: HTMLCanvasElement, roi?: ROI): SampleQuali
     isBlurry: blurResult.isBlurry, 
   };
 
-  console.log(`[Quality FINAL] Bright: ${brightness.toFixed(1)} | Var: ${blurResult.variance.toFixed(1)} | MaxLap: ${blurResult.maxLaplacian.toFixed(1)} => isBlurry: ${quality.isBlurry}`);
+  console.log(`[Quality FINAL] Bright: ${brightness.toFixed(1)} | ActiveVar: ${blurResult.variance.toFixed(1)} | Sharp%: ${blurResult.sharpnessRatio.toFixed(1)} => isBlurry: ${quality.isBlurry}`);
   
   return quality;
 }

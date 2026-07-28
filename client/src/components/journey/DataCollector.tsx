@@ -7,7 +7,7 @@ import { useVideoExtractor } from '@/hooks/useVideoExtractor';
 import { useMediaRecorder } from '@/hooks/useMediaRecorder';
 import { useOfflineDetector, DetectorMode } from '@/hooks/useOfflineDetector';
 import { StoredSample, normalizeHandKeypoints, normalizeFaceFeatures } from '@/lib/knn-classifier';
-import { assessQuality } from '@/lib/image-quality';
+import { assessQuality, calculateROI, ROI } from '@/lib/image-quality';
 import { normalizeBodyKeypoints } from '@/lib/body-pose-classifier';
 import { HandResult, FaceMeshResult, BodyPoseResult } from '@/types/ml5';
 import { drawHandSkeleton } from '@/lib/hand-drawing';
@@ -112,14 +112,15 @@ export default function DataCollector({
     for (const img of processedImages) {
       const rawThumb = img.thumbnailBase64;
       const results = await detect(img.canvas);
-      
       let features: number[] | null = null;
       let isValid = false;
+      let roi: ROI | undefined = undefined;
 
       if (detectorMode === 'hand') {
         const hands = results as HandResult[];
         if (hands && hands.length > 0 && hands[0].keypoints) {
           features = normalizeHandKeypoints(hands[0].keypoints);
+          roi = calculateROI(hands[0].keypoints as any, img.canvas.width, img.canvas.height, 0.1);
           isValid = true;
           const ctx = img.canvas.getContext('2d');
           if (ctx) {
@@ -142,6 +143,7 @@ export default function DataCollector({
           const keypoints = Array.isArray(faces[0]) ? faces[0] : (faces[0] as any).keypoints;
           if (keypoints) {
              features = normalizeFaceFeatures(keypoints);
+             roi = calculateROI(keypoints as any, img.canvas.width, img.canvas.height, 0.1);
              isValid = true;
              const ctx = img.canvas.getContext('2d');
              if (ctx) {
@@ -159,6 +161,7 @@ export default function DataCollector({
         const poses = results as BodyPoseResult[];
         if (poses && poses.length > 0 && poses[0].keypoints) {
           features = normalizeBodyKeypoints(poses[0].keypoints);
+          roi = calculateROI(poses[0].keypoints as any, img.canvas.width, img.canvas.height, 0.1);
           isValid = true;
           const ctx = img.canvas.getContext('2d');
           if (ctx) {
@@ -174,7 +177,8 @@ export default function DataCollector({
 
       if (features && isValid) {
         // Assess image quality (brightness, blur) — tag only, never block
-        const quality = assessQuality(img.canvas);
+        const isVideo = activeTab === 'video';
+        const quality = assessQuality(img.canvas, roi, isVideo);
         newSamples.push({
           id: `sample_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
           label: activeClassLabel,

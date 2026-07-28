@@ -2,6 +2,7 @@ import { Injectable, ConflictException, UnauthorizedException, BadRequestExcepti
 import { JwtService } from '@nestjs/jwt';
 import { UsersService } from '../users/users.service';
 import { User } from '../users/entities/user.entity';
+import { GoogleOAuthProfile } from '../../shared/types';
 import * as bcrypt from 'bcryptjs';
 
 @Injectable()
@@ -54,7 +55,7 @@ export class AuthService {
     return { user, accessToken };
   }
 
-  async validateOAuthLogin(profile: any): Promise<{ user: User; accessToken: string }> {
+  async validateOAuthLogin(profile: GoogleOAuthProfile): Promise<{ user: User; accessToken: string }> {
     const { email, firstName, lastName, picture, googleId, accessToken, refreshToken } = profile;
     const username = `${firstName || ''} ${lastName || ''}`.trim() || email.split('@')[0];
 

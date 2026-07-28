@@ -14,7 +14,7 @@ import {
 // ── Props ──
 interface KnnScatterPlotProps {
   samples: StoredSample[];
-  classes: { id: string; label: string; emoji: string }[];
+  classes: { id: string; label: string; emoji?: string }[];
   kValue: number;
   threshold: number;
   kNearestIds?: string[];
@@ -95,7 +95,7 @@ export default function KnnScatterPlot({
 
   // ── Build label map from classes prop ──
   const labelMap = useMemo(() => {
-    const map: Record<string, { label: string; emoji: string }> = {};
+    const map: Record<string, { label: string; emoji?: string }> = {};
     classes.forEach((c) => {
       map[c.id] = { label: c.label, emoji: c.emoji };
     });

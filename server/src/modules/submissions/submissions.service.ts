@@ -22,7 +22,7 @@ export class SubmissionsService {
     return this.submissionRepository.save(submission);
   }
 
-  async getAllSubmissions(): Promise<any[]> {
+  async getAllSubmissions(): Promise<Submission[]> {
     return this.submissionRepository.find({
       relations: {
         user: true,

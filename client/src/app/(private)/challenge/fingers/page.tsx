@@ -12,7 +12,8 @@ import CameraView from '@/components/CameraView';
 import MatchProgressBar from '@/components/MatchProgressBar';
 import { api } from '@/lib/api';
 import { TfTrainer } from '@/lib/tf-trainer';
-import { normalizeHandKeypoints } from '@/lib/knn-classifier';
+import { normalizeHandKeypoints, StoredSample } from '@/lib/knn-classifier';
+import { LeaderboardEntry } from '@/types/models';
 
 export default function FingersChallenge() {
   const [targetCount, setTargetCount] = useState<number>(3); // start with 3
@@ -20,7 +21,7 @@ export default function FingersChallenge() {
   const [matchProgress, setMatchProgress] = useState(0); // 0 to 100%
   const [score, setScore] = useState(0);
   const [handsSeen, setHandsSeen] = useState(0);
-  const [leaderboard, setLeaderboard] = useState<any[]>([]);
+  const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
 
   const initialTargetCountRef = useRef(targetCount);
 
@@ -52,7 +53,7 @@ export default function FingersChallenge() {
         const datasets = await api.getMyDatasets('teach');
         if (datasets && datasets.length > 0) {
           const fileRes = await api.getDatasetFile(datasets[0].id);
-          let loadedSamples: any[] = [];
+          let loadedSamples: StoredSample[] = [];
           if (fileRes && fileRes.data && Array.isArray(fileRes.data)) {
             loadedSamples = fileRes.data;
           } else if (fileRes && Array.isArray(fileRes.samples)) {
@@ -124,7 +125,7 @@ export default function FingersChallenge() {
               // Override with Neural Network if available and applicable (it was only trained for 1 and 2 fingers)
               if (trainerRef.current && (count === 1 || count === 2 || count === 0)) {
                  const features = normalizeHandKeypoints(kps);
-                 const pred = trainerRef.current.predict(features);
+                 const pred = trainerRef.current.predictSync(features);
                  if (pred) {
                    if (pred.label === 'class_1') count = 1;
                    if (pred.label === 'class_2') count = 2;

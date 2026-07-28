@@ -1,10 +1,11 @@
 import { loadTf } from './tf-loader';
 import { StoredSample } from './knn-classifier';
+import { TFLayersModel, TFStatic } from '@/types/models';
 
 export class TfTrainer {
-  private model: any = null; // tf.LayersModel
+  private model: TFLayersModel | null = null;
   private classNames: string[] = [];
-  private tf: any = null;
+  private tf: TFStatic | null = null;
 
   async init() {
     if (!this.tf) {
@@ -20,6 +21,7 @@ export class TfTrainer {
     onProgress?: (epoch: number, progress: number, loss: number, acc: number) => void
   ) {
     await this.init();
+    if (!this.tf) throw new Error('TensorFlow.js failed to load');
     if (samples.length === 0) throw new Error('Không có dữ liệu huấn luyện');
 
     // 1. Xác định các nhãn (classes) duy nhất
@@ -59,7 +61,7 @@ export class TfTrainer {
         onEpochEnd: (epoch, logs) => {
           if (onProgress && logs) {
             const progress = Math.round(((epoch + 1) / epochs) * 100);
-            onProgress(epoch + 1, progress, logs.loss, logs.acc || logs.accuracy);
+            onProgress(epoch + 1, progress, logs.loss, logs.acc ?? logs.accuracy ?? 0);
           }
         }
       }
@@ -75,12 +77,21 @@ export class TfTrainer {
    */
   async predict(features: number[]): Promise<{ label: string, confidence: number, confidences?: Record<string, number> }> {
     await this.init();
-    if (!this.model || this.classNames.length === 0) {
+    if (!this.tf) throw new Error('TensorFlow.js failed to load');
+    return this.predictSync(features);
+  }
+
+  /**
+   * Dự đoán đồng bộ (không await), dùng trong vòng lặp requestAnimationFrame
+   */
+  predictSync(features: number[]): { label: string, confidence: number, confidences?: Record<string, number> } {
+    if (!this.model || this.classNames.length === 0 || !this.tf) {
       return { label: 'Chưa huấn luyện', confidence: 0 };
     }
 
-    return this.tf.tidy(() => {
-      const input = this.tf.tensor2d([features]);
+    const tf = this.tf;
+    return tf.tidy(() => {
+      const input = tf.tensor2d([features]);
       const prediction = this.model!.predict(input);
       const scores = prediction.dataSync();
       

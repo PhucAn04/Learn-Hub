@@ -20,7 +20,7 @@ export class Dataset {
   sampleCount: number;
 
   @Column({ type: 'json', nullable: true })
-  classSummary: any; // { 'Vui vẻ': 5, 'Buồn bã': 3, ... }
+  classSummary: Record<string, number>; // { 'Vui vẻ': 5, 'Buồn bã': 3, ... }
 
   @Column({ default: false })
   isTemplate: boolean;
@@ -38,7 +38,7 @@ export class Dataset {
   googleDriveFolderUrl?: string;
 
   @Column({ type: 'json', nullable: true })
-  customClasses?: any[]; // [{id: 'class_1', label: 'Bước 1', emoji: '✨'}]
+  customClasses?: { id: string; label: string; emoji?: string }[]; // [{id: 'class_1', label: 'Bước 1', emoji: '✨'}]
 
   @CreateDateColumn()
   createdAt: Date;

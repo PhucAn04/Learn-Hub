@@ -12,7 +12,8 @@ import MatchProgressBar from '@/components/MatchProgressBar';
 import { GestureType } from '@/types/ml5';
 import { api } from '@/lib/api';
 import { TfTrainer } from '@/lib/tf-trainer';
-import { normalizeHandKeypoints } from '@/lib/knn-classifier';
+import { normalizeHandKeypoints, StoredSample } from '@/lib/knn-classifier';
+import { LeaderboardEntry } from '@/types/models';
 
 const GESTURES = [
   {
@@ -48,7 +49,7 @@ export default function GesturesChallenge() {
   const [score, setScore] = useState(0);
   const [effectEmoji, setEffectEmoji] = useState<string | null>(null);
   const [handsSeen, setHandsSeen] = useState(0);
-  const [leaderboard, setLeaderboard] = useState<any[]>([]);
+  const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
 
   // Custom hook for camera stream management
   const { videoRef, canvasRef, cameraActive, cameraError, retryCamera } = useCamera({
@@ -79,7 +80,7 @@ export default function GesturesChallenge() {
         const datasets = await api.getMyDatasets('teach-gestures');
         if (datasets && datasets.length > 0) {
           const fileRes = await api.getDatasetFile(datasets[0].id);
-          let loadedSamples: any[] = [];
+          let loadedSamples: StoredSample[] = [];
           if (fileRes && fileRes.data && Array.isArray(fileRes.data)) {
             loadedSamples = fileRes.data;
           } else if (fileRes && Array.isArray(fileRes.samples)) {
@@ -152,7 +153,7 @@ export default function GesturesChallenge() {
               // Override with Neural Network if available
               if (trainerRef.current) {
                  const features = normalizeHandKeypoints(kps);
-                 const pred = trainerRef.current.predict(features);
+                 const pred = trainerRef.current.predictSync(features);
                  if (pred && pred.label) {
                    if (pred.label === 'class_1') gesture = 'like';
                    else if (pred.label === 'class_2') gesture = 'fist';

@@ -104,7 +104,7 @@ export function drawBodySkeleton(
       (kpA.confidence === undefined || kpA.confidence > opts.minConfidence!) &&
       (kpB.confidence === undefined || kpB.confidence > opts.minConfidence!)
     ) {
-      ctx.strokeStyle = (opts as any)[colorKey] || '#ffffff';
+      ctx.strokeStyle = ((opts as Record<string, string | number>)[colorKey] as string) || '#ffffff';
       ctx.beginPath();
       ctx.moveTo(kpA.x * scaleX, kpA.y * scaleY);
       ctx.lineTo(kpB.x * scaleX, kpB.y * scaleY);

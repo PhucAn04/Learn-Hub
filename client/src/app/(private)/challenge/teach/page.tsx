@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
 import { playSuccessSound, speakEnglish, playClickSound } from '@/lib/audio';
 import { StoredSample } from '@/lib/knn-classifier';
+import { DatasetResponse } from '@/types/models';
 import { uploadSamplesToCloudinary, isCloudinaryConfigured } from '@/lib/cloudinary';
 import TeachPanel from '@/components/journey/TeachPanel';
 
@@ -21,7 +22,7 @@ export default function TeachAiPage() {
   // States
   const [samples, setSamples] = useState<StoredSample[]>([]);
   const [showSubmitModal, setShowSubmitModal] = useState(false);
-  const [teacherTemplate, setTeacherTemplate] = useState<any>(null);
+  const [teacherTemplate, setTeacherTemplate] = useState<DatasetResponse | null>(null);
 
   useEffect(() => {
     api.getTemplates('teach')
@@ -30,7 +31,7 @@ export default function TeachAiPage() {
           const template = res[0];
           try {
             const fileData = await api.getDatasetFile(template.id);
-            template.samples = fileData.samples || fileData;
+            template.samples = fileData.samples || (Array.isArray(fileData) ? fileData : []);
           } catch (e) {
             console.error("Failed to load template samples", e);
           }
@@ -74,7 +75,7 @@ export default function TeachAiPage() {
       }
 
       await api.createDataset('teach', processedSamples, submitScore, `${reflectionAnswer} | Lời nhắn: ${teacherMessage}`);
-      await api.submitAssignment(submitScore, processedSamples, `${reflectionAnswer} | Lời nhắn: ${teacherMessage}`, 'teach');
+      await api.submitAssignment(submitScore, { samples: processedSamples }, `${reflectionAnswer} | Lời nhắn: ${teacherMessage}`, 'teach');
       await api.saveProgress('teach', submitScore);
       
       setSubmitSuccess(true);
@@ -117,7 +118,7 @@ export default function TeachAiPage() {
             classes={CLASSES}
             minSamplesPerClass={10}
             onTrainComplete={handleTrainComplete}
-            teacherTemplate={teacherTemplate}
+            teacherTemplate={teacherTemplate || undefined}
           />
         )}
 

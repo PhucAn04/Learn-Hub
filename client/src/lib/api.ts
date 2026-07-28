@@ -1,3 +1,16 @@
+import { StoredSample } from './knn-classifier';
+import type {
+  AuthResponse,
+  UserProfile,
+  DatasetResponse,
+  DatasetFileResponse,
+  ModelResponse,
+  SubmissionResponse,
+  SubmissionDataset,
+  CustomClass,
+  LeaderboardEntry,
+} from '@/types/models';
+
 const API_BASE_URL = '/api';
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
@@ -51,34 +64,34 @@ export const api = {
   },
 
   async login(email: string, password: string) {
-    return request<{ user: any; accessToken: string }>('/auth/login', {
+    return request<AuthResponse>('/auth/login', {
       method: 'POST',
       body: JSON.stringify({ email, password }),
     });
   },
 
   async register(username: string, email: string, password?: string, avatar?: string) {
-    return request<{ user: any; accessToken: string }>('/auth/register', {
+    return request<AuthResponse>('/auth/register', {
       method: 'POST',
       body: JSON.stringify({ username, email, password, avatar }),
     });
   },
 
   async getProfile() {
-    return request<any>('/auth/profile', {
+    return request<UserProfile>('/auth/profile', {
       method: 'GET',
     });
   },
 
   async saveProgress(challengeType: string, score: number) {
-    return request<any>('/progress', {
+    return request<{ id: string; challengeType: string; score: number }>('/progress', {
       method: 'POST',
       body: JSON.stringify({ challengeType, score }),
     });
   },
 
   async getLeaderboard(challengeType: string) {
-    return request<any[]>(`/progress/leaderboard/${challengeType}`, {
+    return request<LeaderboardEntry[]>(`/progress/leaderboard/${challengeType}`, {
       method: 'GET',
     });
   },
@@ -89,15 +102,15 @@ export const api = {
     });
   },
 
-  async submitAssignment(accuracy: number, dataset: any, reflectionAnswer: string, challengeType: string = 'teach') {
-    return request<any>('/submissions', {
+  async submitAssignment(accuracy: number, dataset: SubmissionDataset, reflectionAnswer: string, challengeType: string = 'teach') {
+    return request<SubmissionResponse>('/submissions', {
       method: 'POST',
       body: JSON.stringify({ accuracy, dataset, reflectionAnswer, challengeType }),
     });
   },
 
   async getSubmissions() {
-    return request<any[]>('/submissions', {
+    return request<SubmissionResponse[]>('/submissions', {
       method: 'GET',
     });
   },
@@ -106,16 +119,16 @@ export const api = {
 
   async createDataset(
     challengeType: string, 
-    samples: any[], 
+    samples: StoredSample[], 
     testScore: number, 
     reflectionAnswer?: string,
     isTemplate?: boolean,
     teacherNotes?: string,
     isPublished?: boolean,
     dataSourceType?: string,
-    customClasses?: any[]
+    customClasses?: CustomClass[]
   ) {
-    return request<any>('/datasets', {
+    return request<{ dataset: DatasetResponse; model: ModelResponse }>('/datasets', {
       method: 'POST',
       body: JSON.stringify({ 
         challengeType, 
@@ -133,31 +146,31 @@ export const api = {
 
   async getTemplates(challengeType?: string) {
     const query = challengeType ? `?challengeType=${encodeURIComponent(challengeType)}` : '';
-    return request<any[]>(`/datasets/templates${query}`, {
+    return request<DatasetResponse[]>(`/datasets/templates${query}`, {
       method: 'GET',
     });
   },
 
   async getMyDatasets(challengeType: string) {
-    return request<any[]>(`/datasets/my?challengeType=${encodeURIComponent(challengeType)}`, {
+    return request<DatasetResponse[]>(`/datasets/my?challengeType=${encodeURIComponent(challengeType)}`, {
       method: 'GET',
     });
   },
 
   async getDatasetsByChallenge(challengeType: string) {
-    return request<any[]>(`/datasets/by-challenge/${encodeURIComponent(challengeType)}`, {
+    return request<DatasetResponse[]>(`/datasets/by-challenge/${encodeURIComponent(challengeType)}`, {
       method: 'GET',
     });
   },
 
   async getDatasetFile(datasetId: string) {
-    return request<any>(`/datasets/${datasetId}/file`, {
+    return request<DatasetFileResponse>(`/datasets/${datasetId}/file`, {
       method: 'GET',
     });
   },
 
   async getDatasetById(datasetId: string) {
-    return request<any>(`/datasets/${datasetId}`, {
+    return request<DatasetResponse>(`/datasets/${datasetId}`, {
       method: 'GET',
     });
   },
@@ -166,22 +179,23 @@ export const api = {
 
   async getMyModels(challengeType?: string) {
     const query = challengeType ? `?challengeType=${encodeURIComponent(challengeType)}` : '';
-    return request<any[]>(`/models/my${query}`, {
+    return request<ModelResponse[]>(`/models/my${query}`, {
       method: 'GET',
     });
   },
 
   async addTeacherFeedback(modelId: string, feedback: string) {
-    return request<any>(`/models/${modelId}/feedback`, {
+    return request<ModelResponse>(`/models/${modelId}/feedback`, {
       method: 'PATCH',
       body: JSON.stringify({ feedback }),
     });
   },
 
   async togglePublish(datasetId: string, isPublished: boolean) {
-    return request<any>(`/datasets/${datasetId}/publish`, {
+    return request<DatasetResponse>(`/datasets/${datasetId}/publish`, {
       method: 'PATCH',
       body: JSON.stringify({ isPublished }),
     });
   },
 };
+

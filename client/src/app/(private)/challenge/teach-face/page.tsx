@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
 import { playSuccessSound, speakEnglish, playClickSound } from '@/lib/audio';
 import { StoredSample } from '@/lib/knn-classifier';
+import { DatasetResponse } from '@/types/models';
 import { uploadSamplesToCloudinary, isCloudinaryConfigured } from '@/lib/cloudinary';
 import TeachPanel from '@/components/journey/TeachPanel';
 
@@ -23,7 +24,7 @@ export default function TeachFacePage() {
   // States
   const [samples, setSamples] = useState<StoredSample[]>([]);
   const [showSubmitModal, setShowSubmitModal] = useState(false);
-  const [teacherTemplate, setTeacherTemplate] = useState<any>(null);
+  const [teacherTemplate, setTeacherTemplate] = useState<DatasetResponse | null>(null);
 
   useEffect(() => {
     api.getTemplates('teach-face')
@@ -32,7 +33,7 @@ export default function TeachFacePage() {
           const template = res[0];
           try {
             const fileData = await api.getDatasetFile(template.id);
-            template.samples = fileData.samples || fileData;
+            template.samples = fileData.samples || (Array.isArray(fileData) ? fileData : []);
           } catch (e) {
             console.error("Failed to load template samples", e);
           }
@@ -76,7 +77,7 @@ export default function TeachFacePage() {
       }
 
       await api.createDataset('teach-face', processedSamples, submitScore, `${reflectionAnswer} | Lời nhắn: ${teacherMessage}`);
-      await api.submitAssignment(submitScore, processedSamples, `${reflectionAnswer} | Lời nhắn: ${teacherMessage}`, 'teach-face');
+      await api.submitAssignment(submitScore, { samples: processedSamples }, `${reflectionAnswer} | Lời nhắn: ${teacherMessage}`, 'teach-face');
       await api.saveProgress('teach-face', submitScore);
       
       setSubmitSuccess(true);
@@ -119,7 +120,7 @@ export default function TeachFacePage() {
             classes={CLASSES}
             minSamplesPerClass={10}
             onTrainComplete={handleTrainComplete}
-            teacherTemplate={teacherTemplate}
+            teacherTemplate={teacherTemplate || undefined}
           />
         )}
 

@@ -120,7 +120,7 @@ export default function DataCollector({
         const hands = results as HandResult[];
         if (hands && hands.length > 0 && hands[0].keypoints) {
           features = normalizeHandKeypoints(hands[0].keypoints);
-          roi = calculateROI(hands[0].keypoints as any, img.canvas.width, img.canvas.height, 0.1);
+          roi = calculateROI(hands[0].keypoints as { x: number; y: number }[], img.canvas.width, img.canvas.height, 0.1);
           isValid = true;
           const ctx = img.canvas.getContext('2d');
           if (ctx) {
@@ -140,10 +140,10 @@ export default function DataCollector({
       } else if (detectorMode === 'face') {
         const faces = results as FaceMeshResult[];
         if (faces && faces.length > 0) {
-          const keypoints = Array.isArray(faces[0]) ? faces[0] : (faces[0] as any).keypoints;
+          const keypoints = getFaceKeypoints(faces[0]);
           if (keypoints) {
              features = normalizeFaceFeatures(keypoints);
-             roi = calculateROI(keypoints as any, img.canvas.width, img.canvas.height, 0.1);
+             roi = calculateROI(keypoints as { x: number; y: number }[], img.canvas.width, img.canvas.height, 0.1);
              isValid = true;
              const ctx = img.canvas.getContext('2d');
              if (ctx) {
@@ -161,7 +161,7 @@ export default function DataCollector({
         const poses = results as BodyPoseResult[];
         if (poses && poses.length > 0 && poses[0].keypoints) {
           features = normalizeBodyKeypoints(poses[0].keypoints);
-          roi = calculateROI(poses[0].keypoints as any, img.canvas.width, img.canvas.height, 0.1);
+          roi = calculateROI(poses[0].keypoints as { x: number; y: number }[], img.canvas.width, img.canvas.height, 0.1);
           isValid = true;
           const ctx = img.canvas.getContext('2d');
           if (ctx) {
@@ -178,7 +178,7 @@ export default function DataCollector({
       if (features && isValid) {
         // Assess image quality (brightness, blur) — tag only, never block
         const isVideo = activeTab === 'video';
-        const quality = assessQuality(img.canvas, roi, isVideo);
+        const quality = assessQuality(img.canvas, roi);
         newSamples.push({
           id: `sample_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
           label: activeClassLabel,

@@ -37,6 +37,8 @@ import AIFeedbackModal from './AIFeedbackModal';
 import DataBalanceWarning from './DataBalanceWarning';
 import AIConfidenceEnergyBars from './AIConfidenceEnergyBars';
 import { TfTrainer } from '@/lib/tf-trainer';
+import { TeacherTemplate, DatasetResponse } from '@/types/models';
+import { HandResult, FaceMeshResult } from '@/types/ml5';
 
 // ──────────────────────────────────────────────
 // Try to import optional golden datasets
@@ -55,11 +57,11 @@ try {
 // ──────────────────────────────────────────────
 interface TeachPanelProps {
   mode: 'hand-1' | 'hand-2' | 'gesture' | 'emotion';
-  classes: { id: string; label: string; emoji: string }[];
+  classes: { id: string; label: string; emoji?: string }[];
   minSamplesPerClass?: number;
   maxVisibleSkeletons?: number;
   onTrainComplete: (samples: StoredSample[]) => void;
-  teacherTemplate?: any;
+  teacherTemplate?: TeacherTemplate | DatasetResponse;
 }
 
 // ──────────────────────────────────────────────
@@ -261,7 +263,7 @@ export default function TeachPanel({
   const modelStatus = isHandMode ? handModelStatus : faceModelStatus;
 
   // ── Thumbnail helper ────────────────
-  const getVideoThumbAndCanvas = useCallback((hands?: any[], faces?: any[]) => {
+  const getVideoThumbAndCanvas = useCallback((hands?: HandResult[], faces?: FaceMeshResult[]) => {
     const cv = document.createElement('canvas');
     cv.width = 240;
     cv.height = 240;
@@ -430,7 +432,7 @@ export default function TeachPanel({
             return;
 
           const keypoints = hands[handIndex].keypoints!;
-          const roi = calculateROI(keypoints as any, rawCanvas.width, rawCanvas.height, 0.1);
+          const roi = calculateROI(keypoints as { x: number; y: number }[], rawCanvas.width, rawCanvas.height, 0.1);
           const quality = assessQuality(rawCanvas, roi);
 
           const features = normalizeHandKeypoints(keypoints);
@@ -621,7 +623,7 @@ export default function TeachPanel({
       playSuccessSound();
       
       // Perform initial evaluation immediately
-      const targetDataset = (teacherTemplate?.samples?.length > 0) ? teacherTemplate.samples : samples;
+      const targetDataset = ((teacherTemplate?.samples?.length ?? 0) > 0) ? teacherTemplate!.samples! : samples;
       let hasIssues = false;
       
       const evaluated = samples.map(sample => {
@@ -671,7 +673,7 @@ export default function TeachPanel({
     if (isTrained && !isTraining) {
       setSamples(prevSamples => {
         let hasChanges = false;
-        const targetDataset = (teacherTemplate?.samples?.length > 0) ? teacherTemplate.samples : prevSamples;
+        const targetDataset = ((teacherTemplate?.samples?.length ?? 0) > 0) ? teacherTemplate!.samples! : prevSamples;
         
         const evaluated = prevSamples.map(sample => {
           const refDataset = (targetDataset === prevSamples) ? prevSamples.filter(s => s.id !== sample.id) : targetDataset;
@@ -1187,7 +1189,7 @@ export default function TeachPanel({
         <div className="bg-white rounded-3xl p-6 border-4 border-indigo-400 shadow-xl relative flex flex-col items-center">
 
           <DataCollector
-            mode={mode as any}
+            mode={mode}
             activeClassId={activeClass}
             activeClassLabel={classes.find((c) => c.id === activeClass)?.label || activeClass}
             activeTab={activeTab}

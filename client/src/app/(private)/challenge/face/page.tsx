@@ -13,7 +13,7 @@ import {
   FACE_NOSE,
   drawPolyline,
   normalizeFaceKeypoints,
-  normalizeFaceFeatures,
+
   getSmileMetricsFromFaceMesh,
   drawFaceStickers,
   getFaceKeypoints,
@@ -24,7 +24,9 @@ import CameraView from '@/components/CameraView';
 import { FaceFilter, SmileMetrics } from '@/types/ml5';
 import { api } from '@/lib/api';
 import { TfTrainer } from '@/lib/tf-trainer';
-import { classifyKNN, StoredSample } from '@/lib/knn-classifier';
+import { normalizeFaceFeatures, classifyKNN, StoredSample } from '@/lib/knn-classifier';
+
+import { LeaderboardEntry } from '@/types/models';
 
 // Color palette for multiple faces — each face gets its own color set
 const FACE_COLORS = [
@@ -45,7 +47,7 @@ export default function FaceChallenge() {
   const [capturedPhotoUrl, setCapturedPhotoUrl] = useState<string | null>(null);
   const [flashActive, setFlashActive] = useState(false);
   const [score, setScore] = useState(0);
-  const [leaderboard, setLeaderboard] = useState<any[]>([]);
+  const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
 
   const smileMetricsRef = useRef<SmileMetrics>({
     isSmiling: false,
@@ -181,7 +183,7 @@ export default function FaceChallenge() {
                 const faceKps = getFaceKeypoints(kpsRaw);
                 if (faceKps && faceKps.length >= 468) {
                   const features = normalizeFaceFeatures(faceKps);
-                  const pred = trainerRef.current.predict(features);
+                  const pred = trainerRef.current.predictSync(features);
                   // In teach-face, 'class_1' is usually mapped to 'Vui vẻ 😀'
                   // We check if the highest confidence class matches a "smile" class taught by teacher
                   // For simplicity, let's use the confidence of class_1 (if it exists) as progress

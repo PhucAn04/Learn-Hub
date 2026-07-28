@@ -15,15 +15,16 @@ import SampleGallery from '@/components/SampleGallery';
 import AIFeedbackModal from '@/components/journey/AIFeedbackModal';
 import { BodyKeypoint } from '@/types/ml5';
 import { TfTrainer } from '@/lib/tf-trainer';
+import { TeacherTemplate, DatasetResponse } from '@/types/models';
 
 interface BodyTeachPanelProps {
   mode: 'body-pose';
-  classes: { id: string; label: string; emoji: string }[];
+  classes: { id: string; label: string; emoji?: string }[];
   minSamplesPerClass?: number;
   maxVisibleSkeletons?: number;
-  teacherTemplate?: any;
+  teacherTemplate?: TeacherTemplate | DatasetResponse;
   allowCustomClasses?: boolean;
-  onClassesChange?: (newClasses: { id: string; label: string; emoji: string }[]) => void;
+  onClassesChange?: (newClasses: { id: string; label: string; emoji?: string }[]) => void;
   onTrainComplete: (samples: StoredSample[]) => void;
 }
 
@@ -133,7 +134,7 @@ export default function BodyTeachPanel({
     const rawThumbnail = cv.toDataURL('image/jpeg', 0.8);
     
     // Đánh giá chất lượng TRƯỚC KHI vẽ bộ xương lên canvas
-    const roi = calculateROI(pose.keypoints as any, cv.width, cv.height, 0.1);
+    const roi = calculateROI(pose.keypoints as { x: number; y: number }[], cv.width, cv.height, 0.1);
     const quality = assessQuality(cv, roi);
     
     if (ctx && pose.keypoints && videoRef.current) {
@@ -243,7 +244,7 @@ export default function BodyTeachPanel({
       playSuccessSound();
       
       // Perform initial evaluation immediately
-      const targetDataset = (teacherTemplate?.samples?.length > 0) ? teacherTemplate.samples : samples;
+      const targetDataset = ((teacherTemplate?.samples?.length ?? 0) > 0) ? teacherTemplate!.samples! : samples;
       let hasIssues = false;
       
       const evaluated = samples.map(sample => {
@@ -297,7 +298,7 @@ export default function BodyTeachPanel({
     if (isTrained && !isTraining) {
       setSamples(prevSamples => {
         let hasChanges = false;
-        const targetDataset = (teacherTemplate?.samples?.length > 0) ? teacherTemplate.samples : prevSamples;
+        const targetDataset = ((teacherTemplate?.samples?.length ?? 0) > 0) ? teacherTemplate!.samples! : prevSamples;
         
         const evaluated = prevSamples.map(sample => {
           const refDataset = (targetDataset === prevSamples) ? prevSamples.filter(s => s.id !== sample.id) : targetDataset;
@@ -414,7 +415,7 @@ export default function BodyTeachPanel({
               <span>👀</span> Ảnh mẫu của Cô/Thầy:
             </h3>
             <div className="flex gap-2 overflow-x-auto pb-1">
-              {teacherTemplate.samples.filter((s: any) => s.sourceId === activeClass).map((sample: any, i: number) => (
+              {teacherTemplate.samples.filter((s: StoredSample) => s.sourceId === activeClass).map((sample: StoredSample, i: number) => (
                 <img 
                   key={i} 
                   src={sample.thumbnail || sample.rawThumbnail} 
@@ -422,7 +423,7 @@ export default function BodyTeachPanel({
                   className="w-14 h-14 rounded-xl object-cover border-2 border-indigo-200 shrink-0" 
                 />
               ))}
-              {teacherTemplate.samples.filter((s: any) => s.sourceId === activeClass).length === 0 && (
+              {teacherTemplate.samples.filter((s: StoredSample) => s.sourceId === activeClass).length === 0 && (
                 <p className="text-xs text-indigo-400 italic">Cô/Thầy chưa lưu ảnh mẫu cho nhãn này.</p>
               )}
             </div>
@@ -516,7 +517,7 @@ export default function BodyTeachPanel({
       <div className="lg:col-span-2 flex flex-col gap-6">
         <div className="bg-white rounded-3xl p-6 border-4 border-indigo-400 shadow-xl relative flex flex-col items-center">
           <DataCollector
-            mode={mode as any}
+            mode={mode}
             videoRef={videoRef}
             activeClassId={activeClass}
             activeClassLabel={classesState.find(c => c.id === activeClass)?.label || activeClass}

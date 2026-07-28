@@ -1,11 +1,12 @@
 import { Injectable, NotFoundException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, FindOptionsWhere } from 'typeorm';
 import { Dataset } from './entities/dataset.entity';
 import { Model } from '../models/entities/model.entity';
 import { CreateDatasetDto } from './dto/create-dataset.dto';
 import { UsersService } from '../users/users.service';
 import { GoogleDriveService } from '../integrations/google-drive.service';
+import { TrainingSample } from '../../shared/types';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
@@ -28,17 +29,20 @@ export class DatasetsService {
   }
 
   async createDataset(userId: string, dto: CreateDatasetDto): Promise<{ dataset: Dataset; model: Model }> {
+    // Cast DTO samples to TrainingSample[] (DTO uses Record<string, unknown>[] for decorator metadata compatibility)
+    const samples = dto.samples as unknown as TrainingSample[];
+
     // Save samples to JSON file
     const fileId = crypto.randomUUID();
     const fileName = `${fileId}.json`;
     const filePath = path.join(this.uploadDir, fileName);
-    fs.writeFileSync(filePath, JSON.stringify(dto.samples, null, 2), 'utf-8');
+    fs.writeFileSync(filePath, JSON.stringify(samples, null, 2), 'utf-8');
 
     // Build class summary from samples
     const classSummary: Record<string, number> = {};
-    if (Array.isArray(dto.samples)) {
-      for (const sample of dto.samples) {
-        const label = sample.label || sample.class || 'unknown';
+    if (Array.isArray(samples)) {
+      for (const sample of samples) {
+        const label = sample.label || 'unknown';
         classSummary[label] = (classSummary[label] || 0) + 1;
       }
     }
@@ -48,7 +52,7 @@ export class DatasetsService {
       userId,
       challengeType: dto.challengeType || 'teach',
       dataFileUrl: filePath,
-      sampleCount: Array.isArray(dto.samples) ? dto.samples.length : 0,
+      sampleCount: Array.isArray(samples) ? samples.length : 0,
       classSummary,
       isTemplate: dto.isTemplate || false,
       teacherNotes: dto.teacherNotes || '',
@@ -67,14 +71,14 @@ export class DatasetsService {
     const savedModel = await this.modelRepository.save(model);
 
     // [Background Task] Upload media to Google Drive if user is connected
-    this.uploadToGoogleDrive(userId, savedDataset.id, dto.challengeType, dto.samples).catch(err => {
+    this.uploadToGoogleDrive(userId, savedDataset.id, dto.challengeType, samples).catch(err => {
       this.logger.error(`Background upload to Google Drive failed: ${err.message}`);
     });
 
     return { dataset: savedDataset, model: savedModel };
   }
 
-  private async uploadToGoogleDrive(userId: string, datasetId: string, challengeType: string, samples: any[]) {
+  private async uploadToGoogleDrive(userId: string, datasetId: string, challengeType: string, samples: TrainingSample[]) {
     try {
       const user = await this.usersService.findById(userId);
       if (!user || !user.googleAccessToken) {
@@ -95,6 +99,7 @@ export class DatasetsService {
         if (!sample.thumbnail && !sample.rawThumbnail) continue;
         
         const dataUrl = sample.thumbnail || sample.rawThumbnail;
+        if (!dataUrl) continue;
         const matches = dataUrl.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
         
         if (matches && matches.length === 3) {
@@ -120,8 +125,8 @@ export class DatasetsService {
     }
   }
 
-  async getDatasetsByUser(userId: string, challengeType?: string): Promise<any[]> {
-    const where: any = { userId };
+  async getDatasetsByUser(userId: string, challengeType?: string): Promise<(Omit<Dataset, 'models'> & { model: Model | null })[]> {
+    const where: FindOptionsWhere<Dataset> = { userId };
     if (challengeType) {
       where.challengeType = challengeType;
     }
@@ -151,7 +156,7 @@ export class DatasetsService {
     return dataset;
   }
 
-  async getDatasetFile(datasetId: string): Promise<any> {
+  async getDatasetFile(datasetId: string): Promise<TrainingSample[]> {
     const dataset = await this.datasetRepository.findOne({ where: { id: datasetId } });
     if (!dataset) {
       throw new NotFoundException('Dataset không tồn tại.');
@@ -165,7 +170,7 @@ export class DatasetsService {
     return JSON.parse(content);
   }
 
-  async getAllDatasetsByChallengeType(challengeType: string): Promise<any[]> {
+  async getAllDatasetsByChallengeType(challengeType: string): Promise<(Omit<Dataset, 'models'> & { model: Model | null })[]> {
     const datasets = await this.datasetRepository.find({
       where: { challengeType, isTemplate: false },
       relations: { user: true, models: true },
@@ -181,7 +186,7 @@ export class DatasetsService {
   }
 
   async getTemplates(challengeType?: string): Promise<Dataset[]> {
-    const where: any = { isTemplate: true, isPublished: true };
+    const where: FindOptionsWhere<Dataset> = { isTemplate: true, isPublished: true };
     if (challengeType) {
       where.challengeType = challengeType;
     }

@@ -4,7 +4,7 @@ import { StoredSample } from '@/lib/knn-classifier';
 interface SamplePreviewModalProps {
   isOpen: boolean;
   onClose: () => void;
-  sample: any; // Allow partial objects for reference images
+  sample: Partial<StoredSample>; // Allow partial objects for reference images
   onDelete?: () => void;
   readonly?: boolean;
 }

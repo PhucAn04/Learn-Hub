@@ -5,7 +5,7 @@ export class CreateSubmissionDto {
   accuracy: number;
 
   @ApiProperty({ description: 'Bộ dữ liệu tọa độ khớp xương tay đã chụp', example: {} })
-  dataset?: any;
+  dataset?: Record<string, unknown>;
 
   @ApiProperty({ description: 'Câu trả lời tự luận phản tư của học sinh', example: 'Con giữ tay im lặng khi chụp' })
   reflectionAnswer?: string;

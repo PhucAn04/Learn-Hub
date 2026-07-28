@@ -6,17 +6,25 @@
  *   const tf = await loadTf();
  */
 
+import { TFStatic } from '@/types/models';
+
+declare global {
+  interface Window {
+    tf?: TFStatic;
+  }
+}
+
 const TF_CDN_URL = 'https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js';
 
-let tfPromise: Promise<any> | null = null;
+let tfPromise: Promise<TFStatic> | null = null;
 
-export function loadTf(): Promise<any> {
+export function loadTf(): Promise<TFStatic> {
   if (tfPromise) return tfPromise;
 
   tfPromise = new Promise((resolve, reject) => {
     // Already loaded
-    if (typeof window !== 'undefined' && (window as any).tf) {
-      resolve((window as any).tf);
+    if (typeof window !== 'undefined' && window.tf) {
+      resolve(window.tf);
       return;
     }
 
@@ -25,8 +33,8 @@ export function loadTf(): Promise<any> {
     script.async = true;
 
     script.onload = () => {
-      if ((window as any).tf) {
-        resolve((window as any).tf);
+      if (window.tf) {
+        resolve(window.tf);
       } else {
         reject(new Error('tf script loaded but tf global not found'));
       }
@@ -42,3 +50,4 @@ export function loadTf(): Promise<any> {
 
   return tfPromise;
 }
+

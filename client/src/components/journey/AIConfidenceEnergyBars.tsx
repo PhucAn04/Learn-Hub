@@ -4,7 +4,7 @@ import { CLASS_COLORS } from '@/lib/scatter-layout';
 interface ClassData {
   id: string;
   label: string;
-  emoji: string;
+  emoji?: string;
 }
 
 interface AIConfidenceEnergyBarsProps {

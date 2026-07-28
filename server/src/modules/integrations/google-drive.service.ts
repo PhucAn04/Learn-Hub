@@ -6,7 +6,7 @@ import { Readable } from 'stream';
 @Injectable()
 export class GoogleDriveService {
   private readonly logger = new Logger(GoogleDriveService.name);
-  private oauth2Client: any;
+  private oauth2Client: InstanceType<typeof google.auth.OAuth2>;
 
   constructor(private configService: ConfigService) {
     this.oauth2Client = new google.auth.OAuth2(

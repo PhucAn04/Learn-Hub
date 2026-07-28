@@ -44,8 +44,8 @@ export default function RegisterPage() {
       // Auto login by setting token
       api.setToken(response.accessToken);
       router.push('/home');
-    } catch (err: any) {
-      setError(err.message || 'Có lỗi xảy ra khi tạo tài khoản rồi bé ơi.');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Có lỗi xảy ra khi tạo tài khoản rồi bé ơi.');
     } finally {
       setLoading(false);
     }

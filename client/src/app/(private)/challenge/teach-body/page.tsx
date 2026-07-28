@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
 import { playSuccessSound, speakEnglish, playClickSound } from '@/lib/audio';
 import { StoredSample } from '@/lib/knn-classifier';
+import { DatasetResponse } from '@/types/models';
 import { uploadSamplesToCloudinary, isCloudinaryConfigured } from '@/lib/cloudinary';
 import BodyTeachPanel from '@/components/journey/BodyTeachPanel';
 
@@ -27,32 +28,43 @@ export default function StudentBodyExercisePage() {
   // States
   const [samples, setSamples] = useState<StoredSample[]>([]);
   const [showSubmitModal, setShowSubmitModal] = useState(false);
-  const [teacherTemplate, setTeacherTemplate] = useState<any>(null);
-  const [dynamicClasses, setDynamicClasses] = useState<{ id: string; label: string; emoji: string }[]>([]);
+  const [teacherTemplate, setTeacherTemplate] = useState<DatasetResponse | null>(null);
+  const [dynamicClasses, setDynamicClasses] = useState<{ id: string; label: string; emoji?: string }[]>([]);
 
   useEffect(() => {
-    // Reset state on change
-    setTeacherTemplate(null);
-    setDynamicClasses([]);
-    setSamples([]);
-
+    let ignore = false;
     api.getTemplates(selectedExercise)
       .then(async res => {
+        if (ignore) return;
         if (res && res.length > 0) {
           const template = res[0];
           try {
             const fileData = await api.getDatasetFile(template.id);
-            template.samples = fileData.samples || fileData;
+            template.samples = fileData.samples || (Array.isArray(fileData) ? fileData : []);
           } catch (e) {
             console.error("Failed to load template samples", e);
           }
+          if (ignore) return;
           setTeacherTemplate(template);
-          if (template.customClasses && template.customClasses.length > 0) {
-            setDynamicClasses(template.customClasses);
-          }
+          setDynamicClasses(template.customClasses && template.customClasses.length > 0 ? template.customClasses : []);
+          setSamples([]);
+        } else {
+          setTeacherTemplate(null);
+          setDynamicClasses([]);
+          setSamples([]);
         }
       })
-      .catch(err => console.error("Failed to load template", err));
+      .catch(err => {
+        if (ignore) return;
+        console.error("Failed to load template", err);
+        setTeacherTemplate(null);
+        setDynamicClasses([]);
+        setSamples([]);
+      });
+
+    return () => {
+      ignore = true;
+    };
   }, [selectedExercise]);
   
   // Submission States
@@ -96,14 +108,14 @@ export default function StudentBodyExercisePage() {
         '',
         false,
         'camera'
-      ) as any;
+      );
       
       setSubmitSuccess(true);
       playSuccessSound();
       speakEnglish('Great job!');
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error(err);
-      alert('Lỗi nộp bài: ' + err.message);
+      alert('Lỗi nộp bài: ' + (err instanceof Error ? err.message : 'Không xác định'));
     } finally {
       setIsSubmitting(false);
     }
@@ -165,7 +177,7 @@ export default function StudentBodyExercisePage() {
               mode="body-pose"
               classes={dynamicClasses}
               onTrainComplete={handleTrainComplete}
-              teacherTemplate={teacherTemplate}
+              teacherTemplate={teacherTemplate || undefined}
             />
           </div>
         )}
@@ -198,7 +210,7 @@ export default function StudentBodyExercisePage() {
                   <div className="bg-white/10 rounded-2xl p-6 border border-white/20 bg-indigo-50">
                     <h3 className="font-bold text-indigo-900 mb-2">Lời nhắn từ Cô/Thầy</h3>
                     <div className="text-indigo-800 italic">
-                      "{teacherTemplate?.teacherNotes || 'Các em nhớ làm giống cô nhé!'}"
+                      &quot;{teacherTemplate?.teacherNotes || 'Các em nhớ làm giống cô nhé!'}&quot;
                     </div>
                   </div>
 

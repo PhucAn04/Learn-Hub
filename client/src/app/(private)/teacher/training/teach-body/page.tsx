@@ -26,7 +26,7 @@ export default function TeacherBodyExercisePage() {
   // States
   const [samples, setSamples] = useState<StoredSample[]>([]);
   const [showSubmitModal, setShowSubmitModal] = useState(false);
-  const [teacherClasses, setTeacherClasses] = useState<{ id: string; label: string; emoji: string }[]>([]);
+  const [teacherClasses, setTeacherClasses] = useState<{ id: string; label: string; emoji?: string }[]>([]);
   
   // Submission States
   const [teacherNotes, setTeacherNotes] = useState('Cô đã thiết lập các tư thế mẫu cho bài này.');
@@ -66,13 +66,13 @@ export default function TeacherBodyExercisePage() {
         true, // isPublished
         'camera',
         teacherClasses // Pass custom classes!
-      ) as any;
+      );
       
       setSubmitSuccess(true);
       playSuccessSound();
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error(err);
-      alert('Lỗi lưu dữ liệu: ' + err.message);
+      alert('Lỗi lưu dữ liệu: ' + (err instanceof Error ? err.message : 'Không xác định'));
     } finally {
       setIsSubmitting(false);
     }

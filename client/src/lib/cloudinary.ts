@@ -159,15 +159,17 @@ export async function uploadFileToCloudinary(
   });
 }
 
+import { StoredSample } from './knn-classifier';
+
 /**
  * Upload all sample thumbnails to Cloudinary in batches.
  * Returns new samples array with thumbnails replaced by Cloudinary URLs.
  */
 export async function uploadSamplesToCloudinary(
-  samples: any[],
+  samples: StoredSample[],
   challengeType: string,
   onProgress?: (uploaded: number, total: number) => void
-): Promise<any[]> {
+): Promise<StoredSample[]> {
   if (!isCloudinaryConfigured()) {
     console.log('[Cloudinary] Not configured, keeping Base64 thumbnails');
     return samples;

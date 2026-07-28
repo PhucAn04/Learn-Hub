@@ -3,6 +3,8 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Progress } from './entities/progress.entity';
 
+import { LeaderboardEntry } from '../../shared/types';
+
 @Injectable()
 export class ProgressService {
   constructor(
@@ -19,7 +21,7 @@ export class ProgressService {
     return this.progressRepository.save(progress);
   }
 
-  async getLeaderboard(challengeType: string): Promise<any[]> {
+  async getLeaderboard(challengeType: string): Promise<LeaderboardEntry[]> {
     const rawData = await this.progressRepository
       .createQueryBuilder('progress')
       .innerJoin('progress.user', 'user')
@@ -40,7 +42,8 @@ export class ProgressService {
       userId: item.userid,
       username: item.username,
       avatar: item.avatar,
-      score: parseInt(item.highscore, 10),
+      score: parseInt(item.highscore, 10) || 0,
+      highScore: parseInt(item.highscore, 10) || 0,
       completedAt: item.lastcompletedat,
     }));
   }

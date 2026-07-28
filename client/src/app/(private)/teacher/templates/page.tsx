@@ -2,11 +2,12 @@
 
 import React, { useEffect, useState } from 'react';
 import { api } from '@/lib/api';
+import { DatasetResponse } from '@/types/models';
 import { Database, Plus, Search, BookOpen, Clock, Users } from 'lucide-react';
 import Link from 'next/link';
 
 export default function TeacherTemplatesPage() {
-  const [templates, setTemplates] = useState<any[]>([]);
+  const [templates, setTemplates] = useState<DatasetResponse[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');

@@ -9,6 +9,7 @@ import { useMl5Handpose } from '@/hooks/useMl5Handpose';
 import { drawHandSkeleton } from '@/lib/hand-drawing';
 import { playSuccessSound, speakEnglish, playClickSound } from '@/lib/audio';
 import { normalizeHandKeypoints, classifyKNN, StoredSample } from '@/lib/knn-classifier';
+import { HandResult } from '@/types/ml5';
 import { GOLDEN_GESTURES_DATASET } from '@/lib/golden-gestures-dataset';
 import CameraView from '@/components/CameraView';
 import SampleGallery from '@/components/SampleGallery';
@@ -75,7 +76,7 @@ export default function TeacherTeachGesturesPage() {
   useEffect(() => {
   }, []);
 
-  const getVideoThumb = (hands?: any[]) => {
+  const getVideoThumb = (hands?: HandResult[]) => {
     const cv = document.createElement('canvas');
     cv.width = 240; cv.height = 240;
     const ctx = cv.getContext('2d');

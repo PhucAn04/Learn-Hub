@@ -36,7 +36,7 @@ export class UsersService {
   }
 
   async updateGoogleTokens(userId: string, accessToken: string, refreshToken?: string): Promise<void> {
-    const update: any = { googleAccessToken: accessToken };
+    const update: Partial<User> = { googleAccessToken: accessToken };
     if (refreshToken) {
       update.googleRefreshToken = refreshToken;
     }

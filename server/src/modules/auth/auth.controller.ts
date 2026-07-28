@@ -5,6 +5,7 @@ import { JwtAuthGuard } from './jwt-auth.guard';
 import { GoogleOAuthGuard } from './google-oauth.guard';
 import { CurrentUser } from './current-user.decorator';
 import { User } from '../users/entities/user.entity';
+import { GoogleOAuthProfile } from '../../shared/types';
 import { RegisterDto, LoginDto } from './dto/auth.dto';
 import type { Request, Response } from 'express';
 
@@ -49,7 +50,7 @@ export class AuthController {
   @UseGuards(GoogleOAuthGuard)
   @ApiOperation({ summary: 'Callback xử lý đăng nhập Google' })
   async googleAuthRedirect(@Req() req: Request, @Res() res: Response) {
-    const { accessToken } = await this.authService.validateOAuthLogin(req.user);
+    const { accessToken } = await this.authService.validateOAuthLogin(req.user as unknown as GoogleOAuthProfile);
     // Redirect về client frontend (Next.js) kèm token
     const clientUrl = process.env.CLIENT_URL || 'http://localhost:3000';
     return res.redirect(`${clientUrl}/auth/callback?token=${accessToken}`);

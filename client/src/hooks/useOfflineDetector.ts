@@ -1,14 +1,16 @@
 import { useRef, useState, useCallback } from 'react';
-import { Ml5Module } from '@/types/ml5';
+import { Ml5Module, HandPoseModel, Ml5FaceMeshModel, BodyPoseModel } from '@/types/ml5';
 
 export type DetectorMode = 'hand' | 'face' | 'body';
+
+type Ml5DetectorInstance = HandPoseModel | Ml5FaceMeshModel | BodyPoseModel;
 
 export function useOfflineDetector(mode: DetectorMode) {
   const [isReady, setIsReady] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   
   // Store the model instance so we don't recreate it
-  const modelRef = useRef<any>(null);
+  const modelRef = useRef<Ml5DetectorInstance | null>(null);
 
   const initModel = useCallback(async () => {
     if (modelRef.current || isLoading) return;

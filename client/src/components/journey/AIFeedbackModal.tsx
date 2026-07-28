@@ -4,13 +4,14 @@ import React, { useMemo, useState } from 'react';
 import { X, AlertCircle, CheckCircle, Brain, Target, Info, ChevronRight, RefreshCw, Search, Eye } from 'lucide-react';
 import { StoredSample, classifyKNNDetailed } from '@/lib/knn-classifier';
 import SamplePreviewModal from '@/components/SamplePreviewModal';
+import { TeacherTemplate, CorrectnessIssue, NearestNeighbor } from '@/types/models';
 
 interface AIFeedbackModalProps {
   isOpen: boolean;
   onClose: () => void;
   onProceed: () => void;
   studentSamples: StoredSample[];
-  teacherTemplate?: any;
+  teacherTemplate?: TeacherTemplate;
   kValue: number;
   threshold: number;
   classes: { id: string; label: string }[];
@@ -44,7 +45,7 @@ export default function AIFeedbackModal({
 
     const teacherSamples: StoredSample[] = teacherTemplate?.dataset?.samples || teacherTemplate?.samples || [];
     const hasTeacherTemplate = teacherSamples.length > 0;
-    const correctnessIssues: any[] = [];
+    const correctnessIssues: CorrectnessIssue[] = [];
     
     studentSamples.forEach((studentSample, index) => {
       const studentClassId = studentSample.sourceId || classes.find(c => c.label === studentSample.label)?.id;
@@ -68,7 +69,7 @@ export default function AIFeedbackModal({
         if (finalPredictedClassId !== studentClassId) {
           
           let displayClassLabel = 'Chưa rõ ràng 🤔';
-          let matchingNearest: any[] = [];
+          let matchingNearest: NearestNeighbor[] = [];
           
           if (finalPredictedClassId === 'unclear') {
             displayClassLabel = 'Chưa rõ ràng 🤔';
@@ -77,14 +78,14 @@ export default function AIFeedbackModal({
           }
 
           // Show the images that contributed to the AI's best guess (even if it's unclear)
-          matchingNearest = knn.nearest.filter((n: any) => {
+          matchingNearest = knn.nearest.filter((n: NearestNeighbor) => {
             const nClassId = classes.find(c => c.label === n.label || c.id === n.label)?.id || n.label;
             return nClassId === bestClassId;
           });
 
           correctnessIssues.push({
             studentSample,
-            studentClassLabel: classes.find(c => c.id === studentClassId)?.label || studentClassId,
+            studentClassLabel: classes.find(c => c.id === studentClassId)?.label || studentClassId || 'unknown',
             predictedClassLabel: displayClassLabel,
             votes: bestVotes,
             nearest: knn.nearest,
@@ -260,11 +261,11 @@ export default function AIFeedbackModal({
                           <div className="text-center flex-shrink-0">
                             <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 block">AI phát hiện {issue.matchingNearest.length} ảnh chung nhãn này</span>
                             <div className="flex flex-wrap gap-2 justify-center max-w-[200px]">
-                              {issue.matchingNearest.map((n: any, nidx: number) => (
+                              {issue.matchingNearest.map((n: NearestNeighbor, nidx: number) => (
                                 <div key={nidx} className="relative w-14 h-14 rounded-lg overflow-hidden border-2 border-indigo-400 shadow-sm group">
                                   <img src={n.thumbnail} alt="Giáo viên" className="w-full h-full object-cover" />
                                   <div 
-                                    onClick={() => setPreviewSample({ ...n, isValid: true } as any)}
+                                    onClick={() => setPreviewSample({ ...n, features: [], isValid: true } as StoredSample)}
                                     className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer text-white"
                                   >
                                     <Eye className="w-5 h-5" />
@@ -321,7 +322,7 @@ export default function AIFeedbackModal({
       <SamplePreviewModal 
         isOpen={!!previewSample} 
         onClose={() => setPreviewSample(null)} 
-        sample={previewSample} 
+        sample={previewSample ?? {}} 
         readonly={!previewSample?.id}
         onDelete={() => {
           if (previewSample?.id && onDeleteSample) {

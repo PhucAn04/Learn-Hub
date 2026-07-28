@@ -17,6 +17,8 @@ import CameraView from '@/components/CameraView';
 import MatchProgressBar from '@/components/MatchProgressBar';
 import { getExerciseById, exercisePosesToClasses } from '@/lib/body-exercises';
 
+import { LeaderboardEntry } from '@/types/models';
+
 const exercise = getExerciseById('vuon-tho')!;
 const CLASSES = exercisePosesToClasses(exercise);
 
@@ -29,7 +31,7 @@ export default function BodyExerciseChallenge() {
   const [detectedPose, setDetectedPose] = useState<string>('Không có');
   const [matchProgress, setMatchProgress] = useState(0);
   const [score, setScore] = useState(0);
-  const [leaderboard, setLeaderboard] = useState<any[]>([]);
+  const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
 
   // Camera
   const { videoRef, canvasRef, cameraActive, cameraError, retryCamera } = useCamera({

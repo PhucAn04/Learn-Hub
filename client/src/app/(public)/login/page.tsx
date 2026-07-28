@@ -34,8 +34,8 @@ export default function LoginPage() {
       } else {
         router.push('/home');
       }
-    } catch (err: any) {
-      setError(err.message || 'Email hoặc mật khẩu không chính xác rồi bé ơi.');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Email hoặc mật khẩu không chính xác rồi bé ơi.');
     } finally {
       setLoading(false);
     }

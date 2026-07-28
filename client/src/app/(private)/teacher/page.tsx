@@ -11,14 +11,14 @@ interface DatasetRecord {
   userId: string;
   challengeType: string;
   createdAt: string;
-  user: { id: string; username: string; avatar: string; email: string };
+  user?: { id: string; username: string; avatar?: string; email: string };
   model?: {
     testScore: number;
   };
 }
 
 interface StudentProgress {
-  user: { id: string; username: string; avatar: string; email: string };
+  user: { id: string; username: string; avatar?: string; email: string };
   teach: { completed: boolean; bestScore: number };
   teachFace: { completed: boolean; bestScore: number };
   teachGestures: { completed: boolean; bestScore: number };
@@ -34,7 +34,7 @@ export default function TeacherDashboard() {
     averageAccuracy: 0
   });
 
-  const [profile, setProfile] = useState<{ username: string; email: string; avatar: string } | null>(null);
+  const [profile, setProfile] = useState<{ username: string; email: string; avatar?: string } | null>(null);
 
   const fetchDashboardData = async () => {
     try {

@@ -8,7 +8,7 @@ export class CreateDatasetDto {
 
   @ApiProperty({ description: 'Mảng các mẫu dữ liệu (features + thumbnail URLs)', example: [] })
   @IsArray()
-  samples: any[];
+  samples: Record<string, unknown>[];
 
   @ApiProperty({ description: 'Điểm test score tự động', example: 85 })
   @IsNumber()
@@ -42,5 +42,6 @@ export class CreateDatasetDto {
   @ApiProperty({ description: 'Nhãn tuỳ chỉnh do Giáo viên định nghĩa', example: [], required: false })
   @IsOptional()
   @IsArray()
-  customClasses?: any[];
+  customClasses?: { id: string; label: string; emoji?: string }[];
 }
+

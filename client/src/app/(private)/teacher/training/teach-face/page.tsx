@@ -22,6 +22,7 @@ import {
 } from '@/lib/face-drawing';
 import { playSuccessSound, speakEnglish, playClickSound } from '@/lib/audio';
 import { normalizeFaceFeatures, classifyKNN, StoredSample } from '@/lib/knn-classifier';
+import { FaceMeshResult } from '@/types/ml5';
 import { EMOTION_LANDMARK_DATASET } from '@/lib/emotion-landmark-dataset';
 import CameraView from '@/components/CameraView';
 import SampleGallery from '@/components/SampleGallery';
@@ -87,7 +88,7 @@ export default function TeacherTeachFacePage() {
   useEffect(() => {
   }, []);
 
-  const getVideoThumb = (faces?: any[]) => {
+  const getVideoThumb = (faces?: FaceMeshResult[]) => {
     const cv = document.createElement('canvas');
     cv.width = 240; cv.height = 240;
     const ctx = cv.getContext('2d');

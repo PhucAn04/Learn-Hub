@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { ArrowLeft, RefreshCw, Calendar, TrendingUp, Eye, EyeOff, MessageSquare, ChevronDown, ChevronUp, Send, Users, AlertTriangle, X, ChevronLeft as ChevronLeftIcon, ChevronRight as ChevronRightIcon } from 'lucide-react';
 import { api } from '@/lib/api';
 import { playClickSound, playSuccessSound } from '@/lib/audio';
+import { StoredSample } from '@/lib/knn-classifier';
 
 const CHALLENGE_LABELS: Record<string, string> = {
   'teach': 'Dạy AI nhận diện ngón tay ✋',
@@ -19,19 +20,19 @@ interface DatasetRecord {
   userId: string;
   challengeType: string;
   sampleCount: number;
-  classSummary: Record<string, number>;
-  dataFileUrl: string;
+  classSummary?: Record<string, number>;
+  dataFileUrl?: string;
   createdAt: string;
-  user: { id: string; username: string; avatar: string; email: string };
+  user?: { id: string; username: string; avatar?: string; email: string };
   model?: {
     id: string;
     testScore: number;
-    teacherFeedback: string | null;
-  };
+    teacherFeedback?: string;
+  } | null;
 }
 
 interface StudentGroup {
-  user: { id: string; username: string; avatar: string; email: string };
+  user: { id: string; username: string; avatar?: string; email: string };
   datasets: DatasetRecord[];
   latestScore: number;
   bestScore: number;
@@ -45,7 +46,7 @@ export default function TeacherDatasetsByChallengePage() {
   const [loading, setLoading] = useState(true);
   const [selectedStudent, setSelectedStudent] = useState<StudentGroup | null>(null);
   const [expandedDatasetId, setExpandedDatasetId] = useState<string | null>(null);
-  const [expandedSamples, setExpandedSamples] = useState<any[] | null>(null);
+  const [expandedSamples, setExpandedSamples] = useState<StoredSample[] | null>(null);
   const [loadingFile, setLoadingFile] = useState(false);
   const [feedbackText, setFeedbackText] = useState('');
   const [feedbackModelId, setFeedbackModelId] = useState<string | null>(null);
@@ -115,7 +116,7 @@ export default function TeacherDatasetsByChallengePage() {
       setLoadingFile(true);
       setExpandedDatasetId(datasetId);
       const fileData = await api.getDatasetFile(datasetId);
-      setExpandedSamples(fileData.samples || fileData);
+      setExpandedSamples(fileData.samples || []);
     } catch (err) {
       console.error('Failed to load dataset file', err);
       setExpandedSamples([]);
@@ -393,7 +394,7 @@ export default function TeacherDatasetsByChallengePage() {
                                   <span className="text-xs font-extrabold text-indigo-700">Ảnh mẫu đã thu ({expandedSamples.length})</span>
                                 </div>
                                 <div className="grid grid-cols-5 sm:grid-cols-6 md:grid-cols-8 gap-2">
-                                  {expandedSamples.map((sample: any, idx: number) => (
+                                  {expandedSamples.map((sample: StoredSample, idx: number) => (
                                     <div 
                                       key={idx} 
                                       onClick={() => setPreviewIndex(idx)}

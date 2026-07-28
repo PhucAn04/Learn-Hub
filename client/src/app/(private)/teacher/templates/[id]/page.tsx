@@ -6,14 +6,16 @@ import Link from 'next/link';
 import { ArrowLeft, Database, Clock, Eye, EyeOff, AlertTriangle, X, ChevronLeft as ChevronLeftIcon, ChevronRight as ChevronRightIcon } from 'lucide-react';
 import { api } from '@/lib/api';
 import { playClickSound } from '@/lib/audio';
+import { StoredSample } from '@/lib/knn-classifier';
+import { DatasetResponse } from '@/types/models';
 
 export default function TemplateDetailPage() {
   const params = useParams();
   const router = useRouter();
   const id = params.id as string;
   
-  const [template, setTemplate] = useState<any>(null);
-  const [samples, setSamples] = useState<any[]>([]);
+  const [template, setTemplate] = useState<DatasetResponse | null>(null);
+  const [samples, setSamples] = useState<StoredSample[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   
@@ -29,10 +31,10 @@ export default function TemplateDetailPage() {
           api.getDatasetFile(id)
         ]);
         setTemplate(templateData);
-        setSamples(fileData.samples || fileData);
-      } catch (err: any) {
+        setSamples(fileData.samples || []);
+      } catch (err: unknown) {
         console.error('Failed to load template', err);
-        setError(err.message || 'Không thể tải bộ dữ liệu mẫu này.');
+        setError(err instanceof Error ? err.message : 'Không thể tải bộ dữ liệu mẫu này.');
       } finally {
         setLoading(false);
       }
@@ -124,7 +126,7 @@ export default function TemplateDetailPage() {
         </div>
 
         <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 lg:grid-cols-10 gap-3">
-          {samples.map((sample: any, idx: number) => (
+          {samples.map((sample: StoredSample, idx: number) => (
             <div 
               key={idx} 
               onClick={() => { playClickSound(); setPreviewIndex(idx); }}

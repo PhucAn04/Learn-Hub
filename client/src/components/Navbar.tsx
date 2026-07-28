@@ -6,11 +6,12 @@ import { usePathname, useRouter } from 'next/navigation';
 import { Sparkles, LogIn, UserPlus, User, LogOut, Home, Brain } from 'lucide-react';
 import { api } from '@/lib/api';
 import { playClickSound } from '@/lib/audio';
+import { UserProfile } from '@/types/models';
 
 export default function Navbar() {
   const pathname = usePathname();
   const router = useRouter();
-  const [currentUser, setCurrentUser] = useState<any>(null);
+  const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
 
   // Load user profile on mount & when pathname changes
   useEffect(() => {

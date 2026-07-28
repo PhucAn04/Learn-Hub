@@ -495,13 +495,7 @@ export default function TeacherTeachTwoHandsPage() {
     try {
       setIsSubmitting(true);
       
-      let processedSamples = samples.map(s => {
-        const { thumbnail, ...rest } = s;
-        return {
-          ...rest,
-          thumbnailUrl: thumbnail
-        };
-      });
+      let processedSamples: StoredSample[] = samples;
 
       if (isCloudinaryConfigured()) {
         try {
@@ -513,6 +507,14 @@ export default function TeacherTeachTwoHandsPage() {
           console.error('Lỗi upload ảnh:', uploadErr);
         }
       }
+
+      const finalSamples = processedSamples.map(s => {
+        const { thumbnail, ...rest } = s;
+        return {
+          ...rest,
+          thumbnailUrl: thumbnail
+        };
+      });
 
       await api.createDataset('teach-two-hands', processedSamples, submitScore, reflectionAnswer, true, teacherNotes, true);
       

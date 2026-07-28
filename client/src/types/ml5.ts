@@ -69,7 +69,7 @@ export type Ml5Module = {
   ) => Ml5FaceMeshModel;
   bodyPose: (
     modelName?: string,
-    options?: any,
+    options?: Record<string, unknown>,
     callback?: () => void,
   ) => BodyPoseModel;
 };

@@ -16,7 +16,7 @@ export class Submission {
   accuracy: number;
 
   @Column({ type: 'json', nullable: true })
-  dataset: any;
+  dataset: Record<string, unknown>;
 
   @Column({ type: 'text', nullable: true })
   reflectionAnswer: string;

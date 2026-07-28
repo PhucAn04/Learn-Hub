@@ -229,6 +229,7 @@ export default function TeachPanel({
   const [kNearestIds, setKNearestIds] = useState<string[]>([]);
   const [voteCounts, setVoteCounts] = useState<Record<string, number>>({});
   const [nnConfidences, setNnConfidences] = useState<Record<string, number> | null>(null);
+  const [isAnomaly, setIsAnomaly] = useState(false);
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
   const [activeTab, setActiveTab] = useState<'camera' | 'upload' | 'video'>('camera');
 
@@ -739,18 +740,14 @@ export default function TeachPanel({
               setNnConfidences(resultNN.confidences);
             }
 
-            if (resultKNN.minDistance > 3.5 || resultNN.confidence < 50) {
-              setPredictedLabel('Khác thường... 👽');
-              setKNearestIds([]);
-              setVoteCounts({});
-            } else {
-              setKNearestIds(resultKNN.kNearestIds);
-              setVoteCounts(resultKNN.voteCounts);
-            }
+            setIsAnomaly(resultKNN.minDistance > 3.5);
+            setKNearestIds(resultKNN.kNearestIds);
+            setVoteCounts(resultKNN.voteCounts);
           }
         } else {
           setPredictedLabel('AI đang đợi khuôn mặt bé... 👀');
           setNnConfidences(null);
+          setIsAnomaly(false);
           setKNearestIds([]);
           setVoteCounts({});
         }
@@ -783,40 +780,20 @@ export default function TeachPanel({
             
             const isAnomaly1 = pred1KNN.minDistance > 0.7;
             const isAnomaly2 = pred2KNN.minDistance > 0.7;
+            setIsAnomaly(isAnomaly1 && isAnomaly2);
 
-            if (isAnomaly1 && isAnomaly2) {
-              setPredictedLabel('Khác thường... 👽');
-              setKNearestIds([]);
-              setVoteCounts({});
-            } else if (isAnomaly1) {
-              if (pred2NN.confidence < 50) setPredictedLabel('Chưa rõ ràng... 🤔');
-              else setPredictedLabel(`Tay 2: ${pred2NN.label}`);
-              
-              setKNearestIds(pred2KNN.kNearestIds);
-              setVoteCounts(pred2KNN.voteCounts);
-            } else if (isAnomaly2) {
-              if (pred1NN.confidence < 50) setPredictedLabel('Chưa rõ ràng... 🤔');
-              else setPredictedLabel(`Tay 1: ${pred1NN.label}`);
-              
-              setKNearestIds(pred1KNN.kNearestIds);
-              setVoteCounts(pred1KNN.voteCounts);
+            if (pred1NN.label === pred2NN.label) {
+              setPredictedLabel(pred1NN.label);
             } else {
-              const avgConf = Math.round((pred1NN.confidence + pred2NN.confidence) / 2);
-
-              if (avgConf < 50) {
-                setPredictedLabel('Chưa rõ ràng... 🤔');
-              } else if (pred1NN.label === pred2NN.label) {
-                setPredictedLabel(pred1NN.label);
-              } else {
-                setPredictedLabel(`Tay 1: ${pred1NN.label} | Tay 2: ${pred2NN.label}`);
-              }
-              setKNearestIds([...pred1KNN.kNearestIds, ...pred2KNN.kNearestIds]);
-              const merged: Record<string, number> = { ...pred1KNN.voteCounts };
-              Object.entries(pred2KNN.voteCounts).forEach(([k, v]) => {
-                merged[k] = (merged[k] || 0) + v;
-              });
-              setVoteCounts(merged);
+              setPredictedLabel(`Tay 1: ${pred1NN.label} | Tay 2: ${pred2NN.label}`);
             }
+            
+            setKNearestIds([...pred1KNN.kNearestIds, ...pred2KNN.kNearestIds]);
+            const merged: Record<string, number> = { ...pred1KNN.voteCounts };
+            Object.entries(pred2KNN.voteCounts).forEach(([k, v]) => {
+              merged[k] = (merged[k] || 0) + v;
+            });
+            setVoteCounts(merged);
           } else {
             const kps = hands[0].keypoints;
             if (kps && kps.length >= 21) {
@@ -831,14 +808,9 @@ export default function TeachPanel({
                 setNnConfidences(resultNN.confidences);
               }
               
-              if (resultKNN.minDistance > 0.7 || resultNN.confidence < 50) {
-                setPredictedLabel('Khác thường... 👽');
-                setKNearestIds([]);
-                setVoteCounts({});
-              } else {
-                setKNearestIds(resultKNN.kNearestIds);
-                setVoteCounts(resultKNN.voteCounts);
-              }
+              setIsAnomaly(resultKNN.minDistance > 0.7);
+              setKNearestIds(resultKNN.kNearestIds);
+              setVoteCounts(resultKNN.voteCounts);
             }
           }
         } else {
@@ -848,6 +820,7 @@ export default function TeachPanel({
               : 'AI đang đợi tay bé... ✋',
           );
           setNnConfidences(null);
+          setIsAnomaly(false);
           setKNearestIds([]);
           setVoteCounts({});
         }
@@ -1326,7 +1299,15 @@ export default function TeachPanel({
 
         {/* Energy Bars Component (Only show if trained) */}
         {isTrained && (
-          <AIConfidenceEnergyBars classes={classes} confidences={nnConfidences} />
+          <AIConfidenceEnergyBars 
+            classes={classes} 
+            confidences={nnConfidences} 
+            isAnomaly={isAnomaly}
+            classCounts={classes.reduce((acc, c) => {
+              acc[c.id] = getClassSampleCount(c.id);
+              return acc;
+            }, {} as Record<string, number>)}
+          />
         )}
       </div>
       

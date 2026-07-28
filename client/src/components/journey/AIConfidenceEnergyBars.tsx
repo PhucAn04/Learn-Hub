@@ -10,15 +10,46 @@ interface ClassData {
 interface AIConfidenceEnergyBarsProps {
   classes: ClassData[];
   confidences: Record<string, number> | null;
+  isAnomaly?: boolean;
+  classCounts?: Record<string, number>;
 }
 
-export default function AIConfidenceEnergyBars({ classes, confidences }: AIConfidenceEnergyBarsProps) {
+export default function AIConfidenceEnergyBars({ classes, confidences, isAnomaly, classCounts }: AIConfidenceEnergyBarsProps) {
   if (!confidences) return null;
+
+  // Lấy số ảnh nhiều nhất để làm chuẩn tính toán sự thiên vị nhẹ
+  let maxCount = 0;
+  if (classCounts) {
+    maxCount = Math.max(...Object.values(classCounts));
+  }
+
+  const adjustedConfidences: Record<string, number> = {};
+  classes.forEach(c => {
+    let conf = confidences[c.id] || confidences[c.label] || 0;
+    const cCount = classCounts ? (classCounts[c.id] || 0) : 0;
+    
+    // Thuật toán: Thể hiện sự thiên vị (Bias) một cách RẤT NHẸ NHÀNG lên thanh năng lượng.
+    // Vì thanh năng lượng khá ngắn, nếu tuột nhiều sẽ giống như bị lỗi.
+    // Chúng ta chỉ trừ tối đa khoảng 20% năng lượng của nhãn ít ảnh nhất.
+    if (classCounts && maxCount > 0) {
+      const penaltyRatio = cCount / maxCount; // 0.0 -> 1.0
+      
+      // Công thức softPenalty: 
+      // Nếu bằng số ảnh (ratio = 1) => softPenalty = 0.8 + 0.2*1 = 1.0 (Giữ nguyên 100%)
+      // Nếu 10 ảnh vs 20 ảnh (ratio = 0.5) => softPenalty = 0.8 + 0.2*0.5 = 0.9 (Giảm đi 10% năng lượng)
+      // Nhãn bị thua thiệt sẽ bị khuyết đi một mẩu nhỏ xíu ở đuôi thanh năng lượng.
+      const softPenalty = 0.8 + 0.2 * penaltyRatio; 
+      
+      conf = conf * softPenalty; 
+    }
+    
+    adjustedConfidences[c.id] = conf;
+  });
 
   // Tìm lớp có tự tin cao nhất để làm nổi bật
   let maxConfidence = 0;
   let maxClassId = '';
-  Object.entries(confidences).forEach(([id, conf]) => {
+  Object.entries(adjustedConfidences).forEach(([id, conf]) => {
     if (conf > maxConfidence) {
       maxConfidence = conf;
       maxClassId = id;
@@ -33,10 +64,10 @@ export default function AIConfidenceEnergyBars({ classes, confidences }: AIConfi
       
       <div className="flex flex-col justify-center gap-3 bg-slate-50 rounded-2xl p-4 border-2 border-slate-100">
         {classes.map((c, idx) => {
-          const confidence = confidences[c.id] || confidences[c.label] || 0;
-          const widthPercent = Math.round(confidence * 100);
+          const confidence = adjustedConfidences[c.id] || 0;
+          const widthPercent = isAnomaly ? 0 : Math.round(confidence * 100);
           const color = CLASS_COLORS[idx % CLASS_COLORS.length];
-          const isWinner = (c.id === maxClassId || c.label === maxClassId) && confidence > 0.5;
+          const isWinner = !isAnomaly && (c.id === maxClassId || c.label === maxClassId) && confidence > 0.5;
 
           return (
             <div key={c.id} className="flex flex-row items-center gap-3 w-full">
@@ -72,9 +103,11 @@ export default function AIConfidenceEnergyBars({ classes, confidences }: AIConfi
         })}
       </div>
 
-      <p className="mt-3 text-xs font-semibold text-gray-500 text-center leading-relaxed bg-amber-50 border border-amber-200 rounded-xl p-2">
-        💡 <b>Mách nhỏ:</b> Cột nào dễ đầy hơn? Nhãn nào có nhiều ảnh hơn thì <b>Lực Hút</b> của nó càng mạnh, khiến AI bị thiên vị đấy!
-      </p>
+      {isAnomaly && (
+        <p className="mt-3 text-xs font-semibold text-rose-600 text-center leading-relaxed bg-rose-50 border border-rose-200 rounded-xl p-2 animate-pulse">
+          ⚠️ Khác thường, không phải dữ liệu AI đã học!
+        </p>
+      )}
     </div>
   );
 }

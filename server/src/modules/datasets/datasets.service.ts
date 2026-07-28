@@ -28,7 +28,10 @@ export class DatasetsService {
     fs.mkdirSync(this.uploadDir, { recursive: true });
   }
 
-  async createDataset(userId: string, dto: CreateDatasetDto): Promise<{ dataset: Dataset; model: Model }> {
+  async createDataset(
+    userId: string,
+    dto: CreateDatasetDto,
+  ): Promise<{ dataset: Dataset; model: Model }> {
     // Cast DTO samples to TrainingSample[] (DTO uses Record<string, unknown>[] for decorator metadata compatibility)
     const samples = dto.samples as unknown as TrainingSample[];
 
@@ -36,7 +39,11 @@ export class DatasetsService {
     const fileId = crypto.randomUUID();
     const fileName = `${fileId}.json`;
     const filePath = path.join(this.uploadDir, fileName);
-    fs.writeFileSync(filePath, JSON.stringify(samples, null, 2), 'utf-8');
+    await fs.promises.writeFile(
+      filePath,
+      JSON.stringify(samples, null, 2),
+      'utf-8',
+    );
 
     // Build class summary from samples
     const classSummary: Record<string, number> = {};
@@ -71,61 +78,90 @@ export class DatasetsService {
     const savedModel = await this.modelRepository.save(model);
 
     // [Background Task] Upload media to Google Drive if user is connected
-    this.uploadToGoogleDrive(userId, savedDataset.id, dto.challengeType, samples).catch(err => {
-      this.logger.error(`Background upload to Google Drive failed: ${err.message}`);
+    this.uploadToGoogleDrive(
+      userId,
+      savedDataset.id,
+      dto.challengeType,
+      samples,
+    ).catch((err: unknown) => {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      this.logger.error(`Background upload to Google Drive failed: ${errMsg}`);
     });
 
     return { dataset: savedDataset, model: savedModel };
   }
 
-  private async uploadToGoogleDrive(userId: string, datasetId: string, challengeType: string, samples: TrainingSample[]) {
+  private async uploadToGoogleDrive(
+    userId: string,
+    datasetId: string,
+    challengeType: string,
+    samples: TrainingSample[],
+  ) {
     try {
       const user = await this.usersService.findById(userId);
       if (!user || !user.googleAccessToken) {
         return; // User hasn't connected Google Drive
       }
 
-      this.logger.log(`Starting background upload to Google Drive for dataset ${datasetId}`);
-      
+      this.logger.log(
+        `Starting background upload to Google Drive for dataset ${datasetId}`,
+      );
+
       const folderName = `Learn-Hub-${challengeType}-${new Date().toISOString().split('T')[0]}`;
-      const folderId = await this.googleDriveService.ensureAppFolder(user.googleAccessToken, folderName);
+      const folderId = await this.googleDriveService.ensureAppFolder(
+        user.googleAccessToken,
+        folderName,
+      );
 
       let driveUrl = '';
-      
-      // We will only upload the first few samples to avoid rate limiting for now, 
+
+      // We will only upload the first few samples to avoid rate limiting for now,
       // or we upload them sequentially
       let count = 0;
       for (const sample of samples) {
         if (!sample.thumbnail && !sample.rawThumbnail) continue;
-        
+
         const dataUrl = sample.thumbnail || sample.rawThumbnail;
         if (!dataUrl) continue;
-        const matches = dataUrl.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
-        
+        const matches = dataUrl.match(/^data:([A-Za-z-+/]+);base64,(.+)$/);
+
         if (matches && matches.length === 3) {
           const buffer = Buffer.from(matches[2], 'base64');
           const ext = matches[1] === 'image/jpeg' ? 'jpg' : 'png';
           const fileName = `${sample.label}_${Date.now()}_${count}.${ext}`;
-          
-          const url = await this.googleDriveService.uploadImage(user.googleAccessToken, buffer, fileName, folderId);
+
+          const url = await this.googleDriveService.uploadImage(
+            user.googleAccessToken,
+            buffer,
+            fileName,
+            folderId,
+          );
           if (!driveUrl) driveUrl = url; // Save the first URL to the dataset
           count++;
-          
+
           // Optional: max 50 images per dataset to save time/space
           if (count >= 50) break;
         }
       }
 
       if (driveUrl) {
-        await this.datasetRepository.update(datasetId, { googleDriveFolderUrl: driveUrl });
-        this.logger.log(`Finished Google Drive upload for dataset ${datasetId}. URL: ${driveUrl}`);
+        await this.datasetRepository.update(datasetId, {
+          googleDriveFolderUrl: driveUrl,
+        });
+        this.logger.log(
+          `Finished Google Drive upload for dataset ${datasetId}. URL: ${driveUrl}`,
+        );
       }
-    } catch (error) {
-      this.logger.error(`Error in background Google Drive upload: ${error.message}`);
+    } catch (error: unknown) {
+      const errMsg = error instanceof Error ? error.message : String(error);
+      this.logger.error(`Error in background Google Drive upload: ${errMsg}`);
     }
   }
 
-  async getDatasetsByUser(userId: string, challengeType?: string): Promise<(Omit<Dataset, 'models'> & { model: Model | null })[]> {
+  async getDatasetsByUser(
+    userId: string,
+    challengeType?: string,
+  ): Promise<(Omit<Dataset, 'models'> & { model: Model | null })[]> {
     const where: FindOptionsWhere<Dataset> = { userId };
     if (challengeType) {
       where.challengeType = challengeType;
@@ -138,7 +174,7 @@ export class DatasetsService {
     });
 
     // Transform to include a single 'model' field for frontend convenience
-    return datasets.map(ds => ({
+    return datasets.map((ds) => ({
       ...ds,
       model: ds.models && ds.models.length > 0 ? ds.models[0] : null,
       models: undefined,
@@ -157,7 +193,9 @@ export class DatasetsService {
   }
 
   async getDatasetFile(datasetId: string): Promise<TrainingSample[]> {
-    const dataset = await this.datasetRepository.findOne({ where: { id: datasetId } });
+    const dataset = await this.datasetRepository.findOne({
+      where: { id: datasetId },
+    });
     if (!dataset) {
       throw new NotFoundException('Dataset không tồn tại.');
     }
@@ -166,11 +204,13 @@ export class DatasetsService {
       throw new NotFoundException('File dữ liệu không tồn tại.');
     }
 
-    const content = fs.readFileSync(dataset.dataFileUrl, 'utf-8');
-    return JSON.parse(content);
+    const content = await fs.promises.readFile(dataset.dataFileUrl, 'utf-8');
+    return JSON.parse(content) as TrainingSample[];
   }
 
-  async getAllDatasetsByChallengeType(challengeType: string): Promise<(Omit<Dataset, 'models'> & { model: Model | null })[]> {
+  async getAllDatasetsByChallengeType(
+    challengeType: string,
+  ): Promise<(Omit<Dataset, 'models'> & { model: Model | null })[]> {
     const datasets = await this.datasetRepository.find({
       where: { challengeType, isTemplate: false },
       relations: { user: true, models: true },
@@ -178,7 +218,7 @@ export class DatasetsService {
     });
 
     // Transform to include a single 'model' field for frontend convenience
-    return datasets.map(ds => ({
+    return datasets.map((ds) => ({
       ...ds,
       model: ds.models && ds.models.length > 0 ? ds.models[0] : null,
       models: undefined,
@@ -186,7 +226,10 @@ export class DatasetsService {
   }
 
   async getTemplates(challengeType?: string): Promise<Dataset[]> {
-    const where: FindOptionsWhere<Dataset> = { isTemplate: true, isPublished: true };
+    const where: FindOptionsWhere<Dataset> = {
+      isTemplate: true,
+      isPublished: true,
+    };
     if (challengeType) {
       where.challengeType = challengeType;
     }
@@ -197,12 +240,18 @@ export class DatasetsService {
     });
   }
 
-  async togglePublish(datasetId: string, userId: string, isPublished: boolean): Promise<Dataset> {
+  async togglePublish(
+    datasetId: string,
+    userId: string,
+    isPublished: boolean,
+  ): Promise<Dataset> {
     const dataset = await this.datasetRepository.findOne({
       where: { id: datasetId, userId },
     });
     if (!dataset) {
-      throw new NotFoundException('Dataset không tồn tại hoặc bạn không có quyền chỉnh sửa.');
+      throw new NotFoundException(
+        'Dataset không tồn tại hoặc bạn không có quyền chỉnh sửa.',
+      );
     }
     dataset.isPublished = isPublished;
     return this.datasetRepository.save(dataset);

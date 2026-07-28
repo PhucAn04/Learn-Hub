@@ -184,6 +184,33 @@ export const api = {
     });
   },
 
+  async getModelById(modelId: string) {
+    return request<ModelResponse>(`/models/${modelId}`, {
+      method: 'GET',
+    });
+  },
+
+  async updateModelArtifacts(
+    modelId: string,
+    data: {
+      algorithm?: string;
+      modelArtifactUrl?: string;
+      testScore?: number;
+      hyperparameters?: {
+        epochs?: number;
+        batchSize?: number;
+        learningRate?: number;
+        k?: number;
+      };
+      trainingLogs?: { epoch: number; loss: number; acc: number }[];
+    }
+  ) {
+    return request<ModelResponse>(`/models/${modelId}/artifacts`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  },
+
   async addTeacherFeedback(modelId: string, feedback: string) {
     return request<ModelResponse>(`/models/${modelId}/feedback`, {
       method: 'PATCH',

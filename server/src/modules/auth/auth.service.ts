@@ -1,4 +1,9 @@
-import { Injectable, ConflictException, UnauthorizedException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  ConflictException,
+  UnauthorizedException,
+  BadRequestException,
+} from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { UsersService } from '../users/users.service';
 import { User } from '../users/entities/user.entity';
@@ -12,20 +17,24 @@ export class AuthService {
     private readonly jwtService: JwtService,
   ) {}
 
-  async register(userData: Partial<User>): Promise<{ user: User; accessToken: string }> {
+  async register(
+    userData: Partial<User>,
+  ): Promise<{ user: User; accessToken: string }> {
     if (!userData.email || !userData.password) {
       throw new BadRequestException('Email và mật khẩu là bắt buộc.');
     }
 
     const existing = await this.usersService.findByEmail(userData.email);
     if (existing) {
-      throw new ConflictException('Email đã được đăng ký bởi một tài khoản khác.');
+      throw new ConflictException(
+        'Email đã được đăng ký bởi một tài khoản khác.',
+      );
     }
 
     if (userData.password) {
       userData.password = await bcrypt.hash(userData.password, 10);
     }
-    
+
     if (userData.email) {
       userData.email = userData.email.toLowerCase().trim();
     }
@@ -36,7 +45,10 @@ export class AuthService {
     return { user, accessToken };
   }
 
-  async login(email: string, password: string): Promise<{ user: User; accessToken: string }> {
+  async login(
+    email: string,
+    password: string,
+  ): Promise<{ user: User; accessToken: string }> {
     const user = await this.usersService.findByEmail(email, true);
     if (!user || !user.password) {
       throw new UnauthorizedException('Email hoặc mật khẩu không chính xác.');
@@ -49,15 +61,26 @@ export class AuthService {
 
     // Remove password before returning
     delete user.password;
-    
+
     const accessToken = this.generateToken(user.id);
 
     return { user, accessToken };
   }
 
-  async validateOAuthLogin(profile: GoogleOAuthProfile): Promise<{ user: User; accessToken: string }> {
-    const { email, firstName, lastName, picture, googleId, accessToken, refreshToken } = profile;
-    const username = `${firstName || ''} ${lastName || ''}`.trim() || email.split('@')[0];
+  async validateOAuthLogin(
+    profile: GoogleOAuthProfile,
+  ): Promise<{ user: User; accessToken: string }> {
+    const {
+      email,
+      firstName,
+      lastName,
+      picture,
+      googleId,
+      accessToken,
+      refreshToken,
+    } = profile;
+    const username =
+      `${firstName || ''} ${lastName || ''}`.trim() || email.split('@')[0];
 
     let user = await this.usersService.findByGoogleId(googleId);
 
@@ -86,13 +109,17 @@ export class AuthService {
     }
 
     // Always update tokens
-    await this.usersService.updateGoogleTokens(user.id, accessToken, refreshToken);
-    
-    // Refresh user object to return
-    user = await this.usersService.findById(user.id) as User;
+    await this.usersService.updateGoogleTokens(
+      user.id,
+      accessToken,
+      refreshToken,
+    );
 
-    const jwtToken = this.generateToken(user.id);
-    return { user, accessToken: jwtToken };
+    // Refresh user object to return
+    const updatedUser = (await this.usersService.findById(user.id)) || user;
+
+    const jwtToken = this.generateToken(updatedUser.id);
+    return { user: updatedUser, accessToken: jwtToken };
   }
 
   private generateToken(userId: string): string {

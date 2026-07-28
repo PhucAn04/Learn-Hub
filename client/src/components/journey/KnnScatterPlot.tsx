@@ -89,8 +89,8 @@ export default function KnnScatterPlot({
   );
 
   const scatterPoints = useMemo(
-    () => computeScatterPoints(samples, classIds, classCenters, canvasSize.w),
-    [samples, classIds, classCenters, canvasSize.w]
+    () => computeScatterPoints(samples, classIds, classCenters, canvasSize.w, classes),
+    [samples, classIds, classCenters, canvasSize.w, classes]
   );
 
   // ── Build label map from classes prop ──
@@ -304,38 +304,69 @@ export default function KnnScatterPlot({
       ctx.stroke();
     });
 
-    // ── Draw K-nearest lines ──
-    if (kNearestIds.length > 0 && predictedLabel) {
-      // Find center of predicted class region for the star position
-      const predictedClassId = classes.find((c) => c.label === predictedLabel)?.id;
-      const predictedCenter = predictedClassId ? classCenters[predictedClassId] : null;
+    // ── Draw K-nearest lines & Live Star ★ ──
+    if (kNearestIds.length > 0 || predictedLabel) {
+      // Find predicted class object
+      const predictedClass = classes.find(
+        (c) => c.id === predictedLabel || c.label === predictedLabel
+      );
+      const predictedCenter = predictedClass ? classCenters[predictedClass.id] : null;
 
-      if (predictedCenter) {
-        const star = toScreen(predictedCenter.cx, predictedCenter.cy);
-
-        // Draw lines from star to K-nearest points
-        kNearestIds.forEach((id) => {
+      // Find screen coordinates of K-nearest points
+      const nearestPointsWithScreen = kNearestIds
+        .map((id) => {
           const point = scatterPoints.find((p) => p.sampleId === id);
-          if (!point) return;
+          return point ? { point, screen: toScreen(point.x, point.y) } : null;
+        })
+        .filter((item): item is { point: ScatterPoint; screen: { sx: number; sy: number } } => Boolean(item));
 
-          const { sx, sy } = toScreen(point.x, point.y);
+      let starSx = 0;
+      let starSy = 0;
 
+      if (nearestPointsWithScreen.length > 0) {
+        // Calculate centroid of K-nearest points for accurate live position
+        const avgX = nearestPointsWithScreen.reduce((sum, p) => sum + p.screen.sx, 0) / nearestPointsWithScreen.length;
+        const avgY = nearestPointsWithScreen.reduce((sum, p) => sum + p.screen.sy, 0) / nearestPointsWithScreen.length;
+
+        if (predictedCenter) {
+          const centerScreen = toScreen(predictedCenter.cx, predictedCenter.cy);
+          starSx = avgX * 0.7 + centerScreen.sx * 0.3;
+          starSy = avgY * 0.7 + centerScreen.sy * 0.3;
+        } else {
+          starSx = avgX;
+          starSy = avgY;
+        }
+      } else if (predictedCenter) {
+        const centerScreen = toScreen(predictedCenter.cx, predictedCenter.cy);
+        starSx = centerScreen.sx;
+        starSy = centerScreen.sy;
+      }
+
+      if (starSx > 0 && starSy > 0) {
+        // Draw glowing dashed lines from star to K-nearest points
+        nearestPointsWithScreen.forEach(({ point, screen }) => {
           ctx.beginPath();
-          ctx.moveTo(star.sx, star.sy);
-          ctx.lineTo(sx, sy);
-          ctx.strokeStyle = point.color + '80';
-          ctx.lineWidth = 1.5 * zoom;
-          ctx.setLineDash([4 * zoom, 4 * zoom]);
+          ctx.moveTo(starSx, starSy);
+          ctx.lineTo(screen.sx, screen.sy);
+          ctx.strokeStyle = point.color + 'dd';
+          ctx.lineWidth = 2 * zoom;
+          ctx.setLineDash([5 * zoom, 4 * zoom]);
           ctx.stroke();
           ctx.setLineDash([]);
         });
 
+        // Outer glowing aura for the live star
+        ctx.beginPath();
+        ctx.arc(starSx, starSy, 12 * zoom, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(251, 191, 36, 0.35)';
+        ctx.fill();
+
         // Draw star ★
-        drawStar(ctx, star.sx, star.sy, 8 * zoom, 4 * zoom, 5);
+        drawStar(ctx, starSx, starSy, 10 * zoom, 5 * zoom, 5);
         ctx.fillStyle = '#fbbf24';
         ctx.fill();
         ctx.strokeStyle = '#ffffff';
-        ctx.lineWidth = 1.5;
+        ctx.lineWidth = 2 * zoom;
         ctx.stroke();
 
         // Threshold check: show "?" if not enough consensus
@@ -346,7 +377,7 @@ export default function KnnScatterPlot({
           ctx.fillStyle = 'rgba(250, 204, 21, 0.9)';
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
-          ctx.fillText('?', star.sx, star.sy - 20 * zoom);
+          ctx.fillText('?', starSx, starSy - 22 * zoom);
         }
       }
     }

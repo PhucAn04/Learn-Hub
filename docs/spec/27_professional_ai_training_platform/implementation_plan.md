@@ -1,69 +1,72 @@
-# Kế Hoạch Nâng Cấp Learn-Hub Thành Nền Tảng Huấn Luyện AI Chuyên Nghiệp
+# Định Hướng Kiến Trúc & Kế Hoạch Nâng Cấp Learn-Hub: Hệ Thống AI Hybrid (Neural Network + KNN Shadow Engine)
 
-Dựa trên việc phân tích toàn bộ source code của project **Learn-Hub**, tôi nhận thấy đây là một dự án giáo dục AI (tương tự Google Teachable Machine) rất sáng tạo, sử dụng MediaPipe và TensorFlow.js/KNN trên trình duyệt. 
+## 1. Triết Lý Sản Phẩm (Product Vision)
 
-Tuy nhiên, để chuyển mình từ một "ứng dụng đồ chơi giáo dục" (toy app) thành một **dự án huấn luyện AI thực thụ (Real AI Training Project / MLOps lite)**, chúng ta cần tái cấu trúc và bổ sung các thành phần quan trọng dưới đây.
+Khác với các công cụ dạy AI thông thường như **Google Teachable Machine** (chỉ train mô hình Neural Network như một "hộp đen" black box, dễ bị học vẹt/overfitting khi dữ liệu ít hoặc nhiễu và không thể giải thích lý do tại sao AI đoán sai), **Learn-Hub** định hình một kiến trúc **Hybrid AI (Shadow Guardian Architecture)**:
 
----
-
-## 1. Những Điểm Cần Chỉnh Chu Lại (Refactoring & Optimizing)
-
-Phần này tập trung vào việc khắc phục các hạn chế kỹ thuật hiện tại trong codebase.
-
-### 1.1. Tối Ưu Hóa Lưu Trữ Dataset Tại Backend (NestJS)
-- **Vấn đề hiện tại**: Dataset đang được lưu dưới dạng file JSON tĩnh (`fs.writeFileSync`) vào thư mục `uploads/datasets`, và đọc lên bằng hàm đồng bộ `fs.readFileSync` (gây block Node.js Event Loop).
-- **Giải pháp**: 
-  - Chuyển sang lưu trữ file trên **Cloud Storage** (AWS S3, MinIO, hoặc Cloudinary).
-  - Hoặc lưu trữ các mẫu dữ liệu (samples) thành các bản ghi trong **Database (PostgreSQL)** để dễ dàng truy vấn, phân trang (pagination) và lọc dữ liệu.
-  - Loại bỏ các thao tác File System đồng bộ (`fs.readFileSync/writeFileSync`).
-
-### 1.2. Hoàn Thiện Vòng Đời Của Model (Model Lifecycle)
-- **Vấn đề hiện tại**: Entity `Model` trong database hiện tại chỉ lưu trữ `testScore` và `teacherFeedback`. Việc huấn luyện Neural Network (qua `TfTrainer`) diễn ra hoàn toàn trên RAM của Client (trình duyệt) và **chưa hề lưu trữ lại file weights** (trọng số) của mô hình.
-- **Giải pháp**: 
-  - Cho phép xuất mô hình TF.js (file `model.json` và `.bin`) trên client.
-  - Upload file weights này lên Server sau khi train xong. Cập nhật Entity `Model` để lưu trữ đường dẫn `modelArtifactUrl`.
-
-### 1.3. Tách Biệt Rõ Ràng Lớp ML (Machine Learning Abstraction)
-- **Vấn đề hiện tại**: Logic ML đang hardcode trong `knn-classifier.ts` và `tf-trainer.ts`. Neural Network bị fix cứng kiến trúc (2 lớp Dense).
-- **Giải pháp**: Xây dựng interface chung `IClassifier` cho phép dễ dàng switch giữa KNN, MLP, hoặc các thuật toán khác. Cho phép người dùng tùy chỉnh tham số kiến trúc.
+1. **Neural Network (TF.js MLP)**: Đóng vai trò là **Bộ Não Suy Luận Chính (Primary Inference Engine)** cho tốc độ nhận diện siêu nhanh và khả năng tổng quát hóa tốt.
+2. **KNN (K-Nearest Neighbors)**: Chạy **ngầm bên dưới (Shadow Engine)** đóng vai trò là "Người Giám Sát Kỹ Thuật":
+   - **Phát hiện dữ liệu nhiễu (Outlier Detection)**: Khi bé chụp ảnh mới, KNN tính khoảng cách khoảng cách hình học Euclidean của các điểm Landmarks để phát hiện ngay ảnh chụp lỗi/góc nghiêng bất thường.
+   - **Giải thích lỗi sai (Explainable AI / Nearest Match)**: Khi Neural Network nhầm lẫn, KNN tìm ra bức ảnh mẫu có khoảng cách gần nhất (`nearestMatchThumbnail`) để giải thích trực quan cho bé ("Ảnh này giống nhãn X bé chụp trước đó hơn!").
+   - **Cảnh báo lệch dữ liệu (Data Imbalance Guard)**: Ngầm tính toán tỷ lệ phân bổ mẫu giữa các nhãn để cảnh báo viền đỏ ⚠️ nhẹ nhàng.
+3. **UX Trẻ Em (Kids-Friendly & Zero-Complexity UX)**:
+   - **Không làm phức tạp giao diện**: Giấu hoàn toàn các thuật ngữ toán học/kỹ thuật như Epochs, Learning Rate, Batch Size, KNN vs MLP.
+   - **Auto-Tuning Hyperparameters ngầm**: Hệ thống tự động tính toán siêu tham số tối ưu (số epoch, learning rate) dựa trên dung lượng dataset bé thu thập.
 
 ---
 
-## 2. Những Tính Năng Cần Phát Triển Thêm (Features for "Real AI")
+## 2. Kiến Trúc Kỹ Thuật (Architecture Overview)
 
-Để biến dự án thành một hệ thống train AI chuyên nghiệp, chúng ta cần đưa tư duy **MLOps (Machine Learning Operations)** vào dự án.
-
-### 2.1. Đưa Huấn Luyện Lên Server (Server-Side Training Pipeline)
-Hiện tại việc train phụ thuộc vào cấu hình máy tính của trẻ em (client). Một dự án AI thật sẽ cần có khả năng train trên Server/Cloud.
-- **Message Queue**: Tích hợp **Redis + BullMQ** vào NestJS. Khi người dùng bấm "Train", client sẽ gửi API request tạo một Training Job.
-- **Training Worker**: Xây dựng một Worker Service (có thể dùng Python/PyTorch hoặc Node.js `@tensorflow/tfjs-node`). Worker này sẽ lấy dataset từ DB, thực hiện train model độc lập với API, không làm treo server.
-- **WebSockets (Real-time tracking)**: Sử dụng `Socket.io` trong NestJS để stream các thông số `loss`, `accuracy` từng epoch từ Worker trả về giao diện Client theo thời gian thực (Giống như TensorBoard).
-
-### 2.2. Khả Năng Suy Luận Bằng API (Server-side Inference / Deployment)
-- AI thật không chỉ nằm trên web. Khi train xong một Model, hệ thống cần cung cấp một **Inference API endpoint** (VD: `POST /api/models/:id/predict`).
-- Người dùng có thể dùng Postman hoặc code Python gọi API này, gửi tọa độ landmarks hoặc ảnh gốc lên để nhận kết quả phân loại từ Model đã được deploy trên Server.
-
-### 2.3. Theo Dõi Thử Nghiệm & Tinh Chỉnh Siêu Tham Số (Experiment Tracking & Hyperparameter Tuning)
-- Cho phép người dùng thiết lập các siêu tham số (Hyperparameters) trước khi train:
-  - Số `Epochs` (vòng lặp).
-  - `Batch Size`.
-  - `Learning Rate`.
-  - Thuật toán tối ưu (Adam, SGD).
-- Lưu lại lịch sử các lần train (Experiments) cho cùng một Dataset để so sánh (Lần train nào có accuracy cao hơn).
-
-### 2.4. Tiền Xử Lý & Tăng Cường Dữ Liệu (Data Augmentation)
-- Phát triển thêm pipeline tự động sinh dữ liệu: lật ngược tọa độ (flip), thêm nhiễu (noise add) vào các điểm landmarks để làm giàu dữ liệu, giúp Model chống lại Overfitting (học vẹt).
+```
+                       ┌─────────────────────────┐
+                       │   Bé Thu Thập Mẫu Ảnh   │
+                       └────────────┬────────────┘
+                                    │
+                                    ▼
+                     ┌──────────────────────────────┐
+                     │ Extracted Landmarks Features │
+                     └──────────────┬───────────────┘
+                                    │
+           ┌────────────────────────┴────────────────────────┐
+           ▼                                                 ▼
+┌─────────────────────────────┐                  ┌──────────────────────────────┐
+│ Primary Inference Engine    │                  │ Shadow Guardian Engine (KNN) │
+│ (Neural Network / MLP)      │                  │ (Lưu trong RAM / Cache)      │
+├─────────────────────────────┤                  ├──────────────────────────────┤
+│ - Nhận diện realtime        │                  │ - Tìm Nearest Neighbor       │
+│ - Tốc độ mượt mà            │                  │ - Giải thích lỗi sai         │
+│ - Đưa ra Confidence Score   │                  │ - Outlier & Imbalance Check  │
+└──────────────┬──────────────┘                  └──────────────┬───────────────┘
+               │                                                │
+               └──────────────────────┬─────────────────────────┘
+                                      ▼
+                        ┌───────────────────────────┐
+                        │   Giao Diện Trực Quan     │
+                        │   (Dành Cho Trẻ Em)       │
+                        └───────────────────────────┘
+```
 
 ---
 
-## Tóm Lược Lộ Trình Triển Khai Đề Xuất (Roadmap)
+## 3. Lộ Trình Triển Khai Chi Tiết (Implementation Plan)
 
-> [!IMPORTANT]
-> **Bạn muốn ưu tiên triển khai phần nào trước?**
-> 
-> 1. **Phase 1**: Tái cấu trúc Backend (Lưu trữ Model weights, đổi File System sang Cloud/S3/DB để tránh block event loop).
-> 2. **Phase 2**: Phát triển UI Tùy chỉnh tham số (Hyperparameters) và lưu lại các phiên bản Model khác nhau.
-> 3. **Phase 3**: Xây dựng **Server-side Training Worker** (Tách việc train khỏi trình duyệt, dùng Queue & WebSockets để báo cáo tiến độ).
-> 4. **Phase 4**: Xây dựng Inference API để phục vụ dự đoán từ bên ngoài.
+### Phase 1: Hoàn Thiện Hybrid AI Engine Ngầm (Shadow Pipeline)
+- **Tích hợp KNN Shadow vào Neural Network**: Khi gọi `NeuralNetworkClassifierAdapter.predict()`, đồng thời chạy ngầm `classifyKNNDetailed()` ở background thread/tidy block để lấy `nearestMatch`.
+- **Auto Hyperparameter Tuning**: Xây dựng helper `calculateAutoHyperparameters(sampleCount)` tự động chọn `epochs` (vd: < 20 mẫu ➔ 30 epochs; > 50 mẫu ➔ 50 epochs) và `learningRate` phù hợp mà không cần trẻ em phải cấu hình.
+- **Backend Model Artifacts Storage**: Tiếp tục hoàn thiện lưu trữ file weights (`model.json` + `weights.bin`) và `trainingLogs` ở backend NestJS khi bé bấm "Lưu mô hình".
 
-Vui lòng cho tôi biết bạn muốn bắt đầu đi sâu vào hiện thực hóa phần nào, hoặc nếu bạn có định hướng riêng cho dự án, tôi sẽ code theo ý bạn!
+### Phase 2: Nâng Cấp AI Feedback & Red-Border Warnings (Kids UX)
+- **Cảnh báo trực quan (Visual Feedback)**: Hiển thị viền đỏ ⚠️ hoặc icon cảnh báo khi KNN phát hiện ảnh chụp bị out-of-distribution (khác xa tập huấn luyện) hoặc dữ liệu nhãn bị lệch quá 2x.
+- **AI Companion Popup**: Khi AI đoán sai hoặc bé thắc mắc, hiển thị modal so sánh ảnh chụp hiện tại với ảnh `nearestMatch` do KNN tìm được một cách thân thiện.
+
+### Phase 3: Server-side Model Archiving & Teacher Analytics
+- Giáo viên có thể vào Dashboard để xem báo cáo chẩn đoán dữ liệu (Cross-validation accuracy, Confusion Matrix, Imbalance Report) do KNN shadow engine tổng hợp từ phía server.
+- Lưu trữ các phiên bản mô hình của học sinh lên PostgreSQL để đánh giá tiến trình học tập.
+
+---
+
+## 4. Xác Nhận Kế Hoạch
+
+- **Không tạo giao diện chỉnh tham số phức tạp cho bé**.
+- **KNN chạy hoàn toàn ngầm để hỗ trợ và khắc phục điểm yếu của Neural Network**.
+- **Giữ giao diện tinh gọn, tập trung vào tương tác camera vui nhộn**.

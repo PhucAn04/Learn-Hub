@@ -18,11 +18,16 @@ export class TfTrainer {
    */
   async train(
     samples: StoredSample[],
-    onProgress?: (epoch: number, progress: number, loss: number, acc: number) => void
-  ) {
+    onProgress?: (epoch: number, progress: number, loss: number, acc: number) => void,
+    options?: { epochs?: number; batchSize?: number; learningRate?: number }
+  ): Promise<{ epoch: number; loss: number; acc: number }[]> {
     await this.init();
     if (!this.tf) throw new Error('TensorFlow.js failed to load');
     if (samples.length === 0) throw new Error('Không có dữ liệu huấn luyện');
+
+    const epochs = options?.epochs ?? 50;
+    const learningRate = options?.learningRate ?? 0.005;
+    const batchSize = Math.min(options?.batchSize ?? 32, samples.length);
 
     // 1. Xác định các nhãn (classes) duy nhất
     this.classNames = Array.from(new Set(samples.map(s => s.label))).sort();
@@ -39,7 +44,7 @@ export class TfTrainer {
     this.model.add(this.tf.layers.dense({ units: numClasses, activation: 'softmax' }));
 
     this.model.compile({
-      optimizer: this.tf.train.adam(0.005),
+      optimizer: this.tf.train.adam(learningRate),
       loss: 'categoricalCrossentropy',
       metrics: ['accuracy'],
     });
@@ -51,17 +56,22 @@ export class TfTrainer {
     const labels = samples.map(s => this.classNames.indexOf(s.label));
     const ys = this.tf.oneHot(this.tf.tensor1d(labels, 'int32'), numClasses);
 
-    // 4. Bắt đầu Train
-    const epochs = 50;
+    // 4. Bắt đầu Train & lưu log
+    const logsHistory: { epoch: number; loss: number; acc: number }[] = [];
+
     await this.model.fit(xs, ys, {
       epochs,
-      batchSize: Math.min(32, samples.length),
+      batchSize,
       shuffle: true,
       callbacks: {
         onEpochEnd: (epoch, logs) => {
-          if (onProgress && logs) {
-            const progress = Math.round(((epoch + 1) / epochs) * 100);
-            onProgress(epoch + 1, progress, logs.loss, logs.acc ?? logs.accuracy ?? 0);
+          if (logs) {
+            const accVal = logs.acc ?? logs.accuracy ?? 0;
+            logsHistory.push({ epoch: epoch + 1, loss: logs.loss, acc: accVal });
+            if (onProgress) {
+              const progress = Math.round(((epoch + 1) / epochs) * 100);
+              onProgress(epoch + 1, progress, logs.loss, accVal);
+            }
           }
         }
       }
@@ -70,6 +80,8 @@ export class TfTrainer {
     // Dọn dẹp RAM
     xs.dispose();
     ys.dispose();
+
+    return logsHistory;
   }
 
   /**

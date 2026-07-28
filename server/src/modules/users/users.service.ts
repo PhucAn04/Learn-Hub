@@ -15,7 +15,10 @@ export class UsersService {
     return this.userRepository.save(user);
   }
 
-  async findByEmail(email: string, includePassword = false): Promise<User | null> {
+  async findByEmail(
+    email: string,
+    includePassword = false,
+  ): Promise<User | null> {
     const query = this.userRepository
       .createQueryBuilder('user')
       .where('user.email = :email', { email: email.toLowerCase().trim() });
@@ -35,7 +38,11 @@ export class UsersService {
     return this.userRepository.findOne({ where: { googleId } });
   }
 
-  async updateGoogleTokens(userId: string, accessToken: string, refreshToken?: string): Promise<void> {
+  async updateGoogleTokens(
+    userId: string,
+    accessToken: string,
+    refreshToken?: string,
+  ): Promise<void> {
     const update: Partial<User> = { googleAccessToken: accessToken };
     if (refreshToken) {
       update.googleRefreshToken = refreshToken;

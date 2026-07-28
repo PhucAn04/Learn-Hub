@@ -12,7 +12,11 @@ export class ProgressService {
     private readonly progressRepository: Repository<Progress>,
   ) {}
 
-  async saveProgress(userId: string, challengeType: string, score: number): Promise<Progress> {
+  async saveProgress(
+    userId: string,
+    challengeType: string,
+    score: number,
+  ): Promise<Progress> {
     const progress = this.progressRepository.create({
       userId,
       challengeType,
@@ -38,7 +42,7 @@ export class ProgressService {
       .limit(10)
       .getRawMany();
 
-    return rawData.map(item => ({
+    return rawData.map((item) => ({
       userId: item.userid,
       username: item.username,
       avatar: item.avatar,
@@ -66,7 +70,7 @@ export class ProgressService {
       face: 0,
     };
 
-    rawData.forEach(item => {
+    rawData.forEach((item) => {
       stats[item.challengetype] = parseInt(item.highscore, 10);
     });
 

@@ -1,5 +1,10 @@
 import { PassportStrategy } from '@nestjs/passport';
-import { Strategy, VerifyCallback, Profile, StrategyOptions } from 'passport-google-oauth20';
+import {
+  Strategy,
+  VerifyCallback,
+  Profile,
+  StrategyOptions,
+} from 'passport-google-oauth20';
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
@@ -7,12 +12,17 @@ import { ConfigService } from '@nestjs/config';
 export class GoogleStrategy extends PassportStrategy(Strategy, 'google') {
   constructor(private configService: ConfigService) {
     super({
-      clientID: configService.get<string>('GOOGLE_CLIENT_ID') || 'placeholder_id',
-      clientSecret: configService.get<string>('GOOGLE_CLIENT_SECRET') || 'placeholder_secret',
-      callbackURL: configService.get<string>('GOOGLE_CALLBACK_URL') || 'http://localhost:3001/auth/google/callback',
+      clientID:
+        configService.get<string>('GOOGLE_CLIENT_ID') || 'placeholder_id',
+      clientSecret:
+        configService.get<string>('GOOGLE_CLIENT_SECRET') ||
+        'placeholder_secret',
+      callbackURL:
+        configService.get<string>('GOOGLE_CALLBACK_URL') ||
+        'http://localhost:3001/auth/google/callback',
       scope: ['email', 'profile', 'https://www.googleapis.com/auth/drive.file'],
       accessType: 'offline', // Request refresh token
-      prompt: 'consent',     // Force consent to get refresh token
+      prompt: 'consent', // Force consent to get refresh token
     } as StrategyOptions);
   }
 

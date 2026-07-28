@@ -1,5 +1,19 @@
-import { Controller, Post, Get, Body, UseGuards, Req, Res } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiBody, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
+import {
+  Controller,
+  Post,
+  Get,
+  Body,
+  UseGuards,
+  Req,
+  Res,
+} from '@nestjs/common';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiBody,
+  ApiResponse,
+  ApiBearerAuth,
+} from '@nestjs/swagger';
 import { AuthService } from './auth.service';
 import { JwtAuthGuard } from './jwt-auth.guard';
 import { GoogleOAuthGuard } from './google-oauth.guard';
@@ -17,7 +31,10 @@ export class AuthController {
   @Post('register')
   @ApiOperation({ summary: 'Đăng ký tài khoản mới cho bé' })
   @ApiBody({ type: RegisterDto })
-  @ApiResponse({ status: 201, description: 'Đăng ký thành công và trả về access token.' })
+  @ApiResponse({
+    status: 201,
+    description: 'Đăng ký thành công và trả về access token.',
+  })
   async register(@Body() registerDto: RegisterDto) {
     return this.authService.register(registerDto);
   }
@@ -50,7 +67,9 @@ export class AuthController {
   @UseGuards(GoogleOAuthGuard)
   @ApiOperation({ summary: 'Callback xử lý đăng nhập Google' })
   async googleAuthRedirect(@Req() req: Request, @Res() res: Response) {
-    const { accessToken } = await this.authService.validateOAuthLogin(req.user as unknown as GoogleOAuthProfile);
+    const { accessToken } = await this.authService.validateOAuthLogin(
+      req.user as unknown as GoogleOAuthProfile,
+    );
     // Redirect về client frontend (Next.js) kèm token
     const clientUrl = process.env.CLIENT_URL || 'http://localhost:3000';
     return res.redirect(`${clientUrl}/auth/callback?token=${accessToken}`);

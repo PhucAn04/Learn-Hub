@@ -7,11 +7,7 @@ import { AuthModule } from '../auth/auth.module';
 import { UsersModule } from '../users/users.module';
 
 @Module({
-  imports: [
-    TypeOrmModule.forFeature([Submission]),
-    AuthModule,
-    UsersModule,
-  ],
+  imports: [TypeOrmModule.forFeature([Submission]), AuthModule, UsersModule],
   providers: [SubmissionsService],
   controllers: [SubmissionsController],
   exports: [SubmissionsService],

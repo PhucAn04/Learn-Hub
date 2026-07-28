@@ -11,7 +11,10 @@ export class SubmissionsService {
     private readonly submissionRepository: Repository<Submission>,
   ) {}
 
-  async createSubmission(userId: string, dto: CreateSubmissionDto): Promise<Submission> {
+  async createSubmission(
+    userId: string,
+    dto: CreateSubmissionDto,
+  ): Promise<Submission> {
     const submission = this.submissionRepository.create({
       userId,
       challengeType: dto.challengeType || 'teach',

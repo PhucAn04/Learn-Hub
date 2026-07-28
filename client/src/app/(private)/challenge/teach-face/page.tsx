@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
 import { playSuccessSound, speakEnglish, playClickSound } from '@/lib/audio';
 import { StoredSample } from '@/lib/knn-classifier';
+import { calculateAutoHyperparameters } from '@/lib/ml-classifier';
 import { DatasetResponse } from '@/types/models';
 import { uploadSamplesToCloudinary, isCloudinaryConfigured } from '@/lib/cloudinary';
 import TeachPanel from '@/components/journey/TeachPanel';
@@ -76,7 +77,15 @@ export default function TeachFacePage() {
         setUploadProgress('Đang lưu bài...');
       }
 
-      await api.createDataset('teach-face', processedSamples, submitScore, `${reflectionAnswer} | Lời nhắn: ${teacherMessage}`);
+      const created = await api.createDataset('teach-face', processedSamples, submitScore, `${reflectionAnswer} | Lời nhắn: ${teacherMessage}`);
+      if (created?.model?.id) {
+        await api.updateModelArtifacts(created.model.id, {
+          algorithm: 'mlp',
+          testScore: submitScore,
+          hyperparameters: calculateAutoHyperparameters(processedSamples.length),
+        }).catch(() => {});
+      }
+
       await api.submitAssignment(submitScore, { samples: processedSamples }, `${reflectionAnswer} | Lời nhắn: ${teacherMessage}`, 'teach-face');
       await api.saveProgress('teach-face', submitScore);
       

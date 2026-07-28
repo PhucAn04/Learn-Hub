@@ -12,7 +12,7 @@ export class GoogleDriveService {
     this.oauth2Client = new google.auth.OAuth2(
       this.configService.get<string>('GOOGLE_CLIENT_ID'),
       this.configService.get<string>('GOOGLE_CLIENT_SECRET'),
-      this.configService.get<string>('GOOGLE_CALLBACK_URL')
+      this.configService.get<string>('GOOGLE_CALLBACK_URL'),
     );
   }
 
@@ -21,7 +21,10 @@ export class GoogleDriveService {
     return google.drive({ version: 'v3', auth: this.oauth2Client });
   }
 
-  async ensureAppFolder(accessToken: string, folderName: string = 'Learn-Hub'): Promise<string> {
+  async ensureAppFolder(
+    accessToken: string,
+    folderName: string = 'Learn-Hub',
+  ): Promise<string> {
     const drive = this.getDriveClient(accessToken);
     try {
       const response = await drive.files.list({
@@ -39,12 +42,12 @@ export class GoogleDriveService {
         name: folderName,
         mimeType: 'application/vnd.google-apps.folder',
       };
-      
+
       const file = await drive.files.create({
         requestBody: folderMetadata,
         fields: 'id',
       });
-      
+
       return file.data.id!;
     } catch (error) {
       this.logger.error(`Failed to ensure app folder: ${error.message}`);
@@ -57,10 +60,11 @@ export class GoogleDriveService {
     fileBuffer: Buffer,
     fileName: string,
     mimeType: string,
-    parentFolderId?: string
+    parentFolderId?: string,
   ): Promise<string> {
     const drive = this.getDriveClient(accessToken);
-    const folderId = parentFolderId || await this.ensureAppFolder(accessToken);
+    const folderId =
+      parentFolderId || (await this.ensureAppFolder(accessToken));
 
     const fileMetadata = {
       name: fileName,
@@ -90,16 +94,40 @@ export class GoogleDriveService {
 
       return response.data.webViewLink || response.data.webContentLink || '';
     } catch (error) {
-      this.logger.error(`Failed to upload file to Google Drive: ${error.message}`);
+      this.logger.error(
+        `Failed to upload file to Google Drive: ${error.message}`,
+      );
       throw error;
     }
   }
 
-  async uploadImage(accessToken: string, imageBuffer: Buffer, fileName: string, parentFolderId?: string): Promise<string> {
-    return this.uploadFile(accessToken, imageBuffer, fileName, 'image/jpeg', parentFolderId);
+  async uploadImage(
+    accessToken: string,
+    imageBuffer: Buffer,
+    fileName: string,
+    parentFolderId?: string,
+  ): Promise<string> {
+    return this.uploadFile(
+      accessToken,
+      imageBuffer,
+      fileName,
+      'image/jpeg',
+      parentFolderId,
+    );
   }
 
-  async uploadVideo(accessToken: string, videoBuffer: Buffer, fileName: string, parentFolderId?: string): Promise<string> {
-    return this.uploadFile(accessToken, videoBuffer, fileName, 'video/mp4', parentFolderId);
+  async uploadVideo(
+    accessToken: string,
+    videoBuffer: Buffer,
+    fileName: string,
+    parentFolderId?: string,
+  ): Promise<string> {
+    return this.uploadFile(
+      accessToken,
+      videoBuffer,
+      fileName,
+      'video/mp4',
+      parentFolderId,
+    );
   }
 }

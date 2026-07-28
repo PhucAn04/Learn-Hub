@@ -89,12 +89,24 @@ export function computeScatterPoints(
   classIds: string[],
   classCenters: Record<string, ClassCenter>,
   canvasWidth: number,
+  classes?: { id: string; label: string }[]
 ): ScatterPoint[] {
+  // Helper resolving classId for a sample
+  const getClassId = (s: StoredSample): string => {
+    if (s.sourceId && classIds.includes(s.sourceId)) return s.sourceId;
+    if (classIds.includes(s.label)) return s.label;
+    if (classes) {
+      const match = classes.find(c => c.label === s.label || c.id === s.label);
+      if (match && classIds.includes(match.id)) return match.id;
+    }
+    return classIds[0] || 'unknown';
+  };
+
   // Count samples per class for jitter radius
   const counts: Record<string, number> = {};
   classIds.forEach(id => counts[id] = 0);
   samples.forEach(s => {
-    const cid = s.sourceId || classIds.find(id => id === s.label) || classIds[0];
+    const cid = getClassId(s);
     counts[cid] = (counts[cid] || 0) + 1;
   });
 
@@ -106,7 +118,7 @@ export function computeScatterPoints(
   classIds.forEach(id => classIndex[id] = 0);
 
   return samples.map(s => {
-    const classId = s.sourceId || classIds.find(id => id === s.label) || classIds[0];
+    const classId = getClassId(s);
     const center = classCenters[classId];
 
     if (!center) {

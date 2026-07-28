@@ -89,7 +89,16 @@ export interface ModelResponse {
   id: string;
   userId: string;
   datasetId: string;
+  algorithm?: string;
   testScore: number;
+  modelArtifactUrl?: string;
+  hyperparameters?: {
+    epochs?: number;
+    batchSize?: number;
+    learningRate?: number;
+    k?: number;
+  };
+  trainingLogs?: { epoch: number; loss: number; acc: number }[];
   teacherFeedback?: string;
   createdAt: string;
 }

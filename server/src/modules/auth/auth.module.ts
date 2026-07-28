@@ -16,7 +16,9 @@ import { GoogleOAuthGuard } from './google-oauth.guard';
     JwtModule.registerAsync({
       inject: [ConfigService],
       useFactory: (configService: ConfigService) => ({
-        secret: configService.get<string>('JWT_SECRET') || 'super_secret_key_for_learn_hub_2026',
+        secret:
+          configService.get<string>('JWT_SECRET') ||
+          'super_secret_key_for_learn_hub_2026',
         signOptions: { expiresIn: '7d' },
       }),
     }),

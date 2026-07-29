@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
 import { playSuccessSound, speakEnglish, playClickSound } from '@/lib/audio';
 import { StoredSample } from '@/lib/knn-classifier';
+import { calculateAutoHyperparameters } from '@/lib/ml-classifier';
 import { DatasetResponse } from '@/types/models';
 import { uploadSamplesToCloudinary, isCloudinaryConfigured } from '@/lib/cloudinary';
 import TeachPanel from '@/components/journey/TeachPanel';

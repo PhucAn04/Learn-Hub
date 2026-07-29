@@ -13,13 +13,23 @@ export function calculateROI(
 ): ROI | undefined {
   if (!keypoints || keypoints.length === 0) return undefined;
 
-  let minX = 1, minY = 1, maxX = 0, maxY = 0;
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
 
   for (const kp of keypoints) {
     if (kp.x < minX) minX = kp.x;
     if (kp.y < minY) minY = kp.y;
     if (kp.x > maxX) maxX = kp.x;
     if (kp.y > maxY) maxY = kp.y;
+  }
+
+  // Check if coordinates are normalized (0-1) or absolute pixels
+  const isNormalized = maxX <= 1 && maxY <= 1;
+
+  if (isNormalized) {
+    minX *= canvasWidth;
+    maxX *= canvasWidth;
+    minY *= canvasHeight;
+    maxY *= canvasHeight;
   }
 
   const width = maxX - minX;
@@ -30,14 +40,14 @@ export function calculateROI(
 
   minX = Math.max(0, minX - padX);
   minY = Math.max(0, minY - padY);
-  maxX = Math.min(1, maxX + padX);
-  maxY = Math.min(1, maxY + padY);
+  maxX = Math.min(canvasWidth, maxX + padX);
+  maxY = Math.min(canvasHeight, maxY + padY);
 
   return {
-    x: Math.floor(minX * canvasWidth),
-    y: Math.floor(minY * canvasHeight),
-    w: Math.floor((maxX - minX) * canvasWidth),
-    h: Math.floor((maxY - minY) * canvasHeight),
+    x: Math.floor(minX),
+    y: Math.floor(minY),
+    w: Math.floor(maxX - minX),
+    h: Math.floor(maxY - minY),
   };
 }
 
@@ -154,15 +164,14 @@ export function analyzeBlur(canvas: HTMLCanvasElement, roi?: ROI, brightness: nu
   // Ảnh nét có viền mảnh và gắt -> Tỉ lệ cao. (Không phụ thuộc vào kích thước ngón tay to hay nhỏ)
   const sharpnessRatio = (strongPixels / activePixels) * 100;
   
-  // Căn chỉnh không quá khắt khe:
-  // Nếu Variance > 1100 => Chắc chắn nét
-  // Nếu Variance < 800 => Chắc chắn mờ
-  // Ở khoảng giữa (800 - 1100), xét thêm SharpnessRatio (nếu > 10% là nét)
+  // Căn chỉnh lại dựa trên tập mẫu mới:
+  // Ảnh cực mờ: ActiveVar ~ 837 - 893
+  // Ảnh rõ nét: ActiveVar ~ 898 - 962 (trở lên)
   let isBlurry = true;
-  if (variance >= 1100) {
-    isBlurry = false;
-  } else if (variance >= 800 && sharpnessRatio >= 10) {
-    isBlurry = false;
+  if (variance >= 950) {
+    isBlurry = false; // Mức an toàn để chắc chắn là ảnh nét (ví dụ 962.9)
+  } else if (variance >= 850 && sharpnessRatio >= 10) {
+    isBlurry = false; // Nới lỏng cho ảnh có Variance lấp lửng nhưng có độ sắc nét tốt
   }
 
   return { variance, maxLaplacian, isBlurry, sharpnessRatio };

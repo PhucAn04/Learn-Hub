@@ -1,4 +1,10 @@
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn } from 'typeorm';
+import {
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  CreateDateColumn,
+  UpdateDateColumn,
+} from 'typeorm';
 
 @Entity('users')
 export class User {
@@ -11,7 +17,7 @@ export class User {
   @Column({ unique: true })
   email: string;
 
-  @Column({ select: false })
+  @Column({ select: false, nullable: true })
   password?: string;
 
   @Column({ default: '🦁' })
@@ -19,6 +25,20 @@ export class User {
 
   @Column({ default: 'student' })
   role: string;
+
+  // ── Google OAuth Fields ──
+
+  @Column({ nullable: true, unique: true })
+  googleId?: string;
+
+  @Column({ nullable: true })
+  googleAccessToken?: string;
+
+  @Column({ nullable: true })
+  googleRefreshToken?: string;
+
+  @Column({ nullable: true })
+  avatarUrl?: string;
 
   @CreateDateColumn()
   createdAt: Date;

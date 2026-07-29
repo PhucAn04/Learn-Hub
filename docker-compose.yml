@@ -30,7 +30,7 @@ services:
       - "3000:3000"
     environment:
       - WATCHPACK_POLLING=true
-      - NEXT_PUBLIC_API_URL=http://localhost:3001
+      - NEXT_PUBLIC_API_URL=http://server:3001
       - NODE_ENV=development
     volumes:
       - ./client:/app

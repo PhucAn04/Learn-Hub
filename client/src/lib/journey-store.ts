@@ -21,6 +21,11 @@ export interface JourneyState {
   emotionTrained: boolean;
   emotionGameUnlocked: boolean;
   emotionGameBestScore: number;
+  bodyRoomUnlocked: boolean;
+  bodyTheoryDone: boolean;
+  bodyTrained: boolean;
+  bodyGameUnlocked: boolean;
+  bodyGameBestScore: number;
   badges: string[];
   totalStars: number;
 }
@@ -46,6 +51,11 @@ const DEFAULT_STATE: JourneyState = {
   emotionTrained: false,
   emotionGameUnlocked: false,
   emotionGameBestScore: 0,
+  bodyRoomUnlocked: false,
+  bodyTheoryDone: false,
+  bodyTrained: false,
+  bodyGameUnlocked: false,
+  bodyGameBestScore: 0,
   badges: [],
   totalStars: 0,
 };

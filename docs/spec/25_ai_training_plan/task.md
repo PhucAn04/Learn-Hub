@@ -1,0 +1,5 @@
+- [x] Phục hồi lại hệ thống Cảnh báo viền đỏ (Heuristic Validation) ở file `teach-two-hands/page.tsx`.
+- [x] Tích hợp mô hình lai (Hybrid TFJS) vào trang Cử chỉ 1 tay cơ bản (`teach/page.tsx`).
+- [x] Tích hợp mô hình lai (Hybrid TFJS) vào trang Dạy Cử chỉ Kéo-Búa-Bao (`teach-gestures/page.tsx`).
+- [x] Tích hợp mô hình lai (Hybrid TFJS) vào trang Dạy Biểu cảm Khuôn mặt (`teach-face/page.tsx`).
+- [x] Xác nhận toàn bộ hệ thống hoạt động thống nhất.

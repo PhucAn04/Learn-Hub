@@ -15,18 +15,30 @@ import {
   drawPolyline,
   normalizeFaceKeypoints,
   getFaceKeypoints,
+  drawFaceSkeleton
 } from '@/lib/face-drawing';
 import {
   normalizeHandKeypoints,
   normalizeFaceFeatures,
   classifyKNN,
+  classifyKNNDetailed,
+  classifyKNNWithVotes,
   StoredSample,
   HandKeypoint,
 } from '@/lib/knn-classifier';
+import { assessQuality, calculateROI } from '@/lib/image-quality';
+import KnnScatterPlot from './KnnScatterPlot';
 import { GOLDEN_TEST_DATASET, GoldenTestSample } from '@/lib/golden-dataset';
 import { playClickSound, playSuccessSound } from '@/lib/audio';
-import CameraView from '@/components/CameraView';
+import CameraView from '../CameraView';
 import SampleGallery from '@/components/SampleGallery';
+import DataCollector from './DataCollector';
+import AIFeedbackModal from './AIFeedbackModal';
+import DataBalanceWarning from './DataBalanceWarning';
+import AIConfidenceEnergyBars from './AIConfidenceEnergyBars';
+import { TfTrainer } from '@/lib/tf-trainer';
+import { TeacherTemplate, DatasetResponse } from '@/types/models';
+import { HandResult, FaceMeshResult } from '@/types/ml5';
 
 // ──────────────────────────────────────────────
 // Try to import optional golden datasets
@@ -45,10 +57,14 @@ try {
 // ──────────────────────────────────────────────
 interface TeachPanelProps {
   mode: 'hand-1' | 'hand-2' | 'gesture' | 'emotion';
-  classes: { id: string; label: string; emoji: string }[];
+  classes: { id: string; label: string; emoji?: string }[];
   minSamplesPerClass?: number;
   maxVisibleSkeletons?: number;
-  onTrainComplete: (samples: StoredSample[]) => void;
+  onTrainComplete: (
+    samples: StoredSample[], 
+    getModelBlobs?: () => Promise<{ jsonBlob: Blob; weightsBlob: Blob } | null>
+  ) => void;
+  teacherTemplate?: TeacherTemplate | DatasetResponse;
 }
 
 // ──────────────────────────────────────────────
@@ -59,14 +75,18 @@ function countExtendedFingers(keypoints: HandKeypoint[]): number {
 
   const wrist = keypoints[0];
   let count = 0;
+  
+  const dist2D = (p1: HandKeypoint, p2: HandKeypoint) => Math.hypot(p1.x - p2.x, p1.y - p2.y);
 
-  // Thumb: compare TIP(4) vs IP(3) along x-axis
+  // Thumb: compare TIP(4) vs IP(3) using 2D distance
   const thumbTip = keypoints[4];
   const thumbIP = keypoints[3];
   const thumbMCP = keypoints[2];
-  const thumbDistTip = Math.abs(thumbTip.x - wrist.x);
-  const thumbDistIP = Math.abs(thumbIP.x - wrist.x);
-  const thumbDistMCP = Math.abs(thumbMCP.x - wrist.x);
+  
+  const thumbDistTip = dist2D(thumbTip, wrist);
+  const thumbDistIP = dist2D(thumbIP, wrist);
+  const thumbDistMCP = dist2D(thumbMCP, wrist);
+  
   if (thumbDistTip > thumbDistIP && thumbDistIP > thumbDistMCP * 1.1) {
     count++;
   }
@@ -80,13 +100,9 @@ function countExtendedFingers(keypoints: HandKeypoint[]): number {
   ];
 
   for (const { tip, pip } of fingerIndices) {
-    const tipDist = Math.sqrt(
-      (keypoints[tip].x - wrist.x) ** 2 + (keypoints[tip].y - wrist.y) ** 2,
-    );
-    const pipDist = Math.sqrt(
-      (keypoints[pip].x - wrist.x) ** 2 + (keypoints[pip].y - wrist.y) ** 2,
-    );
-    if (tipDist > pipDist * 1.05) {
+    const tipDist = dist2D(keypoints[tip], wrist);
+    const pipDist = dist2D(keypoints[pip], wrist);
+    if (tipDist > pipDist * 1.25) { // Tăng ngưỡng từ 1.05 lên 1.25 để lờ đi các ngón cong nhẹ
       count++;
     }
   }
@@ -197,6 +213,7 @@ export default function TeachPanel({
   minSamplesPerClass = 10,
   maxVisibleSkeletons = 1,
   onTrainComplete,
+  teacherTemplate,
 }: TeachPanelProps) {
   const isHandMode = mode === 'hand-1' || mode === 'hand-2' || mode === 'gesture';
   const isFaceMode = mode === 'emotion';
@@ -208,13 +225,26 @@ export default function TeachPanel({
   const [isCapturing, setIsCapturing] = useState(false);
   const [isTraining, setIsTraining] = useState(false);
   const [isTrained, setIsTrained] = useState(false);
+  const [isModelOutdated, setIsModelOutdated] = useState(false);
   const [trainingProgress, setTrainingProgress] = useState(0);
   const [validationToast, setValidationToast] = useState<string | null>(null);
   const [predictedLabel, setPredictedLabel] = useState('Chưa nhận diện... 🤔');
-  const [confidence, setConfidence] = useState(0);
+  const [kValue, setKValue] = useState<number>(3);
+  const [threshold, setThreshold] = useState<number>(2);
+  const [kNearestIds, setKNearestIds] = useState<string[]>([]);
+  const [voteCounts, setVoteCounts] = useState<Record<string, number>>({});
+  const [nnConfidences, setNnConfidences] = useState<Record<string, number> | null>(null);
+  const [isAnomaly, setIsAnomaly] = useState(false);
+  const [showFeedbackModal, setShowFeedbackModal] = useState(false);
+  const [activeTab, setActiveTab] = useState<'camera' | 'upload' | 'video'>('camera');
 
   const captureIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const toastTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  const trainerRef = useRef<TfTrainer | null>(null);
+  useEffect(() => {
+    trainerRef.current = new TfTrainer();
+  }, []);
 
   // ── Camera ──────────────────────────
   const { videoRef, canvasRef, cameraActive, cameraError, retryCamera } =
@@ -236,14 +266,51 @@ export default function TeachPanel({
   const modelStatus = isHandMode ? handModelStatus : faceModelStatus;
 
   // ── Thumbnail helper ────────────────
-  const getVideoThumb = useCallback(() => {
+  const getVideoThumbAndCanvas = useCallback((hands?: HandResult[], faces?: FaceMeshResult[]) => {
     const cv = document.createElement('canvas');
     cv.width = 240;
     cv.height = 240;
     const ctx = cv.getContext('2d');
-    if (ctx && videoRef.current)
-      ctx.drawImage(videoRef.current, 0, 0, 240, 240);
-    return cv.toDataURL('image/jpeg', 0.8);
+    
+    const rawCv = document.createElement('canvas');
+    rawCv.width = 240;
+    rawCv.height = 240;
+    const rawCtx = rawCv.getContext('2d');
+    
+    let rawThumbnail = '';
+    if (ctx && rawCtx && videoRef.current) {
+      rawCtx.drawImage(videoRef.current, 0, 0, 240, 240);
+      ctx.drawImage(rawCv, 0, 0); // copy raw to cv
+      rawThumbnail = rawCv.toDataURL('image/jpeg', 0.8);
+      
+      if (hands && hands.length > 0) {
+        hands.forEach((hand, idx) => {
+          if (hand.keypoints && hand.keypoints.length >= 21) {
+            drawHandSkeleton(ctx, hand.keypoints, videoRef.current!.videoWidth || 640, videoRef.current!.videoHeight || 480, 240, 240, {
+              lineColor: idx === 0 ? '#6366f1' : '#ec4899',
+              jointColor1: idx === 0 ? '#4f46e5' : '#db2777',
+              jointColor2: idx === 0 ? '#4f46e5' : '#db2777',
+              jointRadius: 2,
+            });
+          }
+        });
+      }
+
+      if (faces && faces.length > 0) {
+        faces.forEach((face) => {
+          const kps = getFaceKeypoints(face);
+          if (kps && kps.length >= 30) {
+            drawFaceSkeleton(ctx, kps, videoRef.current!.videoWidth || 640, videoRef.current!.videoHeight || 480, 240, 240);
+          }
+        });
+      }
+    }
+    return {
+      thumbnail: cv.toDataURL('image/jpeg', 0.8),
+      rawThumbnail,
+      canvas: cv,
+      rawCanvas: rawCv
+    };
   }, [videoRef]);
 
   // ── Count helper ────────────────────
@@ -274,16 +341,26 @@ export default function TeachPanel({
       if (!kps || kps.length < 468) return;
 
       const features = normalizeFaceFeatures(kps);
-      const thumbnail = getVideoThumb();
+      const { thumbnail, rawThumbnail, canvas } = getVideoThumbAndCanvas(undefined, faces);
       const activeClassLabel =
         classes.find((c) => c.id === activeClass)?.label || activeClass;
 
       const validation = validateFaceExpression(kps, activeClass);
+      const quality = assessQuality(canvas);
 
       setSamples((prev) => {
+        let msg = '';
         if (!validation.isValid) {
+          msg = validation.suggestion;
+        } else if (quality.isBlurry) {
+          msg = 'Ảnh hơi mờ! Bé cố gắng giữ chắc tay nhé 🔍';
+        } else if (quality.isDark) {
+          msg = 'Ảnh hơi tối! Bé tìm chỗ sáng hơn xíu nha 🌑';
+        }
+
+        if (msg) {
           if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
-          setValidationToast(`⚠️ ${validation.suggestion}`);
+          setValidationToast(`⚠️ ${msg}`);
           toastTimeoutRef.current = setTimeout(
             () => setValidationToast(null),
             4000,
@@ -298,7 +375,9 @@ export default function TeachPanel({
             features,
             sourceId: activeClass,
             thumbnail,
+            rawThumbnail,
             isValid: validation.isValid,
+            quality,
           },
         ];
       });
@@ -320,7 +399,7 @@ export default function TeachPanel({
         if (activeClass === 'class_4') knnLabel = classes[1]?.label || activeClassLabel;
       }
 
-      const thumbnail = getVideoThumb();
+      const { thumbnail, rawThumbnail, canvas, rawCanvas } = getVideoThumbAndCanvas(hands, undefined);
       const expectedFingers = getExpectedFingerCount(activeClass, mode);
 
       // Pick golden dataset based on mode
@@ -355,30 +434,51 @@ export default function TeachPanel({
           )
             return;
 
-          const features = normalizeHandKeypoints(hands[handIndex].keypoints!);
+          const keypoints = hands[handIndex].keypoints!;
+          const roi = calculateROI(keypoints as { x: number; y: number }[], rawCanvas.width, rawCanvas.height, 0.1);
+          const quality = assessQuality(rawCanvas, roi);
+
+          const features = normalizeHandKeypoints(keypoints);
           let isValid = true;
-
-          // Validation 1: Finger counting (hand-1 / hand-2 only)
-          if (
-            (mode === 'hand-1' || mode === 'hand-2') &&
-            expectedFingers > 0
-          ) {
-            const detected = countExtendedFingers(hands[handIndex].keypoints!);
-            if (detected >= 0 && Math.abs(detected - expectedFingers) > 1) {
-              isValid = false;
-              rejectedAny = true;
-              rejectionMsg = `Bé đang giơ ${detected} ngón, nhưng cần ${expectedFingers} ngón! 🖐️`;
+          
+          // Ưu tiên 1: Nếu ảnh mờ/tối, bỏ qua việc kiểm tra xương (tránh ảo giác)
+          if (quality.isBlurry || quality.isDark) {
+            rejectedAny = true;
+            rejectionMsg = quality.isBlurry 
+              ? 'Ảnh hơi mờ! Bé cố gắng giữ chắc tay nhé 🔍' 
+              : 'Ảnh hơi tối! Bé tìm chỗ sáng hơn xíu nha 🌑';
+          } else {
+            // Validation 1: Finger counting (hand-1 / hand-2 only)
+            if (
+              (mode === 'hand-1' || mode === 'hand-2') &&
+              expectedFingers > 0
+            ) {
+              const detected = countExtendedFingers(hands[handIndex].keypoints!);
+              if (detected >= 0 && Math.abs(detected - expectedFingers) > 1) {
+                isValid = false;
+                rejectedAny = true;
+                rejectionMsg = `Bé đang giơ ${detected} ngón, nhưng cần ${expectedFingers} ngón! 🖐️`;
+              }
             }
-          }
 
-          // Validation 2: Golden dataset distance
-          if (
-            isValid &&
-            goldenCurrentClass.length > 0 &&
-            goldenOtherClasses.length > 0
-          ) {
-            const avgDistToCorrect =
-              goldenCurrentClass.reduce((sum, g) => {
+            // Validation 2: Golden dataset distance
+            if (
+              isValid &&
+              goldenCurrentClass.length > 0 &&
+              goldenOtherClasses.length > 0
+            ) {
+              const minDistToCorrect = goldenCurrentClass.reduce((min, g) => {
+                let d = 0;
+                for (let i = 0; i < Math.min(features.length, g.features.length); i++) {
+                  const diff = g.features[i] - features[i];
+                  d += diff * diff;
+                }
+                return Math.min(min, Math.sqrt(d));
+              }, Infinity);
+
+              let minDistToWrong = Infinity;
+              let closestWrongLabel = '';
+              goldenOtherClasses.forEach((g) => {
                 let d = 0;
                 for (
                   let i = 0;
@@ -388,38 +488,24 @@ export default function TeachPanel({
                   const diff = g.features[i] - features[i];
                   d += diff * diff;
                 }
-                return sum + Math.sqrt(d);
-              }, 0) / goldenCurrentClass.length;
-
-            let minDistToWrong = Infinity;
-            let closestWrongLabel = '';
-            goldenOtherClasses.forEach((g) => {
-              let d = 0;
-              for (
-                let i = 0;
-                i < Math.min(features.length, g.features.length);
-                i++
-              ) {
-                const diff = g.features[i] - features[i];
-                d += diff * diff;
-              }
-              const dist = Math.sqrt(d);
-              if (dist < minDistToWrong) {
-                minDistToWrong = dist;
-                if (mode === 'gesture') {
-                  const cls = classes.find((c) => c.id === g.expectedLabel);
-                  closestWrongLabel = cls?.label || g.expectedLabel;
-                } else {
-                  closestWrongLabel = g.expectedLabel;
+                const dist = Math.sqrt(d);
+                if (dist < minDistToWrong) {
+                  minDistToWrong = dist;
+                  if (mode === 'gesture') {
+                    const cls = classes.find((c) => c.id === g.expectedLabel);
+                    closestWrongLabel = cls?.label || g.expectedLabel;
+                  } else {
+                    closestWrongLabel = g.expectedLabel;
+                  }
                 }
-              }
-            });
+              });
 
-            const threshold = mode === 'gesture' ? 0.85 : 0.9;
-            if (minDistToWrong < avgDistToCorrect * threshold) {
-              isValid = false;
-              rejectedAny = true;
-              rejectionMsg = `Cử chỉ này trông giống "${closestWrongLabel}" hơn! Bé thử lại nhé? 🤔`;
+              const threshold = mode === 'gesture' ? 0.7 : 0.9;
+              if (minDistToWrong < minDistToCorrect * threshold) {
+                isValid = false;
+                rejectedAny = true;
+                rejectionMsg = `Cử chỉ này trông giống "${closestWrongLabel}" hơn! Bé thử lại nhé? 🤔`;
+              }
             }
           }
 
@@ -429,7 +515,9 @@ export default function TeachPanel({
             features,
             sourceId: activeClass,
             thumbnail,
+            rawThumbnail,
             isValid,
+            quality,
           });
         };
 
@@ -445,7 +533,11 @@ export default function TeachPanel({
           );
         }
 
-        return newSamples.length > 0 ? [...prev, ...newSamples] : prev;
+        if (newSamples.length > 0) {
+          setTimeout(() => setIsModelOutdated(true), 0);
+          return [...prev, ...newSamples];
+        }
+        return prev;
       });
     }
   }, [
@@ -456,7 +548,7 @@ export default function TeachPanel({
     classes,
     allFacesRef,
     handsRef,
-    getVideoThumb,
+    getVideoThumbAndCanvas,
   ]);
 
   const startCapturing = useCallback(() => {
@@ -464,7 +556,7 @@ export default function TeachPanel({
     playClickSound();
     setIsCapturing(true);
     captureSample();
-    captureIntervalRef.current = setInterval(captureSample, 300);
+    captureIntervalRef.current = setInterval(captureSample, 500);
   }, [modelStatus, captureSample]);
 
   const stopCapturing = useCallback(() => {
@@ -477,6 +569,7 @@ export default function TeachPanel({
 
   const deleteSample = useCallback((id: string) => {
     setSamples((prev) => prev.filter((s) => s.id !== id));
+    setIsModelOutdated(true);
   }, []);
 
   const clearClassSamples = useCallback(
@@ -490,6 +583,7 @@ export default function TeachPanel({
         ),
       );
       setIsTrained(false);
+      setIsModelOutdated(false);
     },
     [classes],
   );
@@ -503,49 +597,164 @@ export default function TeachPanel({
     return effective >= minSamplesPerClass;
   });
 
-  const handleTrain = useCallback(() => {
+  const handleTrain = useCallback(async () => {
     if (!canTrain) return;
     playClickSound();
+    
     setIsTraining(true);
     setTrainingProgress(0);
 
-    const interval = setInterval(() => {
-      setTrainingProgress((prev) => {
-        if (prev >= 100) {
-          clearInterval(interval);
-          setIsTraining(false);
-          setIsTrained(true);
-          playSuccessSound();
-          onTrainComplete(samples);
-          return 100;
+    try {
+      if (trainerRef.current) {
+        await trainerRef.current.train(samples, (epoch, progress) => {
+          setTrainingProgress(progress);
+        });
+        // progress reaches 100 here, which will trigger the useEffect below
+      }
+    } catch (err) {
+      console.error('Training failed', err);
+      setIsTraining(false);
+      alert('Lỗi huấn luyện mô hình. Vui lòng thử lại.');
+    }
+  }, [canTrain, samples]);
+
+  // Handle train completion & re-evaluation
+  useEffect(() => {
+    if (isTraining && trainingProgress >= 100) {
+      setIsTraining(false);
+      setIsTrained(true);
+      playSuccessSound();
+      
+      // Perform initial evaluation immediately
+      const targetDataset = ((teacherTemplate?.samples?.length ?? 0) > 0) ? teacherTemplate!.samples! : samples;
+      let hasIssues = false;
+      
+      const evaluated = samples.map(sample => {
+        const refDataset = (targetDataset === samples) ? samples.filter(s => s.id !== sample.id) : targetDataset;
+        if (refDataset.length === 0) return sample;
+        
+        const result = classifyKNNDetailed(sample.features, refDataset, kValue);
+        const actualThreshold = Math.min(threshold, kValue);
+        const bestVotes = (result.counts as Record<string, number>)[result.label] || 0;
+        
+        let predictedLabel = 'Chưa rõ ràng';
+        if (bestVotes >= actualThreshold) {
+          predictedLabel = result.label;
         }
-        return prev + 10;
+        
+        const studentClassId = sample.sourceId;
+        const classDef = classes.find(c => c.id === studentClassId);
+        const expectedLabel = classDef ? classDef.label : sample.label;
+        
+        const isMisclassified = (sample.quality?.isBlurry || sample.quality?.isDark) 
+          ? false 
+          : predictedLabel !== expectedLabel;
+        
+        if (isMisclassified || sample.quality?.isBlurry || sample.quality?.isDark || sample.isValid === false) {
+          hasIssues = true;
+        }
+        
+        return {
+          ...sample,
+          aiFeedback: {
+            isMisclassified,
+            predictedLabel,
+            nearestMatchThumbnail: result.nearest[0]?.thumbnail
+          }
+        };
       });
-    }, 150);
-  }, [canTrain, samples, onTrainComplete]);
+      
+      setSamples(evaluated);
+      setIsModelOutdated(false);
+      
+      // Removed auto-popup and auto-submit so the user can test the camera freely
+    }
+  }, [isTraining, trainingProgress, classes, kValue, threshold, teacherTemplate, samples, onTrainComplete]);
+
+  // Re-evaluate when K or threshold changes
+  useEffect(() => {
+    if (isTrained && !isTraining) {
+      setSamples(prevSamples => {
+        let hasChanges = false;
+        const targetDataset = ((teacherTemplate?.samples?.length ?? 0) > 0) ? teacherTemplate!.samples! : prevSamples;
+        
+        const evaluated = prevSamples.map(sample => {
+          const refDataset = (targetDataset === prevSamples) ? prevSamples.filter(s => s.id !== sample.id) : targetDataset;
+          if (refDataset.length === 0) return sample;
+          
+          const result = classifyKNNDetailed(sample.features, refDataset, kValue);
+          const actualThreshold = Math.min(threshold, kValue);
+          
+          const bestVotes = (result.counts as Record<string, number>)[result.label] || 0;
+          let predictedLabel = 'Chưa rõ ràng';
+          if (bestVotes >= actualThreshold) {
+            predictedLabel = result.label;
+          }
+          
+          const studentClassId = sample.sourceId;
+          const classDef = classes.find(c => c.id === studentClassId);
+          const expectedLabel = classDef ? classDef.label : sample.label;
+          
+          const isMisclassified = (sample.quality?.isBlurry || sample.quality?.isDark)
+            ? false
+            : predictedLabel !== expectedLabel;
+          
+          const currentFeedback = sample.aiFeedback;
+          if (!currentFeedback || currentFeedback.isMisclassified !== isMisclassified || currentFeedback.predictedLabel !== predictedLabel) {
+            hasChanges = true;
+            return {
+              ...sample,
+              aiFeedback: {
+                isMisclassified,
+                predictedLabel,
+                nearestMatchThumbnail: result.nearest[0]?.thumbnail
+              }
+            };
+          }
+          
+          return sample;
+        });
+        
+        return hasChanges ? evaluated : prevSamples;
+      });
+    }
+  }, [kValue, threshold, isTrained, isTraining]);
 
   // ══════════════════════════════════════
   // PREDICTION LOOP
   // ══════════════════════════════════════
   useEffect(() => {
-    if (!isTrained || modelStatus !== 'ready') return;
+    if (modelStatus !== 'ready' || isTraining) return;
 
     let rafId: number;
 
-    const runPrediction = () => {
+    const runPrediction = async () => {
       if (isFaceMode) {
         const faces = allFacesRef.current;
         if (faces && faces.length > 0) {
           const kps = getFaceKeypoints(faces[0]);
           if (kps && kps.length >= 468) {
             const features = normalizeFaceFeatures(kps);
-            const result = classifyKNN(features, samples, 3);
-            setPredictedLabel(result.label);
-            setConfidence(result.confidence);
+            const resultKNN = classifyKNNWithVotes(features, samples, kValue);
+            const resultNN = await trainerRef.current!.predict(features);
+            
+            if (resultNN && resultNN.label) {
+              setPredictedLabel(classes.find(c => c.id === resultNN.label)?.label || 'Chưa rõ ràng... 🤔');
+            }
+            if (resultNN && resultNN.confidences) {
+              setNnConfidences(resultNN.confidences);
+            }
+
+            setIsAnomaly(resultKNN.minDistance > 3.5);
+            setKNearestIds(resultKNN.kNearestIds);
+            setVoteCounts(resultKNN.voteCounts);
           }
         } else {
           setPredictedLabel('AI đang đợi khuôn mặt bé... 👀');
-          setConfidence(0);
+          setNnConfidences(null);
+          setIsAnomaly(false);
+          setKNearestIds([]);
+          setVoteCounts({});
         }
       } else {
         const hands = handsRef.current;
@@ -553,18 +762,60 @@ export default function TeachPanel({
           if (isTwoHandMode && hands.length >= 2) {
             const f1 = normalizeHandKeypoints(hands[0]?.keypoints || []);
             const f2 = normalizeHandKeypoints(hands[1]?.keypoints || []);
-            const pred1 = classifyKNN(f1, samples, 3);
-            const pred2 = classifyKNN(f2, samples, 3);
-            const avg = Math.round((pred1.confidence + pred2.confidence) / 2);
-            setPredictedLabel(`Tay 1: ${pred1.label} | Tay 2: ${pred2.label}`);
-            setConfidence(avg);
+            const pred1KNN = classifyKNNWithVotes(f1, samples, kValue);
+            const pred2KNN = classifyKNNWithVotes(f2, samples, kValue);
+            
+            const pred1NN = await trainerRef.current!.predict(f1);
+            const pred2NN = await trainerRef.current!.predict(f2);
+            
+            // Lấy kết quả tự tin cao hơn
+            let bestPred = pred1NN;
+            let bestConf = pred1NN?.confidences?.[pred1NN.label] || 0;
+            const conf2 = pred2NN?.confidences?.[pred2NN.label] || 0;
+            if (conf2 > bestConf) {
+              bestPred = pred2NN;
+            }
+
+            if (bestPred && bestPred.label) {
+              setPredictedLabel(classes.find(c => c.id === bestPred.label)?.label || 'Chưa rõ ràng... 🤔');
+            }
+            if (bestPred && bestPred.confidences) {
+              setNnConfidences(bestPred.confidences);
+            }
+            
+            const isAnomaly1 = pred1KNN.minDistance > 0.7;
+            const isAnomaly2 = pred2KNN.minDistance > 0.7;
+            setIsAnomaly(isAnomaly1 && isAnomaly2);
+
+            if (pred1NN.label === pred2NN.label) {
+              setPredictedLabel(pred1NN.label);
+            } else {
+              setPredictedLabel(`Tay 1: ${pred1NN.label} | Tay 2: ${pred2NN.label}`);
+            }
+            
+            setKNearestIds([...pred1KNN.kNearestIds, ...pred2KNN.kNearestIds]);
+            const merged: Record<string, number> = { ...pred1KNN.voteCounts };
+            Object.entries(pred2KNN.voteCounts).forEach(([k, v]) => {
+              merged[k] = (merged[k] || 0) + v;
+            });
+            setVoteCounts(merged);
           } else {
             const kps = hands[0].keypoints;
             if (kps && kps.length >= 21) {
               const features = normalizeHandKeypoints(kps);
-              const result = classifyKNN(features, samples, 3);
-              setPredictedLabel(result.label);
-              setConfidence(result.confidence);
+              const resultKNN = classifyKNNWithVotes(features, samples, kValue);
+              const resultNN = await trainerRef.current!.predict(features);
+              
+              if (resultNN && resultNN.label) {
+                setPredictedLabel(classes.find(c => c.id === resultNN.label)?.label || 'Chưa rõ ràng... 🤔');
+              }
+              if (resultNN && resultNN.confidences) {
+                setNnConfidences(resultNN.confidences);
+              }
+              
+              setIsAnomaly(resultKNN.minDistance > 0.7);
+              setKNearestIds(resultKNN.kNearestIds);
+              setVoteCounts(resultKNN.voteCounts);
             }
           }
         } else {
@@ -573,7 +824,10 @@ export default function TeachPanel({
               ? 'AI đang đợi khuôn mặt bé... 👀'
               : 'AI đang đợi tay bé... ✋',
           );
-          setConfidence(0);
+          setNnConfidences(null);
+          setIsAnomaly(false);
+          setKNearestIds([]);
+          setVoteCounts({});
         }
       }
 
@@ -715,14 +969,12 @@ export default function TeachPanel({
     ? 'ĐANG KHỞI ĐỘNG CAMERA NHẬN DẠNG KHUÔN MẶT...'
     : 'ĐANG KHỞI ĐỘNG CAMERA NHẬN DẠNG XƯƠNG TAY...';
 
-  const hudText = isTrained
-    ? 'Đang dự đoán dựa trên mẫu bé dạy ✨'
-    : 'Thu thập dữ liệu — chọn nhãn bên trái rồi chụp 📸';
+
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
       {/* ── LEFT PANEL: Class selector + capture + gallery ── */}
-      <div className="bg-white rounded-3xl p-5 border-4 border-indigo-400 shadow-xl flex flex-col">
+      <div className="lg:col-span-3 bg-white rounded-3xl p-5 border-4 border-indigo-400 shadow-xl flex flex-col">
         <div className="text-xs font-black text-indigo-600 tracking-wider mb-2 uppercase">
           Lớp học AI của bé 🧑‍🏫
         </div>
@@ -813,6 +1065,7 @@ export default function TeachPanel({
           samples={samples.filter((s) => s.sourceId === activeClass)}
           onDeleteSample={deleteSample}
           onClearAll={() => clearClassSamples(activeClass)}
+          isTrained={isTrained}
         />
 
         {/* Validation toast */}
@@ -869,13 +1122,27 @@ export default function TeachPanel({
             : 'Hãy xoay bàn tay nhẹ nhàng khi chụp để AI học được nhiều góc nhé!'}
         </p>
 
+        {/* Imbalance Warning */}
+        {!isTrained && (
+          <DataBalanceWarning 
+            classCounts={classes.map((c) => {
+              const count = getClassSampleCount(c.id);
+              return {
+                id: c.id,
+                label: c.label,
+                count: isTwoHandMode ? Math.floor(count / 2) : count
+              };
+            })} 
+          />
+        )}
+
         {/* Train / Progress */}
         <div className="mt-auto pt-4">
           {isTraining ? (
             <div className="bg-indigo-50 rounded-2xl p-4 border border-indigo-100 animate-pulse">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-xs font-bold text-indigo-700">
-                  AI đang học bài... ⚙️
+                  Bạn AI đang học bài... ⚙️
                 </span>
                 <span className="text-xs font-black text-indigo-800">
                   {trainingProgress}%
@@ -889,74 +1156,182 @@ export default function TeachPanel({
               </div>
             </div>
           ) : (
-            <button
-              onClick={handleTrain}
-              disabled={!canTrain || isTrained}
-              className={`w-full font-extrabold py-3.5 px-6 rounded-2xl shadow-lg border-b-4 flex items-center justify-center gap-2 text-lg transition-all ${
-                canTrain && !isTrained
-                  ? 'bg-emerald-500 hover:bg-emerald-600 border-emerald-700 text-white'
-                  : 'bg-gray-300 border-gray-400 text-gray-500 cursor-not-allowed'
-              }`}
-            >
-              <Brain className="w-6 h-6" />
-              <span>
-                {isTrained ? 'ĐÃ HUẤN LUYỆN ✅' : 'Huấn Luyện AI 🧠'}
-              </span>
-            </button>
+            <div className="flex flex-col gap-2">
+              <button
+                onClick={handleTrain}
+                disabled={!canTrain || (isTrained && !isModelOutdated)}
+                className={`w-full font-extrabold py-3.5 px-6 rounded-2xl shadow-lg border-b-4 flex items-center justify-center gap-2 text-lg transition-all ${
+                  canTrain && (!isTrained || isModelOutdated)
+                    ? 'bg-emerald-500 hover:bg-emerald-600 border-emerald-700 text-white'
+                    : 'bg-gray-300 border-gray-400 text-gray-500 cursor-not-allowed'
+                }`}
+              >
+                <Brain className="w-6 h-6" />
+                <span>
+                  {isModelOutdated && isTrained ? 'Cập nhật mô hình (Re-train) 🔄' : isTrained ? 'ĐÃ DẠY XONG ✅' : 'Dạy bạn AI học 🧠'}
+                </span>
+              </button>
+              
+              {isTrained && (
+                <button
+                  onClick={() => setShowFeedbackModal(true)}
+                  className="w-full font-extrabold py-3 px-6 rounded-2xl shadow-md border-b-4 bg-indigo-100 hover:bg-indigo-200 border-indigo-300 text-indigo-700 flex items-center justify-center gap-2 text-base transition-all"
+                >
+                  <span className="text-xl">🚀</span>
+                  <span>Hoàn thành & Nộp Bài</span>
+                </button>
+              )}
+            </div>
           )}
         </div>
       </div>
 
-      {/* ── RIGHT PANEL: Camera + Prediction ── */}
-      <div className="lg:col-span-2 flex flex-col gap-6">
+      {/* ── CENTER PANEL: Camera + Prediction ── */}
+      <div className="lg:col-span-5 flex flex-col gap-6">
         {/* Camera view */}
         <div className="bg-white rounded-3xl p-6 border-4 border-indigo-400 shadow-xl relative flex flex-col items-center">
-          <CameraView
+
+          <DataCollector
+            mode={mode}
+            activeClassId={activeClass}
+            activeClassLabel={classes.find((c) => c.id === activeClass)?.label || activeClass}
+            activeTab={activeTab}
+            onTabChange={setActiveTab}
+            onSamplesCollected={(newSamples) => {
+              setSamples((prev) => [...prev, ...newSamples]);
+              setIsModelOutdated(true);
+            }}
             videoRef={videoRef}
-            canvasRef={canvasRef}
-            modelStatus={modelStatus}
-            cameraError={cameraError}
-            loadingText={loadingText}
-            hudText={hudText}
-            theme="blue"
-            onRetry={retryCamera}
-          />
+          >
+            <CameraView
+              videoRef={videoRef}
+              canvasRef={canvasRef}
+              modelStatus={modelStatus}
+              cameraError={cameraError}
+              loadingText={loadingText}
+              theme="blue"
+              onRetry={retryCamera}
+            />
+          </DataCollector>
         </div>
 
         {/* Prediction result */}
-        <div className="bg-gradient-to-r from-indigo-900 to-purple-900 text-white rounded-3xl p-6 shadow-xl border-4 border-purple-400">
-          <h4 className="font-extrabold text-sm text-purple-300 tracking-widest uppercase mb-2">
+        <div className="bg-gradient-to-r from-indigo-900 to-purple-900 text-white rounded-3xl p-4 shadow-xl border-4 border-purple-400">
+          <h4 className="font-extrabold text-[11px] text-purple-300 tracking-widest uppercase mb-1">
             Kết quả dự đoán của AI:
           </h4>
 
-          {isTrained ? (
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-              <div>
-                <span className="text-xs font-semibold text-purple-300 block">
-                  AI đoán bé đang làm:
-                </span>
-                <span className="text-2xl font-black text-yellow-300">
-                  {predictedLabel}
-                </span>
-              </div>
-              <div className="bg-white/10 px-4 py-2 rounded-2xl border border-white/20">
-                <span className="text-xs font-semibold text-purple-200 block text-center">
-                  Độ tự tin:
-                </span>
-                <span className="text-xl font-black text-green-300">
-                  {confidence}%
-                </span>
-              </div>
+          {samples.length > 0 ? (
+            <div className="flex items-center gap-2 mb-3">
+              <span className="text-xs font-semibold text-purple-300">
+                AI đoán bé đang làm:
+              </span>
+              <span className="text-xl font-black text-yellow-300">
+                {predictedLabel}
+              </span>
             </div>
           ) : (
-            <div className="text-center py-4 text-purple-200 font-bold">
-              Bé hãy chụp đủ mẫu rồi nhấn{' '}
-              <span className="text-yellow-300">&quot;Huấn Luyện AI&quot;</span>{' '}
-              để AI bắt đầu đoán nhé! 🤖✨
+            <div className="text-center py-2 text-purple-200 font-bold mb-3">
+              AI chưa có dữ liệu.{' '}
+              Bé hãy thu thập mẫu để AI bắt đầu đoán nhé! 🤖✨
             </div>
           )}
+
+          {/* AI Settings Sliders */}
+          <div className="bg-white/10 rounded-2xl p-3 border border-white/20 flex flex-col gap-3">
+            <div>
+              <div className="flex justify-between items-center mb-1">
+                <label className="text-xs font-bold text-purple-200">
+                  K hàng xóm (Số ảnh so sánh): {kValue}
+                </label>
+              </div>
+              <input
+                type="range"
+                min="1"
+                max="7"
+                step="2"
+                value={kValue}
+                onChange={(e) => setKValue(Number(e.target.value))}
+                className="w-full accent-indigo-400"
+              />
+              <p className="text-[10px] text-purple-300 mt-1 italic">
+                Xem trên biểu đồ → K đường nét đứt nối đến K ảnh gần nhất.
+              </p>
+            </div>
+
+            <div>
+              <div className="flex justify-between items-center mb-1">
+                <label className="text-xs font-bold text-purple-200">
+                  Độ khắt khe (Sự đồng thuận): {Math.min(threshold, kValue)} / {kValue}
+                </label>
+              </div>
+              <input
+                type="range"
+                min="1"
+                max={kValue}
+                step="1"
+                value={Math.min(threshold, kValue)}
+                onChange={(e) => setThreshold(Number(e.target.value))}
+                className="w-full accent-pink-400"
+              />
+              <p className="text-[10px] text-purple-300 mt-1 italic">
+                Nếu không đủ đồng thuận → biểu đồ hiện dấu "?".
+              </p>
+            </div>
+          </div>
         </div>
       </div>
+
+      {/* ── RIGHT PANEL: KNN Scatter Plot (Always visible on desktop) ── */}
+      {/* ── RIGHT PANEL: KNN Scatter Plot + Energy Bars ── */}
+      <div className="hidden lg:col-span-4 lg:flex flex-col gap-4">
+        <div className="bg-white rounded-3xl p-4 border-4 border-indigo-400 shadow-[0_20px_50px_rgba(79,70,229,0.2)] flex flex-col h-[600px]">
+          <h4 className="font-extrabold text-sm text-indigo-900 tracking-widest uppercase mb-2 text-center flex items-center justify-center gap-2">
+            <span>📊</span> Không gian phân loại kNN
+          </h4>
+          <div className="flex-1 min-h-0 relative bg-slate-50 rounded-2xl overflow-hidden border-2 border-slate-100">
+            <KnnScatterPlot
+              samples={samples}
+              classes={classes}
+              kValue={kValue}
+              threshold={threshold}
+              kNearestIds={kNearestIds}
+              predictedLabel={predictedLabel !== 'Chưa nhận diện... 🤔' && predictedLabel !== 'Chưa rõ ràng... 🤔' ? predictedLabel : undefined}
+              voteCounts={voteCounts}
+            />
+          </div>
+        </div>
+
+        {/* Energy Bars Component (Only show if trained) */}
+        {isTrained && (
+          <AIConfidenceEnergyBars 
+            classes={classes} 
+            confidences={nnConfidences} 
+            isAnomaly={isAnomaly}
+            classCounts={classes.reduce((acc, c) => {
+              acc[c.id] = getClassSampleCount(c.id);
+              return acc;
+            }, {} as Record<string, number>)}
+          />
+        )}
+      </div>
+      
+      <AIFeedbackModal
+        isOpen={showFeedbackModal}
+        onClose={() => setShowFeedbackModal(false)}
+        onProceed={() => {
+          setShowFeedbackModal(false);
+          onTrainComplete(samples, async () => {
+            return trainerRef.current ? trainerRef.current.saveToBlobs() : null;
+          });
+        }}
+        studentSamples={samples}
+        teacherTemplate={teacherTemplate}
+        kValue={kValue}
+        threshold={threshold}
+        classes={classes}
+        onDeleteSample={deleteSample}
+      />
     </div>
   );
 }

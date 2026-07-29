@@ -5,11 +5,12 @@ import { useRouter } from 'next/navigation';
 import { Award, Loader2, Calendar, Smile, Hand, Gamepad2, ArrowLeft } from 'lucide-react';
 import { api } from '@/lib/api';
 import { playClickSound } from '@/lib/audio';
+import { UserProfile } from '@/types/models';
 import Link from 'next/link';
 
 export default function StudentProfilePage() {
   const router = useRouter();
-  const [currentUser, setCurrentUser] = useState<any>(null);
+  const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
   const [stats, setStats] = useState<Record<string, number>>({
     fingers: 0,
     gestures: 0,
@@ -91,7 +92,7 @@ export default function StudentProfilePage() {
             </h2>
             <p className="text-sm font-semibold text-gray-500 flex items-center justify-center md:justify-start gap-1">
               <Calendar className="w-4 h-4 text-purple-400" />
-              Đã gia nhập từ: {new Date(currentUser.createdAt).toLocaleDateString('vi-VN')}
+              Đã gia nhập từ: {currentUser.createdAt ? new Date(currentUser.createdAt).toLocaleDateString('vi-VN') : 'Mới tham gia'}
             </p>
             <p className="text-xs font-semibold text-gray-400 mt-1">
               Email học tập: {currentUser.email}

@@ -11,14 +11,14 @@ interface DatasetRecord {
   userId: string;
   challengeType: string;
   createdAt: string;
-  user: { id: string; username: string; avatar: string; email: string };
+  user?: { id: string; username: string; avatar?: string; email: string };
   model?: {
     testScore: number;
   };
 }
 
 interface StudentProgress {
-  user: { id: string; username: string; avatar: string; email: string };
+  user: { id: string; username: string; avatar?: string; email: string };
   teach: { completed: boolean; bestScore: number };
   teachFace: { completed: boolean; bestScore: number };
   teachGestures: { completed: boolean; bestScore: number };
@@ -34,9 +34,14 @@ export default function TeacherDashboard() {
     averageAccuracy: 0
   });
 
+  const [profile, setProfile] = useState<{ username: string; email: string; avatar?: string } | null>(null);
+
   const fetchDashboardData = async () => {
     try {
       setLoading(true);
+      const userProfile = await api.getProfile().catch(() => null);
+      if (userProfile) setProfile(userProfile);
+
       // Fetch all four challenges
       const [teachRes, faceRes, gesturesRes, twoHandsRes] = await Promise.all([
         api.getDatasetsByChallenge('teach').catch(() => [] as DatasetRecord[]),
@@ -171,6 +176,54 @@ export default function TeacherDashboard() {
 
       <div className="max-w-7xl mx-auto px-4 mt-8">
         
+        {/* Profile Card */}
+        {profile && (
+          <div className="mb-8 bg-white rounded-3xl border border-indigo-100 shadow-sm p-6 flex items-center gap-6">
+            <div className="w-20 h-20 bg-indigo-100 rounded-full flex items-center justify-center text-4xl shadow-inner border-4 border-white">
+              {profile.avatar || '👩‍🏫'}
+            </div>
+            <div>
+              <h2 className="text-2xl font-black text-slate-800">{profile.username}</h2>
+              <p className="text-slate-500 font-semibold">{profile.email}</p>
+              <div className="mt-2 inline-flex items-center gap-1.5 px-3 py-1 bg-indigo-50 text-indigo-700 text-xs font-bold rounded-full">
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                Tài khoản Giáo viên
+              </div>
+            </div>
+          </div>
+        )}
+        
+        {/* Teacher Actions */}
+        <div className="mb-8 flex flex-col md:flex-row gap-4">
+          <Link
+            href="/teacher/training"
+            onClick={playClickSound}
+            className="flex-1 bg-gradient-to-r from-indigo-500 to-blue-600 text-white p-6 rounded-3xl shadow-md hover:shadow-lg transition-all flex items-center gap-4 group hover:-translate-y-1"
+          >
+            <div className="w-14 h-14 bg-white/20 rounded-2xl flex items-center justify-center backdrop-blur-sm group-hover:scale-110 transition-transform">
+              <span className="text-3xl">🧠</span>
+            </div>
+            <div>
+              <h3 className="text-xl font-black mb-1">Huấn Luyện AI (Dành cho GV)</h3>
+              <p className="text-indigo-100 text-sm font-medium">Tạo các mô hình AI chuẩn để làm mẫu cho học sinh.</p>
+            </div>
+          </Link>
+
+          <Link
+            href="/teacher/templates"
+            onClick={playClickSound}
+            className="flex-1 bg-gradient-to-r from-emerald-500 to-teal-600 text-white p-6 rounded-3xl shadow-md hover:shadow-lg transition-all flex items-center gap-4 group hover:-translate-y-1"
+          >
+            <div className="w-14 h-14 bg-white/20 rounded-2xl flex items-center justify-center backdrop-blur-sm group-hover:scale-110 transition-transform">
+              <span className="text-3xl">📋</span>
+            </div>
+            <div>
+              <h3 className="text-xl font-black mb-1">Quản Lý Mẫu (Templates)</h3>
+              <p className="text-emerald-100 text-sm font-medium">Xem, quản lý và xuất bản các mô hình mẫu.</p>
+            </div>
+          </Link>
+        </div>
+
         {/* Dataset Management Quick Links */}
         <div className="mb-8 bg-white rounded-3xl border border-slate-200 shadow-sm p-5">
           <h3 className="text-sm font-extrabold text-slate-500 uppercase tracking-wider mb-4 flex items-center gap-1.5">

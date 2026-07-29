@@ -25,11 +25,10 @@ Phần này tập trung vào việc khắc phục các hạn chế kỹ thuật 
   - Cho phép xuất mô hình TF.js (file `model.json` và `.bin`) trên client.
   - Upload file weights này lên Server sau khi train xong. Cập nhật Entity `Model` để lưu trữ đường dẫn `modelArtifactUrl`.
 
-### 1.3. ✅ Tách Biệt Rõ Ràng Lớp ML (Machine Learning Abstraction)
-- **Tiến độ**: Đã thiết kế hoàn thiện nền tảng (Blueprint). Đã định nghĩa chuẩn `IClassifier` tại `client/src/lib/ml/classifier.interface.ts`.
-- **Lưu ý triển khai**: Để đảm bảo sự ổn định của hệ thống hiện tại, tôi **cố ý không gắn (integrate)** interface này vào sâu trong codebase (như `TfTrainer`, `knn-classifier` và các UI component). Việc chuyển đổi ngay lúc này sẽ gây "chấn động" mạnh đến kiến trúc UI hiện có. `IClassifier` được xem như một cổng chờ (Adapter Pattern) để sẵn sàng cắm các AI xịn hơn vào sau này.
-- **Vấn đề đã giải quyết**: Logic ML đang hardcode trong `knn-classifier.ts` và `tf-trainer.ts`. Neural Network bị fix cứng kiến trúc (2 lớp Dense).
-- **Giải pháp**: Xây dựng interface chung `IClassifier` cho phép dễ dàng switch giữa KNN, MLP, hoặc các thuật toán khác. Cho phép người dùng tùy chỉnh tham số kiến trúc.
+### 1.3. ❌ Tách Biệt Rõ Ràng Lớp ML (Machine Learning Abstraction) - [ĐÃ HỦY BỎ / CANCELED]
+- **Tiến độ**: Ý tưởng này ĐÃ BỊ HỦY BỎ HOÀN TOÀN (ABANDONED).
+- **Lý do hủy bỏ**: Việc chuyển đổi toàn bộ logic ML đang hardcode trong `knn-classifier.ts` và `tf-trainer.ts` sang một Interface chung (như `IClassifier`) sẽ đụng chạm quá sâu vào kiến trúc các file UI (như `TeachPanel`, `BodyTeachPanel`). Điều này mang lại rủi ro rất cao làm gãy hệ thống hiện tại.
+- **Lưu ý nghiêm ngặt cho AI & Developer**: TUYỆT ĐỐI KHÔNG ĐƯỢC lật lại vấn đề này trong tương lai. Xin hãy bỏ qua hoàn toàn yêu cầu thiết kế IClassifier và giữ nguyên cấu trúc codebase hiện hành. File nháp trước đây đã bị đổi tên thành `_ABANDONED_DO_NOT_IMPLEMENT_classifier_blueprint.txt` để vô hiệu hóa.
 
 ---
 

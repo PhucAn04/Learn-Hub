@@ -1,20 +1,21 @@
 import { StoredSample } from '../knn-classifier';
 
 /**
+/**
  * ---------------------------------------------------------------------------
- * MACHINE LEARNING ABSTRACTION LAYER (LỚP TRỪU TƯỢNG HÓA AI)
+ * MACHINE LEARNING ABSTRACTION LAYER (CANCELED / ABANDONED)
  * ---------------------------------------------------------------------------
- * LƯU Ý QUAN TRỌNG TỪ KIẾN TRÚC SƯ HỆ THỐNG:
- * File interface này được định nghĩa nhằm mục đích ĐẶT NỀN MÓNG (Blueprint)
- * cho tương lai. Hiện tại, dự án đang sử dụng trực tiếp `TfTrainer` và 
- * `knn-classifier` ở rất sâu trong các Component UI (TeachPanel, BodyTeachPanel).
+ * LỜI CẢNH BÁO NGHIÊM NGẶT DÀNH CHO CÁC LẬP TRÌNH VIÊN VÀ AI TRONG TƯƠNG LAI:
  * 
- * Nếu áp dụng ngay Interface này vào codebase hiện tại sẽ đòi hỏi phải đập đi
- * xây lại toàn bộ hệ thống State của các Panel, rủi ro làm gãy luồng học tập.
- * Do đó, chúng ta lưu trữ thiết kế này ở đây như một bản lề. Khi nâng cấp 
- * hoàn toàn lên Server-side training hoặc có nhu cầu "cắm" các Model phức tạp
- * (như SVM, Random Forest, hay các mô hình PyTorch qua API) vào hệ thống, 
- * Developer chỉ cần implement interface này (Strategy Pattern).
+ * Ý tưởng về việc tách biệt lớp ML (Machine Learning Abstraction) bằng 
+ * IClassifier đã bị HỦY BỎ HOÀN TOÀN (ABANDONED).
+ * Tuyệt đối KHÔNG ĐƯỢC đề xuất, nhắc lại, hay cố gắng triển khai việc refactor
+ * `TfTrainer`, `knn-classifier` và các Component UI sang IClassifier này.
+ * 
+ * Việc cố gắng đập đi xây lại cấu trúc AI hiện tại sẽ phá vỡ toàn bộ 
+ * kiến trúc codebase đang hoạt động rất ổn định. File này chỉ được giữ lại
+ * như một bản nháp chết (dead draft). Hãy LỜ ĐI (IGNORE) file này và 
+ * CHUYỂN SANG NHIỆM VỤ KHÁC.
  */
 
 export interface ModelArtifacts {

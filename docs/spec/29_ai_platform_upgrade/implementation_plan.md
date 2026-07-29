@@ -25,9 +25,10 @@ Phần này tập trung vào việc khắc phục các hạn chế kỹ thuật 
   - Cho phép xuất mô hình TF.js (file `model.json` và `.bin`) trên client.
   - Upload file weights này lên Server sau khi train xong. Cập nhật Entity `Model` để lưu trữ đường dẫn `modelArtifactUrl`.
 
-### 1.3. ⏳ Tách Biệt Rõ Ràng Lớp ML (Machine Learning Abstraction)
-- **Tiến độ**: Chưa hoàn thành.
-- **Vấn đề hiện tại**: Logic ML đang hardcode trong `knn-classifier.ts` và `tf-trainer.ts`. Neural Network bị fix cứng kiến trúc (2 lớp Dense).
+### 1.3. ✅ Tách Biệt Rõ Ràng Lớp ML (Machine Learning Abstraction)
+- **Tiến độ**: Đã thiết kế hoàn thiện nền tảng (Blueprint). Đã định nghĩa chuẩn `IClassifier` tại `client/src/lib/ml/classifier.interface.ts`.
+- **Lưu ý triển khai**: Để đảm bảo sự ổn định của hệ thống hiện tại, tôi **cố ý không gắn (integrate)** interface này vào sâu trong codebase (như `TfTrainer`, `knn-classifier` và các UI component). Việc chuyển đổi ngay lúc này sẽ gây "chấn động" mạnh đến kiến trúc UI hiện có. `IClassifier` được xem như một cổng chờ (Adapter Pattern) để sẵn sàng cắm các AI xịn hơn vào sau này.
+- **Vấn đề đã giải quyết**: Logic ML đang hardcode trong `knn-classifier.ts` và `tf-trainer.ts`. Neural Network bị fix cứng kiến trúc (2 lớp Dense).
 - **Giải pháp**: Xây dựng interface chung `IClassifier` cho phép dễ dàng switch giữa KNN, MLP, hoặc các thuật toán khác. Cho phép người dùng tùy chỉnh tham số kiến trúc.
 
 ---

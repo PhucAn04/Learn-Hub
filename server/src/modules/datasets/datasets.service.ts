@@ -6,6 +6,7 @@ import { Model } from '../models/entities/model.entity';
 import { CreateDatasetDto } from './dto/create-dataset.dto';
 import { UsersService } from '../users/users.service';
 import { GoogleDriveService } from '../integrations/google-drive.service';
+import { CloudinaryService } from '../integrations/cloudinary.service';
 import { TrainingSample } from '../../shared/types';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -23,6 +24,7 @@ export class DatasetsService {
     private readonly modelRepository: Repository<Model>,
     private readonly usersService: UsersService,
     private readonly googleDriveService: GoogleDriveService,
+    private readonly cloudinaryService: CloudinaryService,
   ) {
     this.uploadDir = path.join(process.cwd(), 'uploads', 'datasets');
     fs.mkdirSync(this.uploadDir, { recursive: true });
@@ -32,18 +34,31 @@ export class DatasetsService {
     userId: string,
     dto: CreateDatasetDto,
   ): Promise<{ dataset: Dataset; model: Model }> {
-    // Cast DTO samples to TrainingSample[] (DTO uses Record<string, unknown>[] for decorator metadata compatibility)
+    // Cast DTO samples to TrainingSample[]
     const samples = dto.samples as unknown as TrainingSample[];
 
-    // Save samples to JSON file
     const fileId = crypto.randomUUID();
     const fileName = `${fileId}.json`;
-    const filePath = path.join(this.uploadDir, fileName);
-    await fs.promises.writeFile(
-      filePath,
-      JSON.stringify(samples, null, 2),
-      'utf-8',
-    );
+    let fileUrl = '';
+    const buffer = Buffer.from(JSON.stringify(samples, null, 2), 'utf-8');
+
+    try {
+      // Create JSON buffer and upload directly to Cloudinary
+      const uploadResult = await this.cloudinaryService.uploadFileStream(
+        buffer,
+        'learn-hub/datasets',
+        fileId,
+        'raw'
+      );
+      fileUrl = uploadResult.secure_url;
+      this.logger.log(`Uploaded dataset JSON to Cloudinary: ${fileUrl}`);
+    } catch (err) {
+      this.logger.error('Failed to upload dataset to Cloudinary, falling back to local file system', err);
+      // Fallback: Save samples to local JSON file
+      const filePath = path.join(this.uploadDir, fileName);
+      await fs.promises.writeFile(filePath, buffer, 'utf-8');
+      fileUrl = filePath;
+    }
 
     // Build class summary from samples
     const classSummary: Record<string, number> = {};
@@ -58,7 +73,7 @@ export class DatasetsService {
     const dataset = this.datasetRepository.create({
       userId,
       challengeType: dto.challengeType || 'teach',
-      dataFileUrl: filePath,
+      dataFileUrl: fileUrl,
       sampleCount: Array.isArray(samples) ? samples.length : 0,
       classSummary,
       isTemplate: dto.isTemplate || false,
@@ -83,6 +98,7 @@ export class DatasetsService {
       savedDataset.id,
       dto.challengeType,
       samples,
+      buffer
     ).catch((err: unknown) => {
       const errMsg = err instanceof Error ? err.message : String(err);
       this.logger.error(`Background upload to Google Drive failed: ${errMsg}`);
@@ -96,6 +112,7 @@ export class DatasetsService {
     datasetId: string,
     challengeType: string,
     samples: TrainingSample[],
+    datasetJsonBuffer?: Buffer,
   ) {
     try {
       const user = await this.usersService.findById(userId);
@@ -114,6 +131,21 @@ export class DatasetsService {
       );
 
       let driveUrl = '';
+
+      // Upload JSON dataset if provided
+      if (datasetJsonBuffer) {
+        try {
+          await this.googleDriveService.uploadFile(
+            user.googleAccessToken,
+            datasetJsonBuffer,
+            `${datasetId}.json`,
+            'application/json',
+            folderId
+          );
+        } catch (err) {
+          this.logger.error(`Failed to upload JSON to Google Drive: ${err}`);
+        }
+      }
 
       // We will only upload the first few samples to avoid rate limiting for now,
       // or we upload them sequentially
@@ -200,8 +232,26 @@ export class DatasetsService {
       throw new NotFoundException('Dataset không tồn tại.');
     }
 
-    if (!dataset.dataFileUrl || !fs.existsSync(dataset.dataFileUrl)) {
+    if (!dataset.dataFileUrl) {
       throw new NotFoundException('File dữ liệu không tồn tại.');
+    }
+
+    // Cloudinary backward compatibility check
+    if (dataset.dataFileUrl.startsWith('http')) {
+      try {
+        const response = await fetch(dataset.dataFileUrl);
+        if (!response.ok) throw new Error('Network response was not ok');
+        const content = await response.json();
+        return content as TrainingSample[];
+      } catch (err) {
+        this.logger.error(`Failed to fetch dataset from cloud: ${dataset.dataFileUrl}`, err);
+        throw new NotFoundException('Lỗi khi tải dữ liệu từ máy chủ đám mây.');
+      }
+    }
+
+    // Fallback for local files
+    if (!fs.existsSync(dataset.dataFileUrl)) {
+      throw new NotFoundException('File dữ liệu không tồn tại trên máy chủ.');
     }
 
     const content = await fs.promises.readFile(dataset.dataFileUrl, 'utf-8');

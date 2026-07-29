@@ -160,6 +160,10 @@ export class NeuralNetworkClassifierAdapter implements IClassifier {
     return this.attachKNNShadowInfo(features, nnResult);
   }
 
+  async saveToBlobs(): Promise<{ jsonBlob: Blob; weightsBlob: Blob } | null> {
+    return this.trainer.saveToBlobs();
+  }
+
   /**
    * Chạy ngầm KNN Shadow Engine để lấy nearestMatch & thông tin giải thích cho Neural Network
    */

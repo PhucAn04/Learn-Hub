@@ -60,7 +60,10 @@ interface TeachPanelProps {
   classes: { id: string; label: string; emoji?: string }[];
   minSamplesPerClass?: number;
   maxVisibleSkeletons?: number;
-  onTrainComplete: (samples: StoredSample[]) => void;
+  onTrainComplete: (
+    samples: StoredSample[], 
+    getModelBlobs?: () => Promise<{ jsonBlob: Blob; weightsBlob: Blob } | null>
+  ) => void;
   teacherTemplate?: TeacherTemplate | DatasetResponse;
 }
 
@@ -1318,7 +1321,9 @@ export default function TeachPanel({
         onClose={() => setShowFeedbackModal(false)}
         onProceed={() => {
           setShowFeedbackModal(false);
-          onTrainComplete(samples);
+          onTrainComplete(samples, async () => {
+            return trainerRef.current ? trainerRef.current.saveToBlobs() : null;
+          });
         }}
         studentSamples={samples}
         teacherTemplate={teacherTemplate}

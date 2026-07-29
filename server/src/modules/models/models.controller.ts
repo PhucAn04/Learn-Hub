@@ -6,7 +6,10 @@ import {
   Body,
   Query,
   UseGuards,
+  UseInterceptors,
+  UploadedFiles,
 } from '@nestjs/common';
+import { AnyFilesInterceptor } from '@nestjs/platform-express';
 import {
   ApiTags,
   ApiOperation,
@@ -73,6 +76,19 @@ export class ModelsController {
     },
   ) {
     return this.modelsService.updateModelArtifacts(id, user.id, body);
+  }
+
+  @Patch(':id/artifacts/upload')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @UseInterceptors(AnyFilesInterceptor())
+  @ApiOperation({ summary: 'Upload file trọng số model (.json, .bin) lên Cloudinary' })
+  async uploadArtifacts(
+    @CurrentUser() user: User,
+    @Param('id') id: string,
+    @UploadedFiles() files: Express.Multer.File[],
+  ) {
+    return this.modelsService.uploadModelFiles(id, user.id, files);
   }
 
   @Patch(':id/feedback')

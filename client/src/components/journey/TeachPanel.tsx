@@ -517,6 +517,7 @@ export default function TeachPanel({
             thumbnail,
             rawThumbnail,
             isValid,
+            invalidReason: isValid ? undefined : rejectionMsg,
             quality,
           });
         };

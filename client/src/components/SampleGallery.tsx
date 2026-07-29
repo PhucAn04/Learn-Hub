@@ -176,8 +176,8 @@ export default function SampleGallery({ samples, onDeleteSample, onClearAll, isT
                 )}
               </div>
 
-              {/* AI nearest match for misclassified */}
-              {isTrained && previewSample.isValid === false && previewSample.aiFeedback?.isMisclassified && (
+              {/* AI nearest match */}
+              {isTrained && previewSample.aiFeedback && !(previewSample.quality?.isBlurry || previewSample.quality?.isDark) && (
                 <div className="relative flex-1 rounded-2xl overflow-hidden border-4 border-indigo-400 bg-slate-900 shadow-inner">
                   <div className="absolute top-0 inset-x-0 bg-indigo-500/80 backdrop-blur-sm text-white text-xs py-1 text-center font-bold z-10 truncate shadow-sm">
                     Mẫu ({previewSample.aiFeedback.predictedLabel})
@@ -228,8 +228,8 @@ export default function SampleGallery({ samples, onDeleteSample, onClearAll, isT
                     <span>Ảnh chưa đạt chuẩn!</span>
                   </div>
                   <p className="text-xs text-red-600 mt-2 font-semibold leading-relaxed">
-                    Bạn AI đã xem ảnh này và thấy nó không giống với nhãn "{previewSample.label}" mà bé đang dạy.
-                    Bé nên xóa ảnh này đi và chụp lại cho đúng nhé! 🤗
+                    {previewSample.invalidReason ? previewSample.invalidReason : `Bạn AI đã xem ảnh này và thấy nó không giống với nhãn "${previewSample.label}" mà bé đang dạy.`}
+                    {!previewSample.invalidReason?.includes('thử lại') && ' Bé nên xóa ảnh này đi và chụp lại cho đúng nhé! 🤗'}
                   </p>
                 </div>
               )

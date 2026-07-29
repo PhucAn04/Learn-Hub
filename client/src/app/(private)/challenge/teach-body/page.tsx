@@ -73,10 +73,15 @@ export default function StudentBodyExercisePage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [uploadProgress, setUploadProgress] = useState('');
   const [submitSuccess, setSubmitSuccess] = useState(false);
+  const [getModelBlobsFn, setGetModelBlobsFn] = useState<(() => Promise<{ jsonBlob: Blob; weightsBlob: Blob } | null>) | null>(null);
 
-  const handleTrainComplete = (trainedSamples: StoredSample[]) => {
+  const handleTrainComplete = (
+    trainedSamples: StoredSample[],
+    getModelBlobs?: () => Promise<{ jsonBlob: Blob; weightsBlob: Blob } | null>
+  ) => {
     setSamples(trainedSamples);
     setSubmitScore(100);
+    if (getModelBlobs) setGetModelBlobsFn(() => getModelBlobs);
     setShowSubmitModal(true);
   };
 
@@ -96,19 +101,33 @@ export default function StudentBodyExercisePage() {
             setUploadProgress(`Tải ảnh ${uploaded}/${total}...`);
           }
         );
-        setUploadProgress('Đang lưu bài tập...');
+        setUploadProgress('Đang lưu bài...');
       }
 
-      await api.createDataset(
-        selectedExercise,
-        processedSamples,
-        submitScore,
-        reflectionAnswer,
-        false, // not a template
-        '',
-        false,
-        'camera'
-      );
+      const created = await api.createDataset(selectedExercise, processedSamples, submitScore, `${reflectionAnswer}`);
+      if (created?.model?.id) {
+        await api.updateModelArtifacts(created.model.id, {
+          algorithm: 'mlp',
+          testScore: submitScore,
+        }).catch(() => {});
+
+        // Upload blobs if available
+        if (getModelBlobsFn) {
+          setUploadProgress('Đang tải mô hình lên đám mây...');
+          const blobs = await getModelBlobsFn();
+          if (blobs) {
+            const formData = new FormData();
+            formData.append('files', blobs.jsonBlob, 'model.json');
+            formData.append('files', blobs.weightsBlob, 'model.weights.bin');
+            await api.uploadModelArtifactsFiles(created.model.id, formData).catch((e) => {
+              console.error('Failed to upload model artifacts', e);
+            });
+          }
+        }
+      }
+
+      await api.submitAssignment(submitScore, { samples: processedSamples }, reflectionAnswer, selectedExercise);
+      await api.saveProgress(selectedExercise, submitScore);
       
       setSubmitSuccess(true);
       playSuccessSound();

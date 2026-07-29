@@ -25,7 +25,10 @@ interface BodyTeachPanelProps {
   teacherTemplate?: TeacherTemplate | DatasetResponse;
   allowCustomClasses?: boolean;
   onClassesChange?: (newClasses: { id: string; label: string; emoji?: string }[]) => void;
-  onTrainComplete: (samples: StoredSample[]) => void;
+  onTrainComplete: (
+    samples: StoredSample[],
+    getModelBlobs?: () => Promise<{ jsonBlob: Blob; weightsBlob: Blob } | null>
+  ) => void;
 }
 
 export default function BodyTeachPanel({
@@ -604,7 +607,9 @@ export default function BodyTeachPanel({
         onClose={() => setShowFeedbackModal(false)}
         onProceed={() => {
           setShowFeedbackModal(false);
-          onTrainComplete(samples);
+          onTrainComplete(samples, async () => {
+            return trainerRef.current ? trainerRef.current.saveToBlobs() : null;
+          });
         }}
         studentSamples={samples}
         teacherTemplate={teacherTemplate}

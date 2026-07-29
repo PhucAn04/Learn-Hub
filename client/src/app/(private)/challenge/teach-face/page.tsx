@@ -51,10 +51,15 @@ export default function TeachFacePage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [uploadProgress, setUploadProgress] = useState('');
   const [submitSuccess, setSubmitSuccess] = useState(false);
+  const [getModelBlobsFn, setGetModelBlobsFn] = useState<(() => Promise<{ jsonBlob: Blob; weightsBlob: Blob } | null>) | null>(null);
 
-  const handleTrainComplete = (trainedSamples: StoredSample[]) => {
+  const handleTrainComplete = (
+    trainedSamples: StoredSample[],
+    getModelBlobs?: () => Promise<{ jsonBlob: Blob; weightsBlob: Blob } | null>
+  ) => {
     setSamples(trainedSamples);
     setSubmitScore(100);
+    if (getModelBlobs) setGetModelBlobsFn(() => getModelBlobs);
     setShowSubmitModal(true);
   };
 
@@ -84,6 +89,20 @@ export default function TeachFacePage() {
           testScore: submitScore,
           hyperparameters: calculateAutoHyperparameters(processedSamples.length),
         }).catch(() => {});
+
+        // Upload blobs if available
+        if (getModelBlobsFn) {
+          setUploadProgress('Đang tải mô hình lên đám mây...');
+          const blobs = await getModelBlobsFn();
+          if (blobs) {
+            const formData = new FormData();
+            formData.append('files', blobs.jsonBlob, 'model.json');
+            formData.append('files', blobs.weightsBlob, 'model.weights.bin');
+            await api.uploadModelArtifactsFiles(created.model.id, formData).catch((e) => {
+              console.error('Failed to upload model artifacts', e);
+            });
+          }
+        }
       }
 
       await api.submitAssignment(submitScore, { samples: processedSamples }, `${reflectionAnswer} | Lời nhắn: ${teacherMessage}`, 'teach-face');

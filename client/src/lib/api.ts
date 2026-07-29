@@ -17,7 +17,9 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
   
   const headers = new Headers(options.headers);
-  headers.set('Content-Type', 'application/json');
+  if (!(options.body instanceof FormData)) {
+    headers.set('Content-Type', 'application/json');
+  }
   if (token) {
     headers.set('Authorization', `Bearer ${token}`);
   }
@@ -208,6 +210,13 @@ export const api = {
     return request<ModelResponse>(`/models/${modelId}/artifacts`, {
       method: 'PATCH',
       body: JSON.stringify(data),
+    });
+  },
+
+  async uploadModelArtifactsFiles(modelId: string, formData: FormData) {
+    return request<ModelResponse>(`/models/${modelId}/artifacts/upload`, {
+      method: 'PATCH',
+      body: formData,
     });
   },
 

@@ -130,4 +130,38 @@ export class TfTrainer {
   isTrained(): boolean {
     return this.model !== null;
   }
+
+  async saveToBlobs(): Promise<{ jsonBlob: Blob; weightsBlob: Blob } | null> {
+    if (!this.model) return null;
+
+    let modelJson: any;
+    let modelWeights: ArrayBuffer | undefined;
+
+    await this.model.save(tf.io.withSaveHandler(async (artifacts) => {
+      modelJson = {
+        modelTopology: artifacts.modelTopology,
+        format: artifacts.format,
+        generatedBy: artifacts.generatedBy,
+        convertedBy: artifacts.convertedBy,
+        weightsManifest: artifacts.weightSpecs ? [{
+          paths: ['model.weights.bin'],
+          weights: artifacts.weightSpecs
+        }] : []
+      };
+      modelWeights = artifacts.weightData;
+      return {
+        modelArtifactsInfo: {
+          dateSaved: new Date(),
+          modelTopologyType: 'JSON',
+        }
+      };
+    }));
+
+    if (!modelWeights) return null;
+
+    const jsonBlob = new Blob([JSON.stringify(modelJson)], { type: 'application/json' });
+    const weightsBlob = new Blob([modelWeights], { type: 'application/octet-stream' });
+
+    return { jsonBlob, weightsBlob };
+  }
 }

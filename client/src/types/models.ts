@@ -176,6 +176,7 @@ export interface TFLayersModel {
     },
   ): Promise<void>;
   predict(input: TFTensor): TFTensor;
+  save(handler: unknown): Promise<unknown>;
 }
 
 export interface TFStatic {
@@ -191,6 +192,21 @@ export interface TFStatic {
   tensor1d(values: number[], dtype?: string): TFTensor;
   oneHot(indices: TFTensor, depth: number): TFTensor;
   tidy<T>(fn: () => T): T;
+  io: {
+    withSaveHandler(handler: (artifacts: {
+      modelTopology?: unknown;
+      format?: string;
+      generatedBy?: string;
+      convertedBy?: string;
+      weightSpecs?: unknown[];
+      weightData?: ArrayBuffer;
+    }) => Promise<{
+      modelArtifactsInfo: {
+        dateSaved: Date;
+        modelTopologyType: string;
+      }
+    }>): unknown;
+  };
 }
 
 // ── Google OAuth Profile (server-side) ───────────────────────────────────────

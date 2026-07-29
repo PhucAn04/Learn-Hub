@@ -168,7 +168,7 @@ export default function AIFeedbackModal({
                 <div className="bg-white rounded-2xl border-2 border-rose-200 shadow-sm overflow-hidden">
                   <div className="bg-rose-50 px-4 py-3 border-b border-rose-100 flex items-center gap-2">
                     <AlertCircle className="w-5 h-5 text-rose-500" />
-                    <h3 className="font-bold text-rose-800">1. Dữ liệu chưa cân bằng (Data Imbalance)</h3>
+                    <h3 className="font-bold text-rose-800">Dữ liệu chưa cân bằng (Data Imbalance)</h3>
                   </div>
                   <div className="p-4 text-slate-700">
                     <p className="mb-4 text-sm font-medium">Bạn AI đang bị "thiên vị" vì có những hành động bé chưa chụp đủ mẫu (cần ít nhất 3 ảnh/nhãn):</p>
@@ -218,66 +218,71 @@ export default function AIFeedbackModal({
                   </div>
                 </div>
               )}
-              {/* CORRECTNESS ISSUES */}
-              {correctnessIssues.length > 0 && (
+              {/* WRONG LABEL / POSE ISSUES */}
+              {(correctnessIssues.length > 0) && (
                 <div className="bg-white rounded-2xl border-2 border-amber-200 shadow-sm overflow-hidden">
                   <div className="bg-amber-50 px-4 py-3 border-b border-amber-100 flex items-center gap-2">
                     <Target className="w-5 h-5 text-amber-500" />
-                    <h3 className="font-bold text-amber-800">2. Nhầm lẫn nhãn dán (Label Correctness)</h3>
+                    <h3 className="font-bold text-amber-800">Ảnh sai nhãn / Sai cử chỉ</h3>
                   </div>
                   <div className="p-4 text-slate-700">
-                    <p className="mb-4 text-sm font-medium">Khi dùng <strong className="text-indigo-600">bộ não của {hasTeacherTemplate ? 'Giáo Viên' : 'chính Bé'}</strong> (K={kValue}, Khắt khe={threshold} phiếu), AI phát hiện một số ảnh bé chụp không giống với nhãn bé chọn:</p>
-                    
-                    <div className="space-y-4">
-                      {correctnessIssues.map((issue, idx) => (
-                        <div key={idx} className="flex flex-col sm:flex-row gap-4 p-4 bg-slate-50 border-2 border-slate-200 rounded-xl items-center">
-                          {/* Student Image */}
-                          <div className="text-center flex-shrink-0">
-                            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 block">Ảnh của bé</span>
-                            <div className="relative w-24 h-24 rounded-xl overflow-hidden border-4 border-amber-400 shadow-md">
-                              <img src={issue.studentSample.thumbnail} alt="Bé chụp" className="w-full h-full object-cover" />
-                              <div className="absolute top-1 right-1 bg-black/60 text-white text-[10px] font-bold px-1.5 py-0.5 rounded backdrop-blur-sm border border-white/20">
-                                Yêu cầu: {threshold} phiếu
-                              </div>
-                              <div 
-                                onClick={() => setPreviewSample(issue.studentSample)}
-                                className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity cursor-pointer text-white"
-                              >
-                                <Eye className="w-8 h-8" />
-                              </div>
-                            </div>
-                            <div className="mt-2 text-xs font-bold bg-amber-100 text-amber-800 px-2 py-1 rounded-lg">Bé Gắn: {issue.studentClassLabel}</div>
-                          </div>
-                          
-                          <div className="flex-1 flex flex-col justify-center items-center">
-                            <ChevronRight className="w-8 h-8 text-slate-300 hidden sm:block" />
-                            <div className="text-center bg-white border-2 border-indigo-100 p-2 rounded-xl text-xs font-semibold text-slate-600 my-2 shadow-sm">
-                              So với <span className="font-bold text-indigo-600 text-sm">K={kValue}</span> ảnh<br/>
-                              Đồng thuận: <span className="text-indigo-600 font-bold text-sm">{issue.votes} phiếu</span>
-                            </div>
-                          </div>
-
-                          {/* Nearest Image */}
-                          <div className="text-center flex-shrink-0">
-                            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 block">AI phát hiện {issue.matchingNearest.length} ảnh chung nhãn này</span>
-                            <div className="flex flex-wrap gap-2 justify-center max-w-[200px]">
-                              {issue.matchingNearest.map((n: NearestNeighbor, nidx: number) => (
-                                <div key={nidx} className="relative w-14 h-14 rounded-lg overflow-hidden border-2 border-indigo-400 shadow-sm group">
-                                  <img src={n.thumbnail} alt="Giáo viên" className="w-full h-full object-cover" />
+                    <p className="mb-4 text-sm font-medium">Hệ thống phát hiện một số ảnh bé chụp không khớp với nhãn đã chọn. Bé cần xem xét và xóa những ảnh này nhé:</p>
+                    {correctnessIssues.length > 0 && (
+                      <div className="space-y-4">
+                        <div className="mb-2 text-amber-700 text-sm font-semibold flex items-center gap-2">
+                          <Brain className="w-4 h-4" /> Bị AI phát hiện nhầm lẫn {hasTeacherTemplate ? '(So với ảnh Giáo Viên)' : '(So với các ảnh khác của Bé)'}
+                        </div>
+                          {correctnessIssues.map((issue, idx) => (
+                            <div key={idx} className="flex flex-col sm:flex-row gap-4 p-4 bg-slate-50 border-2 border-slate-200 rounded-xl items-center">
+                              {/* Student Image */}
+                              <div className="text-center flex-shrink-0">
+                                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 block">Ảnh của bé</span>
+                                <div className="relative w-24 h-24 rounded-xl overflow-hidden border-4 border-amber-400 shadow-md">
+                                  <img src={issue.studentSample.thumbnail} alt="Bé chụp" className="w-full h-full object-cover" />
+                                  <div className="absolute top-1 right-1 bg-black/60 text-white text-[10px] font-bold px-1.5 py-0.5 rounded backdrop-blur-sm border border-white/20">
+                                    Yêu cầu: {threshold} phiếu
+                                  </div>
                                   <div 
-                                    onClick={() => setPreviewSample({ ...n, features: [], isValid: true } as StoredSample)}
-                                    className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer text-white"
+                                    onClick={() => setPreviewSample(issue.studentSample)}
+                                    className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity cursor-pointer text-white"
                                   >
-                                    <Eye className="w-5 h-5" />
+                                    <Eye className="w-8 h-8" />
                                   </div>
                                 </div>
-                              ))}
+                                <div className="mt-2 text-xs font-bold bg-amber-100 text-amber-800 px-2 py-1 rounded-lg">Bé Gắn: {issue.studentClassLabel}</div>
+                              </div>
+                              
+                              <div className="flex-1 flex flex-col justify-center items-center">
+                                <ChevronRight className="w-8 h-8 text-slate-300 hidden sm:block" />
+                                <div className="text-center bg-white border-2 border-indigo-100 p-2 rounded-xl text-xs font-semibold text-slate-600 my-2 shadow-sm">
+                                  So với <span className="font-bold text-indigo-600 text-sm">K={kValue}</span> ảnh<br/>
+                                  Đồng thuận: <span className="text-indigo-600 font-bold text-sm">{issue.votes} phiếu</span>
+                                </div>
+                              </div>
+
+                              {/* Nearest Image */}
+                              <div className="text-center flex-shrink-0">
+                                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 block">AI phát hiện {issue.matchingNearest.length} ảnh chung nhãn này</span>
+                                <div className="flex flex-wrap gap-2 justify-center max-w-[200px]">
+                                  {issue.matchingNearest.map((n: NearestNeighbor, nidx: number) => (
+                                    <div key={nidx} className="relative w-14 h-14 rounded-lg overflow-hidden border-2 border-indigo-400 shadow-sm group">
+                                      <img src={n.thumbnail} alt="Giáo viên" className="w-full h-full object-cover" />
+                                      <div 
+                                        onClick={() => setPreviewSample({ ...n, features: [], isValid: true } as StoredSample)}
+                                        className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer text-white"
+                                      >
+                                        <Eye className="w-5 h-5" />
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                                <div className="mt-2 text-xs font-bold bg-indigo-100 text-indigo-800 px-2 py-1 rounded-lg">AI Đoán: {issue.predictedClassLabel}</div>
+                              </div>
                             </div>
-                            <div className="mt-2 text-xs font-bold bg-indigo-100 text-indigo-800 px-2 py-1 rounded-lg">AI Đoán: {issue.predictedClassLabel}</div>
-                          </div>
+                          ))}
                         </div>
-                      ))}
-                    </div>
+
+                    )}
                   </div>
                 </div>
               )}

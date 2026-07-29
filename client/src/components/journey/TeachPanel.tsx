@@ -448,19 +448,6 @@ export default function TeachPanel({
               ? 'Ảnh hơi mờ! Bé cố gắng giữ chắc tay nhé 🔍' 
               : 'Ảnh hơi tối! Bé tìm chỗ sáng hơn xíu nha 🌑';
           } else {
-            // Validation 1: Finger counting (hand-1 / hand-2 only)
-            if (
-              (mode === 'hand-1' || mode === 'hand-2') &&
-              expectedFingers > 0
-            ) {
-              const detected = countExtendedFingers(hands[handIndex].keypoints!);
-              if (detected >= 0 && Math.abs(detected - expectedFingers) > 1) {
-                isValid = false;
-                rejectedAny = true;
-                rejectionMsg = `Bé đang giơ ${detected} ngón, nhưng cần ${expectedFingers} ngón! 🖐️`;
-              }
-            }
-
             // Validation 2: Golden dataset distance
             if (
               isValid &&

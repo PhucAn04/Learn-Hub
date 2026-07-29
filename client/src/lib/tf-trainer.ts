@@ -134,10 +134,12 @@ export class TfTrainer {
   async saveToBlobs(): Promise<{ jsonBlob: Blob; weightsBlob: Blob } | null> {
     if (!this.model) return null;
 
-    let modelJson: any;
+    let modelJson: Record<string, unknown> | undefined;
     let modelWeights: ArrayBuffer | undefined;
 
-    await this.model.save(tf.io.withSaveHandler(async (artifacts) => {
+    if (!this.tf) return null;
+
+    await this.model.save(this.tf.io.withSaveHandler(async (artifacts) => {
       modelJson = {
         modelTopology: artifacts.modelTopology,
         format: artifacts.format,

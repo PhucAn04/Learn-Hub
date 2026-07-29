@@ -150,7 +150,7 @@ export default function SampleGallery({ samples, onDeleteSample, onClearAll, isT
               <div className={`relative flex-1 rounded-2xl overflow-hidden border-4 ${
                 (previewSample.quality?.isBlurry || previewSample.quality?.isDark)
                   ? 'border-yellow-500 shadow-[0_0_15px_rgba(234,179,8,0.3)]'
-                  : previewSample.isValid === false 
+                  : (previewSample.isValid === false || previewSample.aiFeedback?.isMisclassified)
                   ? 'border-red-500' 
                   : 'border-gray-200'
               } bg-slate-900`}>
@@ -168,7 +168,7 @@ export default function SampleGallery({ samples, onDeleteSample, onClearAll, isT
                 ) : (
                   <div className="w-full aspect-square flex items-center justify-center text-gray-500">Không có ảnh</div>
                 )}
-
+                
                 {previewSample.isValid === false && (
                   <div className="absolute bottom-3 right-3 bg-red-500 text-white p-2 rounded-full shadow-lg animate-pulse z-10">
                     <AlertTriangle className="w-5 h-5" />
@@ -198,61 +198,44 @@ export default function SampleGallery({ samples, onDeleteSample, onClearAll, isT
             </div>
 
             {/* Validation status & Quality Warning */}
-            {previewSample.isValid === false ? (
-              (previewSample.quality?.isBlurry || previewSample.quality?.isDark) ? (
-                <div className="p-4 rounded-xl border-2 bg-yellow-50 border-yellow-300 mb-4">
-                  <div className="flex items-center gap-2 font-extrabold text-yellow-700 text-sm">
-                    <AlertTriangle className="w-5 h-5" />
-                    <span>Ảnh chưa đạt chất lượng!</span>
-                  </div>
-                  <p className="text-xs text-yellow-600 mt-2 font-semibold leading-relaxed">
-                    {previewSample.quality.isBlurry && '📸 Vì ảnh bị mờ nên AI không thể xác định được bé đang giơ mấy ngón tay. '}
-                    {previewSample.quality.isDark && '🌙 Vì ảnh hơi tối nên AI không thể nhìn rõ tay bé. '}
-                    Bé nên xóa tấm này và chụp lại tấm khác nét hơn để AI học tốt nhất nhé!
-                  </p>
+            {(previewSample.quality?.isBlurry || previewSample.quality?.isDark) ? (
+              <div className="p-4 rounded-xl border-2 bg-yellow-50 border-yellow-300 mb-4">
+                <div className="flex items-center gap-2 font-extrabold text-yellow-700 text-sm">
+                  <AlertTriangle className="w-5 h-5" />
+                  <span>Ảnh chưa đạt chất lượng!</span>
                 </div>
-              ) : (isTrained && previewSample.aiFeedback?.isMisclassified) ? (
-                <div className="p-4 rounded-xl border-2 bg-red-50 border-red-300 mb-4">
-                  <div className="flex items-center gap-2 font-extrabold text-red-700 text-sm">
-                    <AlertTriangle className="w-5 h-5" />
-                    <span>AI đã nhầm lẫn ảnh này!</span>
-                  </div>
-                  <p className="text-xs text-red-600 mt-2 font-semibold leading-relaxed">
-                    Ảnh này quá giống với mẫu của nhóm <span className="font-bold">"{previewSample.aiFeedback.predictedLabel}"</span> nên AI đã đoán sai. Bé hãy XÓA đi và chụp lại góc khác nhé!
-                  </p>
+                <p className="text-xs text-yellow-600 mt-2 font-semibold leading-relaxed">
+                  {previewSample.quality.isBlurry && '📸 Vì ảnh bị mờ nên AI không thể xác định rõ. '}
+                  {previewSample.quality.isDark && '🌙 Vì ảnh hơi tối nên AI không thể nhìn rõ. '}
+                  Bé nên xóa tấm này và chụp lại tấm khác nét hơn để AI học tốt nhất nhé!
+                </p>
+              </div>
+            ) : (isTrained && previewSample.aiFeedback?.isMisclassified) ? (
+              <div className="p-4 rounded-xl border-2 bg-red-50 border-red-300 mb-4">
+                <div className="flex items-center gap-2 font-extrabold text-red-700 text-sm">
+                  <AlertTriangle className="w-5 h-5" />
+                  <span>AI đã nhầm lẫn ảnh này!</span>
                 </div>
-              ) : (
-                <div className="p-4 rounded-xl border-2 bg-red-50 border-red-300 mb-4">
-                  <div className="flex items-center gap-2 font-extrabold text-red-700 text-sm">
-                    <AlertTriangle className="w-5 h-5" />
-                    <span>Ảnh chưa đạt chuẩn!</span>
-                  </div>
-                  <p className="text-xs text-red-600 mt-2 font-semibold leading-relaxed">
-                    {previewSample.invalidReason ? previewSample.invalidReason : `Bạn AI đã xem ảnh này và thấy nó không giống với nhãn "${previewSample.label}" mà bé đang dạy.`}
-                    {!previewSample.invalidReason?.includes('thử lại') && ' Bé nên xóa ảnh này đi và chụp lại cho đúng nhé! 🤗'}
-                  </p>
+                <p className="text-xs text-red-600 mt-2 font-semibold leading-relaxed">
+                  Ảnh này quá giống với mẫu của nhóm <span className="font-bold">"{previewSample.aiFeedback.predictedLabel}"</span> nên AI đã đoán sai. Bé hãy XÓA đi và chụp lại góc khác nhé!
+                </p>
+              </div>
+            ) : previewSample.isValid === false ? (
+              <div className="p-4 rounded-xl border-2 bg-red-50 border-red-300 mb-4">
+                <div className="flex items-center gap-2 font-extrabold text-red-700 text-sm">
+                  <AlertTriangle className="w-5 h-5" />
+                  <span>AI nghĩ ảnh này KHÔNG ĐÚNG nhãn!</span>
                 </div>
-              )
-            ) : previewSample.isValid === true ? (
+                <p className="text-xs text-red-600 mt-2 font-semibold leading-relaxed">
+                  Bạn AI đã xem ảnh này và thấy nó không giống với nhãn "{previewSample.label}" mà bé đang dạy.
+                  Bé nên xóa ảnh này đi và chụp lại cho đúng nhé! 🤗
+                </p>
+              </div>
+            ) : (
               <div className="p-4 rounded-xl border-2 bg-green-50 border-green-300 mb-4">
                 <div className="flex items-center gap-2 font-extrabold text-green-700 text-sm">
                   ✅ <span>Ảnh tốt! AI nhận diện đúng nhãn rồi!</span>
                 </div>
-              </div>
-            ) : null}
-
-            {/* Quality Warning fallback for images that are somehow valid but still flagged */}
-            {previewSample.isValid !== false && (previewSample.quality?.isBlurry || previewSample.quality?.isDark) && (
-              <div className="p-4 rounded-xl border-2 bg-yellow-50 border-yellow-300 mb-4">
-                <div className="flex items-center gap-2 font-extrabold text-yellow-700 text-sm">
-                  <AlertTriangle className="w-5 h-5" />
-                  <span>Cảnh báo chất lượng ảnh!</span>
-                </div>
-                <p className="text-xs text-yellow-600 mt-2 font-semibold leading-relaxed">
-                  {previewSample.quality.isBlurry && '📸 Ảnh này hơi mờ. '}
-                  {previewSample.quality.isDark && '🌙 Ảnh này hơi tối. '}
-                  Bé nên chụp lại tấm khác nét hơn nha!
-                </p>
               </div>
             )}
 

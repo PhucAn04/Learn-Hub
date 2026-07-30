@@ -164,14 +164,25 @@ export function analyzeBlur(canvas: HTMLCanvasElement, roi?: ROI, brightness: nu
   // Ảnh nét có viền mảnh và gắt -> Tỉ lệ cao. (Không phụ thuộc vào kích thước ngón tay to hay nhỏ)
   const sharpnessRatio = (strongPixels / activePixels) * 100;
   
-  // Căn chỉnh lại dựa trên tập mẫu mới:
-  // Ảnh cực mờ: ActiveVar ~ 837 - 893
-  // Ảnh rõ nét: ActiveVar ~ 898 - 962 (trở lên)
+  // Điều chỉnh ngưỡng (Threshold) dành cho ảnh ở độ phân giải tự nhiên của Camera.
+  // Ảnh phân giải cao có nhiều pixel chuyển tiếp mượt mà -> Phương sai trung bình (Variance) tự động thấp hơn.
+  // Đồng thời, nếu ảnh hơi tối (Brightness thấp), độ tương phản cũng giảm theo -> Variance giảm.
+  
+  // Hệ số bù sáng: Nếu ảnh đủ sáng (>= 100) thì hệ số = 1. Nếu ảnh tối, hệ số > 1.
+  const brightnessFactor = brightness < 100 ? (100 / Math.max(brightness, 1)) : 1;
+  
+  // Ngưỡng gốc dành cho ảnh nét ở độ phân giải cao
+  const baseVarianceThreshold = 350; 
+  const baseSharpnessThreshold = 1.0; 
+
+  const adjustedVarianceThreshold = baseVarianceThreshold / brightnessFactor;
+  const adjustedSharpnessThreshold = baseSharpnessThreshold / brightnessFactor;
+
   let isBlurry = true;
-  if (variance >= 950) {
-    isBlurry = false; // Mức an toàn để chắc chắn là ảnh nét (ví dụ 962.9)
-  } else if (variance >= 850 && sharpnessRatio >= 10) {
-    isBlurry = false; // Nới lỏng cho ảnh có Variance lấp lửng nhưng có độ sắc nét tốt
+  if (variance >= adjustedVarianceThreshold * 1.5) {
+    isBlurry = false; // Rất nét (Vượt mức 150% ngưỡng an toàn)
+  } else if (variance >= adjustedVarianceThreshold && sharpnessRatio >= adjustedSharpnessThreshold) {
+    isBlurry = false; // Nét vừa đủ
   }
 
   return { variance, maxLaplacian, isBlurry, sharpnessRatio };

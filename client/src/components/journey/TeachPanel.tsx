@@ -267,26 +267,34 @@ export default function TeachPanel({
 
   // ── Thumbnail helper ────────────────
   const getVideoThumbAndCanvas = useCallback((hands?: HandResult[], faces?: FaceMeshResult[]) => {
+    if (!videoRef.current) return { thumbnail: '', rawThumbnail: '', canvas: document.createElement('canvas'), rawCanvas: document.createElement('canvas') };
+
+    const vW = videoRef.current.videoWidth || 640;
+    const vH = videoRef.current.videoHeight || 480;
+    
+    const cvWidth = vW;
+    const cvHeight = vH;
+
     const cv = document.createElement('canvas');
-    cv.width = 240;
-    cv.height = 240;
+    cv.width = cvWidth;
+    cv.height = cvHeight;
     const ctx = cv.getContext('2d');
     
     const rawCv = document.createElement('canvas');
-    rawCv.width = 240;
-    rawCv.height = 240;
+    rawCv.width = cvWidth;
+    rawCv.height = cvHeight;
     const rawCtx = rawCv.getContext('2d');
     
     let rawThumbnail = '';
     if (ctx && rawCtx && videoRef.current) {
-      rawCtx.drawImage(videoRef.current, 0, 0, 240, 240);
+      rawCtx.drawImage(videoRef.current, 0, 0, cvWidth, cvHeight);
       ctx.drawImage(rawCv, 0, 0); // copy raw to cv
       rawThumbnail = rawCv.toDataURL('image/jpeg', 0.8);
       
       if (hands && hands.length > 0) {
         hands.forEach((hand, idx) => {
           if (hand.keypoints && hand.keypoints.length >= 21) {
-            drawHandSkeleton(ctx, hand.keypoints, videoRef.current!.videoWidth || 640, videoRef.current!.videoHeight || 480, 240, 240, {
+            drawHandSkeleton(ctx, hand.keypoints, vW, vH, cvWidth, cvHeight, {
               lineColor: idx === 0 ? '#6366f1' : '#ec4899',
               jointColor1: idx === 0 ? '#4f46e5' : '#db2777',
               jointColor2: idx === 0 ? '#4f46e5' : '#db2777',
@@ -300,7 +308,7 @@ export default function TeachPanel({
         faces.forEach((face) => {
           const kps = getFaceKeypoints(face);
           if (kps && kps.length >= 30) {
-            drawFaceSkeleton(ctx, kps, videoRef.current!.videoWidth || 640, videoRef.current!.videoHeight || 480, 240, 240);
+            drawFaceSkeleton(ctx, kps, vW, vH, cvWidth, cvHeight);
           }
         });
       }

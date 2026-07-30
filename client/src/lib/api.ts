@@ -166,9 +166,13 @@ export const api = {
   },
 
   async getDatasetFile(datasetId: string) {
-    return request<DatasetFileResponse>(`/datasets/${datasetId}/file`, {
+    const data = await request<unknown>(`/datasets/${datasetId}/file`, {
       method: 'GET',
     });
+    if (Array.isArray(data)) {
+      return { samples: data } as DatasetFileResponse;
+    }
+    return data as DatasetFileResponse;
   },
 
   async getDatasetById(datasetId: string) {

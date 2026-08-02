@@ -24,7 +24,7 @@ export default function SamplePreviewModal({
   return (
     <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-[110] flex items-center justify-center p-4" onClick={onClose}>
       <div 
-        className={`bg-white rounded-3xl ${isAiMisclassified ? 'max-w-2xl' : 'max-w-sm'} w-full p-6 border-4 border-indigo-400 shadow-2xl relative overflow-hidden animate-in zoom-in-95 duration-200`}
+        className={`bg-white rounded-3xl ${isAiMisclassified ? 'max-w-3xl' : 'max-w-xl'} w-full p-6 border-4 border-indigo-400 shadow-2xl relative overflow-hidden animate-in zoom-in-95 duration-200`}
         onClick={(e) => e.stopPropagation()}
       >
         <button 
@@ -43,7 +43,7 @@ export default function SamplePreviewModal({
           <div className="flex flex-col sm:flex-row items-center gap-4 mb-6">
             <div className="flex-1 text-center w-full">
               <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2 block">Ảnh bé chụp</span>
-              <div className="relative rounded-2xl overflow-hidden border-4 border-red-400 bg-slate-900 aspect-square shadow-md">
+              <div className="relative rounded-2xl overflow-hidden border-4 border-red-400 bg-slate-900 aspect-[4/3] shadow-md">
                 <img src={sample.thumbnail || sample.rawThumbnail} alt="Bé chụp" className="w-full h-full object-cover" />
                 <div className="absolute top-2 right-2 bg-red-500 text-white p-1.5 rounded-full shadow-lg">
                   <AlertTriangle className="w-5 h-5" />
@@ -58,7 +58,7 @@ export default function SamplePreviewModal({
 
             <div className="flex-1 text-center w-full">
               <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2 block">AI thấy giống ảnh này</span>
-              <div className="relative rounded-2xl overflow-hidden border-4 border-indigo-400 bg-slate-900 aspect-square shadow-md">
+              <div className="relative rounded-2xl overflow-hidden border-4 border-indigo-400 bg-slate-900 aspect-[4/3] shadow-md">
                  <img src={sample.aiFeedback!.nearestMatchThumbnail || sample.thumbnail} alt="Ảnh tham chiếu" className="w-full h-full object-cover" />
               </div>
               <div className="mt-3 text-sm font-bold bg-indigo-100 text-indigo-800 px-3 py-2 rounded-xl">AI đoán: {sample.aiFeedback!.predictedLabel}</div>
@@ -66,7 +66,7 @@ export default function SamplePreviewModal({
           </div>
         ) : (
           /* STANDARD SINGLE IMAGE VIEW */
-          <div className={`relative rounded-2xl overflow-hidden border-4 ${isInvalid ? 'border-red-400' : 'border-gray-200'} mb-4 bg-slate-900 flex items-center justify-center min-h-[240px] aspect-square`}>
+          <div className={`relative rounded-2xl overflow-hidden border-4 ${isInvalid ? 'border-red-400' : 'border-gray-200'} mb-4 bg-slate-900 flex items-center justify-center min-h-[240px] aspect-[4/3]`}>
             {sample.thumbnail ? (
               <img src={sample.thumbnail} alt="Sample preview" className="w-full h-full object-cover" />
             ) : (

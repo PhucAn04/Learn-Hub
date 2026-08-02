@@ -89,18 +89,21 @@ export default function TeacherTeachFacePage() {
   }, []);
 
   const getVideoThumb = (faces?: FaceMeshResult[]) => {
+    const vW = videoRef.current?.videoWidth || 640;
+    const vH = videoRef.current?.videoHeight || 480;
     const cv = document.createElement('canvas');
-    cv.width = 240; cv.height = 240;
+    cv.width = vW;
+    cv.height = vH;
     const ctx = cv.getContext('2d');
     if (ctx && videoRef.current) {
-      ctx.drawImage(videoRef.current, 0, 0, 240, 240);
+      ctx.drawImage(videoRef.current, 0, 0, vW, vH);
       
       if (faces && faces.length > 0) {
         faces.forEach((kpsRaw) => {
           const kps = getFaceKeypoints(kpsRaw);
           if (kps && kps.length >= 30) {
             ctx.save();
-            drawFaceSkeleton(ctx, kps, videoRef.current!.videoWidth || 640, videoRef.current!.videoHeight || 480, 240, 240);
+            drawFaceSkeleton(ctx, kps, vW, vH, vW, vH);
             ctx.restore();
           }
         });

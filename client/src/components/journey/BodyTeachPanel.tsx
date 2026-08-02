@@ -129,11 +129,14 @@ export default function BodyTeachPanel({
     const features = normalizeBodyKeypoints(pose.keypoints);
     if (!features || features.length === 0) return;
 
+    const vW = videoRef.current ? videoRef.current.videoWidth || 640 : 640;
+    const vH = videoRef.current ? videoRef.current.videoHeight || 480 : 480;
+
     const cv = document.createElement('canvas');
-    cv.width = 240;
-    cv.height = 240;
+    cv.width = vW;
+    cv.height = vH;
     const ctx = cv.getContext('2d');
-    if (ctx && videoRef.current) ctx.drawImage(videoRef.current, 0, 0, 240, 240);
+    if (ctx && videoRef.current) ctx.drawImage(videoRef.current, 0, 0, vW, vH);
     const rawThumbnail = cv.toDataURL('image/jpeg', 0.8);
     
     // Đánh giá chất lượng TRƯỚC KHI vẽ bộ xương lên canvas
@@ -141,7 +144,7 @@ export default function BodyTeachPanel({
     const quality = assessQuality(cv, roi);
     
     if (ctx && pose.keypoints && videoRef.current) {
-        drawBodySkeleton(ctx, pose.keypoints, videoRef.current.videoWidth, videoRef.current.videoHeight, 240, 240);
+        drawBodySkeleton(ctx, pose.keypoints, vW, vH, vW, vH);
     }
     const thumbnail = cv.toDataURL('image/jpeg', 0.8);
     const activeClassLabel = classesState.find(c => c.id === activeClass)?.label || activeClass;

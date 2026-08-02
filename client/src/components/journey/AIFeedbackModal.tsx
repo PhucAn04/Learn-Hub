@@ -1,8 +1,9 @@
 'use client';
 
 import React, { useMemo, useState } from 'react';
-import { X, AlertCircle, CheckCircle, Brain, Target, Info, ChevronRight, RefreshCw, Search, Eye } from 'lucide-react';
+import { X, AlertCircle, CheckCircle, Brain, Target, Info, ChevronRight, RefreshCw, Search, Eye, Sparkles } from 'lucide-react';
 import { StoredSample, classifyKNNDetailed } from '@/lib/knn-classifier';
+import { evaluateStudentDatasetPhase } from '@/lib/teacher-validator';
 import SamplePreviewModal from '@/components/SamplePreviewModal';
 import { TeacherTemplate, CorrectnessIssue, NearestNeighbor } from '@/types/models';
 
@@ -31,7 +32,7 @@ export default function AIFeedbackModal({
 }: AIFeedbackModalProps) {
   const [previewSample, setPreviewSample] = useState<StoredSample | null>(null);
 
-  const { balanceIssues, correctnessIssues, qualityIssues, counts, hasTeacherTemplate } = useMemo(() => {
+  const { balanceIssues, correctnessIssues, qualityIssues, counts, hasTeacherTemplate, datasetPhase } = useMemo(() => {
     const counts: Record<string, number> = {};
     classes.forEach(c => counts[c.id] = 0);
     studentSamples.forEach(s => {
@@ -43,7 +44,7 @@ export default function AIFeedbackModal({
       ...c, count: counts[c.id]
     }));
 
-    const teacherSamples: StoredSample[] = teacherTemplate?.dataset?.samples || teacherTemplate?.samples || [];
+    const teacherSamples: StoredSample[] = (teacherTemplate as any)?.dataset?.samples || teacherTemplate?.samples || [];
     const hasTeacherTemplate = teacherSamples.length > 0;
     const correctnessIssues: CorrectnessIssue[] = [];
     
@@ -117,7 +118,9 @@ export default function AIFeedbackModal({
       }
     });
 
-    return { balanceIssues, correctnessIssues, qualityIssues, counts, hasTeacherTemplate };
+    const datasetPhase = evaluateStudentDatasetPhase(studentSamples, classes, 3, 10);
+
+    return { balanceIssues, correctnessIssues, qualityIssues, counts, hasTeacherTemplate, datasetPhase };
   }, [studentSamples, teacherTemplate, kValue, threshold, classes]);
 
   if (!isOpen) return null;
@@ -164,14 +167,19 @@ export default function AIFeedbackModal({
           <div className="space-y-6">
               
               {/* BALANCE ISSUES */}
-              {balanceIssues.length > 0 && (
+              {(balanceIssues.length > 0 || datasetPhase.balanceInfo.isImbalanced) && (
                 <div className="bg-white rounded-2xl border-2 border-rose-200 shadow-sm overflow-hidden">
                   <div className="bg-rose-50 px-4 py-3 border-b border-rose-100 flex items-center gap-2">
                     <AlertCircle className="w-5 h-5 text-rose-500" />
                     <h3 className="font-bold text-rose-800">Dữ liệu chưa cân bằng (Data Imbalance)</h3>
                   </div>
                   <div className="p-4 text-slate-700">
-                    <p className="mb-4 text-sm font-medium">Bạn AI đang bị "thiên vị" vì có những hành động bé chưa chụp đủ mẫu (cần ít nhất 3 ảnh/nhãn):</p>
+                    {datasetPhase.balanceInfo.isImbalanced && (
+                      <p className="mb-3 text-xs font-bold text-rose-700 bg-rose-100/60 p-2.5 rounded-xl border border-rose-200">
+                        {datasetPhase.balanceInfo.message}
+                      </p>
+                    )}
+                    <p className="mb-4 text-sm font-medium">Số lượng ảnh thu thập ở các nhãn hiện tại:</p>
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                       {classes.map(c => (
                         <div key={c.id} className={`p-3 rounded-xl border-2 text-center ${counts[c.id] < 3 ? 'bg-rose-50 border-rose-200' : 'bg-emerald-50 border-emerald-200'}`}>

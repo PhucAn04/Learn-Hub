@@ -298,7 +298,7 @@ export default function StudentHistoryPage() {
       {previewIndex !== null && expandedSamples && expandedSamples[previewIndex] && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setPreviewIndex(null)}>
           <div 
-            className="bg-white rounded-3xl max-w-md w-full p-6 border-4 border-indigo-400 shadow-2xl relative"
+            className="bg-white rounded-3xl max-w-lg w-full p-6 border-4 border-indigo-400 shadow-2xl relative"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Close button */}
@@ -330,10 +330,10 @@ export default function StudentHistoryPage() {
                 <img 
                   src={(showSkeleton || !expandedSamples[previewIndex].rawThumbnail) ? expandedSamples[previewIndex].thumbnail : expandedSamples[previewIndex].rawThumbnail} 
                   alt="Preview" 
-                  className="w-full aspect-square object-cover" 
+                  className="w-full aspect-[4/3] object-cover" 
                 />
               ) : (
-                <div className="w-full aspect-square flex items-center justify-center text-gray-500">Không có ảnh</div>
+                <div className="w-full aspect-[4/3] flex items-center justify-center text-gray-500">Không có ảnh</div>
               )}
 
               {expandedSamples[previewIndex].isValid === false && (

@@ -16,7 +16,8 @@ import CameraView from '@/components/CameraView';
 import SampleGallery from '@/components/SampleGallery';
 import DataCollector from '@/components/journey/DataCollector';
 import { TfTrainer } from '@/lib/tf-trainer';
-import { uploadSamplesToCloudinary, isCloudinaryConfigured } from '@/lib/cloudinary';
+import { uploadSamplesToCloudinary, uploadModelToCloudinary, isCloudinaryConfigured } from '@/lib/cloudinary';
+import { assessQuality, calculateROI } from '@/lib/image-quality';
 // Predefined classes for teaching
 const CLASSES = [
   { id: 'class_1', label: '1 Ngón Tay ☝️', voicePrompt: 'Hãy dạy bạn A I nhận biết một ngón tay nhé!' },
@@ -162,17 +163,20 @@ export default function TeacherTeachPage() {
 
 
   const getVideoThumb = (hands?: HandResult[]) => {
+    const vW = videoRef.current?.videoWidth || 640;
+    const vH = videoRef.current?.videoHeight || 480;
     const cv = document.createElement('canvas');
-    cv.width = 240; cv.height = 240;
+    cv.width = vW;
+    cv.height = vH;
     const ctx = cv.getContext('2d');
     if (ctx && videoRef.current) {
-      ctx.drawImage(videoRef.current, 0, 0, 240, 240);
+      ctx.drawImage(videoRef.current, 0, 0, vW, vH);
       if (hands && hands.length > 0) {
         hands.forEach((hand, idx) => {
           if (idx > 0) return;
           const kps = hand.keypoints;
           if (kps && kps.length >= 21) {
-            drawHandSkeleton(ctx, kps, videoRef.current!.videoWidth || 640, videoRef.current!.videoHeight || 480, 240, 240, {
+            drawHandSkeleton(ctx, kps, vW, vH, vW, vH, {
               lineColor: idx === 0 ? '#6366f1' : '#ec4899',
               jointColor1: idx === 0 ? '#4f46e5' : '#db2777',
               jointColor2: idx === 0 ? '#4f46e5' : '#db2777',
@@ -202,6 +206,16 @@ export default function TeacherTeachPage() {
 
     const expectedFingers = getExpectedFingerCount(activeClass);
 
+    const vW = videoRef.current ? videoRef.current.videoWidth || 640 : 640;
+    const vH = videoRef.current ? videoRef.current.videoHeight || 480 : 480;
+    const frameCv = document.createElement('canvas');
+    frameCv.width = vW;
+    frameCv.height = vH;
+    const frameCtx = frameCv.getContext('2d');
+    if (frameCtx && videoRef.current) {
+      frameCtx.drawImage(videoRef.current, 0, 0, vW, vH);
+    }
+
     setSamples(prev => {
       const newSamples: StoredSample[] = [];
       let rejectedAny = false;
@@ -212,9 +226,22 @@ export default function TeacherTeachPage() {
           const features = normalizeHandKeypoints(hands[handIndex].keypoints);
           let isValid = true;
 
+          // Quality Assessment (Dark/Blurry Check)
+          const roi = hands[handIndex]?.keypoints
+            ? calculateROI(hands[handIndex].keypoints as { x: number; y: number }[], frameCv.width, frameCv.height, 0.1)
+            : undefined;
+          const quality = frameCtx ? assessQuality(frameCv, roi) : undefined;
+          if (quality?.isDark || quality?.isBlurry) {
+            isValid = false;
+            rejectedAny = true;
+            rejectionMsg = quality.isDark
+              ? `Ảnh bị quá tối (độ sáng: ${Math.round(quality.brightness)}/255). Hãy đảm bảo đủ ánh sáng!`
+              : `Ảnh bị mờ. Vui lòng giữ tay thật yên lặng khi chụp!`;
+          }
+
           // Validation 1: Finger counting heuristic
           // Kiểm tra trực tiếp số ngón tay duỗi ra so với nhãn mong đợi
-          if (expectedFingers > 0) {
+          if (isValid && expectedFingers > 0) {
             const detectedFingers = countExtendedFingers(hands[handIndex].keypoints);
             if (detectedFingers >= 0) {
               // Bỏ qua ngón cái khi đếm, nên bây giờ có thể so sánh chính xác số ngón
@@ -254,7 +281,8 @@ export default function TeacherTeachPage() {
             sourceId: activeClass,
             thumbnail,
             rawThumbnail,
-            isValid
+            isValid,
+            quality
           });
         }
       };
@@ -536,8 +564,27 @@ export default function TeacherTeachPage() {
       }
 
       // Step 2: Save to new Dataset API
-      await api.createDataset('teach', processedSamples, submitScore, reflectionAnswer, true, teacherNotes, true);
+      const response = await api.createDataset('teach', processedSamples, submitScore, reflectionAnswer, true, teacherNotes, true);
       
+      // Step 3: Export TensorFlow.js Neural Network model JSON & BIN weights and upload to Cloudinary
+      if (trainerRef.current && trainerRef.current.isTrained()) {
+        setUploadProgress('Đang đóng gói và lưu mô hình Neural Network JSON...');
+        const blobs = await trainerRef.current.saveToBlobs();
+        if (blobs) {
+          const { jsonBlob, weightsBlob } = blobs;
+          if (isCloudinaryConfigured()) {
+            const { modelJsonUrl } = await uploadModelToCloudinary(jsonBlob, weightsBlob, 'teach');
+            if (modelJsonUrl && response?.model?.id) {
+              await api.updateModelArtifacts(response.model.id, {
+                algorithm: 'neural_network',
+                modelArtifactUrl: modelJsonUrl,
+                testScore: submitScore,
+              });
+            }
+          }
+        }
+      }
+
       setSubmitSuccess(true);
       setUploadProgress('');
       playSuccessSound();

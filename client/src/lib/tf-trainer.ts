@@ -146,7 +146,7 @@ export class TfTrainer {
         generatedBy: artifacts.generatedBy,
         convertedBy: artifacts.convertedBy,
         weightsManifest: artifacts.weightSpecs ? [{
-          paths: ['model.weights.bin'],
+          paths: ['model.weights.json'],
           weights: artifacts.weightSpecs
         }] : []
       };

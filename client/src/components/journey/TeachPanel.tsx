@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Brain, Camera, Trash2 } from 'lucide-react';
 import { useCamera } from '@/hooks/useCamera';
 import { useMl5Handpose } from '@/hooks/useMl5Handpose';
@@ -39,6 +39,7 @@ import AIConfidenceEnergyBars from './AIConfidenceEnergyBars';
 import { TfTrainer } from '@/lib/tf-trainer';
 import { TeacherTemplate, DatasetResponse } from '@/types/models';
 import { HandResult, FaceMeshResult } from '@/types/ml5';
+import { evaluateStudentDatasetPhase, crossCheckLiveFeatures, DatasetQualityResult } from '@/lib/teacher-validator';
 
 // ──────────────────────────────────────────────
 // Try to import optional golden datasets
@@ -235,6 +236,7 @@ export default function TeachPanel({
   const [voteCounts, setVoteCounts] = useState<Record<string, number>>({});
   const [nnConfidences, setNnConfidences] = useState<Record<string, number> | null>(null);
   const [isAnomaly, setIsAnomaly] = useState(false);
+  const [anomalyMessage, setAnomalyMessage] = useState<string | undefined>(undefined);
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
   const [activeTab, setActiveTab] = useState<'camera' | 'upload' | 'video'>('camera');
 
@@ -245,6 +247,13 @@ export default function TeachPanel({
   useEffect(() => {
     trainerRef.current = new TfTrainer();
   }, []);
+
+  const datasetQuality = useMemo(() => {
+    if (samples.length > 0) {
+      return evaluateStudentDatasetPhase(samples, classes, 3, 10);
+    }
+    return null;
+  }, [samples, classes]);
 
   // ── Camera ──────────────────────────
   const { videoRef, canvasRef, cameraActive, cameraError, retryCamera } =
@@ -354,7 +363,8 @@ export default function TeachPanel({
         classes.find((c) => c.id === activeClass)?.label || activeClass;
 
       const validation = validateFaceExpression(kps, activeClass);
-      const quality = assessQuality(canvas);
+      const faceRoi = kps ? calculateROI(kps as { x: number; y: number }[], canvas.width, canvas.height, 0.1) : undefined;
+      const quality = assessQuality(canvas, faceRoi);
 
       setSamples((prev) => {
         let msg = '';
@@ -802,16 +812,51 @@ export default function TeachPanel({
               const resultKNN = classifyKNNWithVotes(features, samples, kValue);
               const resultNN = await trainerRef.current!.predict(features);
               
+              let currentPredLabel = 'Chưa rõ ràng... 🤔';
               if (resultNN && resultNN.label) {
-                setPredictedLabel(classes.find(c => c.id === resultNN.label)?.label || 'Chưa rõ ràng... 🤔');
+                currentPredLabel = classes.find(c => c.id === resultNN.label)?.label || 'Chưa rõ ràng... 🤔';
               }
-              if (resultNN && resultNN.confidences) {
-                setNnConfidences(resultNN.confidences);
+
+              const teacherSamples: StoredSample[] = (teacherTemplate as any)?.dataset?.samples || teacherTemplate?.samples || [];
+
+              // Adaptive Mentorship: Only cross-check with Teacher Validator if student is in Phase B
+              let isAnom = false;
+              let isOODOrConflict = false;
+
+              if (datasetQuality?.isDatasetPerfect && teacherSamples.length > 0) {
+                const crossCheck = crossCheckLiveFeatures(features, samples, teacherSamples, kValue, threshold, 0.65, kps);
+                if (crossCheck.isAnomaly || crossCheck.isOOD || crossCheck.isConflict) {
+                  isAnom = true;
+                  setIsAnomaly(true);
+                  setAnomalyMessage(crossCheck.message || '⚠️ Cử chỉ này chưa có trong thư viện ảnh của bé!');
+                  if (crossCheck.isOOD || crossCheck.isConflict) {
+                    isOODOrConflict = true;
+                    currentPredLabel = 'Dữ liệu chưa được học... 🤔';
+                  }
+                } else {
+                  setIsAnomaly(resultKNN.minDistance > 0.65);
+                  setAnomalyMessage(undefined);
+                }
+              } else {
+                // Phase A: Teacher Validator OFF
+                isAnom = resultKNN.minDistance > 0.65;
+                setIsAnomaly(isAnom);
+                setAnomalyMessage(undefined);
               }
-              
-              setIsAnomaly(resultKNN.minDistance > 0.7);
-              setKNearestIds(resultKNN.kNearestIds);
-              setVoteCounts(resultKNN.voteCounts);
+
+              setPredictedLabel(currentPredLabel);
+
+              if (isOODOrConflict) {
+                setKNearestIds([]);
+                setVoteCounts({});
+                setNnConfidences(null);
+              } else {
+                if (resultNN && resultNN.confidences) {
+                  setNnConfidences(resultNN.confidences);
+                }
+                setKNearestIds(resultKNN.kNearestIds);
+                setVoteCounts(resultKNN.voteCounts);
+              }
             }
           }
         } else {
@@ -1304,6 +1349,8 @@ export default function TeachPanel({
             classes={classes} 
             confidences={nnConfidences} 
             isAnomaly={isAnomaly}
+            anomalyMessage={anomalyMessage}
+            isPhaseB={datasetQuality?.isDatasetPerfect}
             classCounts={classes.reduce((acc, c) => {
               acc[c.id] = getClassSampleCount(c.id);
               return acc;

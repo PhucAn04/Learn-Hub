@@ -64,6 +64,29 @@ export function normalizeHandKeypoints(keypoints: HandKeypoint[]): number[] {
 }
 
 /**
+ * Count how many non-thumb fingers are extended (Index, Middle, Ring, Pinky)
+ */
+export function countExtendedFingers(keypoints: HandKeypoint[]): number {
+  if (!keypoints || keypoints.length < 21) return 0;
+  const wrist = keypoints[0];
+  const fingerIndices = [
+    { tip: 8, pip: 6 },   // Index finger
+    { tip: 12, pip: 10 }, // Middle finger
+    { tip: 16, pip: 14 }, // Ring finger
+    { tip: 20, pip: 18 }, // Pinky finger
+  ];
+  let count = 0;
+  for (const { tip, pip } of fingerIndices) {
+    const tipDist = Math.sqrt((keypoints[tip].x - wrist.x) ** 2 + (keypoints[tip].y - wrist.y) ** 2);
+    const pipDist = Math.sqrt((keypoints[pip].x - wrist.x) ** 2 + (keypoints[pip].y - wrist.y) ** 2);
+    if (tipDist > pipDist * 1.05) {
+      count++;
+    }
+  }
+  return count;
+}
+
+/**
  * Normalize face keypoints (468 landmarks) to be scale and translation invariant.
  * 1. Translate nose tip (index 1) to (0, 0)
  * 2. Find max distance from nose tip to any keypoint

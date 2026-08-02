@@ -118,15 +118,20 @@ export async function uploadFileToCloudinary(
   if (!isCloudinaryConfigured()) return null;
 
   const isVideo = file.type.startsWith('video/');
-  const uploadUrl = isVideo ? VIDEO_UPLOAD_URL : IMAGE_UPLOAD_URL;
+  const isImage = file.type.startsWith('image/');
+  const uploadUrl = isVideo ? VIDEO_UPLOAD_URL : (isImage ? IMAGE_UPLOAD_URL : RAW_UPLOAD_URL);
   
   const formData = new FormData();
-  const fileName = file instanceof File ? file.name : `upload_${Date.now()}`;
+  let fileName = file instanceof File ? file.name : `upload_${Date.now()}`;
+  // Cloudinary disallows .bin extension for raw uploads by default. Replace .bin with .json.
+  if (fileName.endsWith('.bin')) {
+    fileName = fileName.replace(/\.bin$/, '.json');
+  }
   formData.append('file', file, fileName);
   formData.append('upload_preset', UPLOAD_PRESET);
   formData.append('folder', folder);
 
-  if (!isVideo) {
+  if (isImage) {
     formData.append('quality', 'auto:best');
   }
 
@@ -157,6 +162,30 @@ export async function uploadFileToCloudinary(
     xhr.onerror = () => resolve(null);
     xhr.send(formData);
   });
+}
+
+/**
+ * Upload TensorFlow.js model JSON & weights blobs to Cloudinary.
+ * Returns the secure URLs of the uploaded model.json and model.weights.json.
+ */
+export async function uploadModelToCloudinary(
+  jsonBlob: Blob,
+  weightsBlob: Blob,
+  challengeType: string = 'teach'
+): Promise<{ modelJsonUrl: string | null; modelWeightsUrl: string | null }> {
+  if (!isCloudinaryConfigured()) return { modelJsonUrl: null, modelWeightsUrl: null };
+
+  const folder = `learn-hub/models/${challengeType}`;
+  const timestamp = Date.now();
+  const jsonFile = new File([jsonBlob], `model_${timestamp}.json`, { type: 'application/json' });
+  const weightsFile = new File([weightsBlob], `model_${timestamp}.weights.json`, { type: 'application/json' });
+
+  const [modelJsonUrl, modelWeightsUrl] = await Promise.all([
+    uploadFileToCloudinary(jsonFile, folder),
+    uploadFileToCloudinary(weightsFile, folder),
+  ]);
+
+  return { modelJsonUrl, modelWeightsUrl };
 }
 
 import { StoredSample } from './knn-classifier';

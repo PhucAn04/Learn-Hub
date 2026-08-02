@@ -140,14 +140,14 @@ export function analyzeBlur(canvas: HTMLCanvasElement, roi?: ROI, brightness: nu
         maxLaplacian = absLap;
       }
 
-      // Nâng mức nhiễu lên 10 để loại bỏ hoàn toàn các dao động siêu nhỏ của phông nền
-      if (absLap > 10) {
+      // Loại bỏ hoàn toàn nhiễu dao động phông nền trơn (nền phẳng webcam noise thường là 0-14)
+      if (absLap > 14) {
         laplacianSum += laplacian;
         laplacianSqSum += laplacian * laplacian;
         activePixels++;
         
-        // Đếm số lượng pixel có độ nét cao (cạnh cứng)
-        if (absLap > 50) {
+        // Đếm số lượng pixel có độ nét cao chuẩn webcam (cạnh rõ > 30)
+        if (absLap > 30) {
           strongPixels++;
         }
       }
@@ -159,30 +159,28 @@ export function analyzeBlur(canvas: HTMLCanvasElement, roi?: ROI, brightness: nu
   const mean = laplacianSum / activePixels;
   const variance = Math.max(0, (laplacianSqSum / activePixels) - (mean * mean));
   
-  // Tỉ lệ cạnh sắc (Sharpness Ratio):
-  // Motion blur làm viền bị nhòe rộng ra -> activePixels tăng mạnh nhưng strongPixels giảm -> Tỉ lệ cực thấp!
-  // Ảnh nét có viền mảnh và gắt -> Tỉ lệ cao. (Không phụ thuộc vào kích thước ngón tay to hay nhỏ)
+  // Tỉ lệ cạnh sắc (Sharpness Ratio): tỉ lệ pixel cạnh gắt trên tổng số pixel active
   const sharpnessRatio = (strongPixels / activePixels) * 100;
   
-  // Điều chỉnh ngưỡng (Threshold) dành cho ảnh ở độ phân giải tự nhiên của Camera.
-  // Ảnh phân giải cao có nhiều pixel chuyển tiếp mượt mà -> Phương sai trung bình (Variance) tự động thấp hơn.
-  // Đồng thời, nếu ảnh hơi tối (Brightness thấp), độ tương phản cũng giảm theo -> Variance giảm.
+  // Hệ số bù sáng: Nếu ảnh đủ sáng (>= 100) thì hệ số = 1. Nếu ảnh hơi tối, hệ số bù tối đa = 2.0.
+  const brightnessFactor = brightness < 100 ? Math.min(2.0, 100 / Math.max(brightness, 20)) : 1;
   
-  // Hệ số bù sáng: Nếu ảnh đủ sáng (>= 100) thì hệ số = 1. Nếu ảnh tối, hệ số > 1.
-  const brightnessFactor = brightness < 100 ? (100 / Math.max(brightness, 1)) : 1;
-  
-  // Ngưỡng gốc dành cho ảnh nét ở độ phân giải cao
-  const baseVarianceThreshold = 350; 
-  const baseSharpnessThreshold = 1.0; 
-
-  const adjustedVarianceThreshold = baseVarianceThreshold / brightnessFactor;
-  const adjustedSharpnessThreshold = baseSharpnessThreshold / brightnessFactor;
+  // Ngưỡng phương sai & tỉ lệ cạnh gắt thân thiện với webcam của bé (Child-friendly ROI threshold)
+  const minVarianceThreshold = 150 / brightnessFactor;
+  const standardSharpnessThreshold = 4.0 / brightnessFactor; // Ngưỡng Sharp% 4.0% phù hợp cho webcam của bé
 
   let isBlurry = true;
-  if (variance >= adjustedVarianceThreshold * 1.5) {
-    isBlurry = false; // Rất nét (Vượt mức 150% ngưỡng an toàn)
-  } else if (variance >= adjustedVarianceThreshold && sharpnessRatio >= adjustedSharpnessThreshold) {
-    isBlurry = false; // Nét vừa đủ
+  // 1. Ảnh có ActiveVar >= 250 (đủ tương phản viền tay trên webcam) và Sharp% >= 3.0%: Duyệt nét ngay
+  if (variance >= 250 / brightnessFactor && (sharpnessRatio >= 3.0 || maxLaplacian >= 35)) {
+    isBlurry = false;
+  }
+  // 2. Ảnh tiêu chuẩn (ActiveVar >= 150 và Sharp% >= 4.0%)
+  else if (variance >= minVarianceThreshold && sharpnessRatio >= standardSharpnessThreshold) {
+    isBlurry = false;
+  }
+  // 3. Ảnh có đỉnh tương phản gắt (maxLaplacian >= 45 và ActiveVar >= 150)
+  else if (maxLaplacian >= 45 && variance >= minVarianceThreshold) {
+    isBlurry = false;
   }
 
   return { variance, maxLaplacian, isBlurry, sharpnessRatio };

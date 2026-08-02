@@ -11,27 +11,33 @@ interface AIConfidenceEnergyBarsProps {
   classes: ClassData[];
   confidences: Record<string, number> | null;
   isAnomaly?: boolean;
+  anomalyMessage?: string;
   classCounts?: Record<string, number>;
+  isPhaseB?: boolean;
 }
 
-export default function AIConfidenceEnergyBars({ classes, confidences, isAnomaly, classCounts }: AIConfidenceEnergyBarsProps) {
-  if (!confidences) return null;
+export default function AIConfidenceEnergyBars({ classes, confidences, isAnomaly, anomalyMessage, classCounts, isPhaseB }: AIConfidenceEnergyBarsProps) {
+  if (!confidences && !isAnomaly) return null;
+
+  const effectiveConfidences = confidences || {};
 
   // Lấy số ảnh nhiều nhất để làm chuẩn tính toán sự thiên vị nhẹ
   let maxCount = 0;
   if (classCounts) {
-    maxCount = Math.max(...Object.values(classCounts));
+    maxCount = Math.max(...Object.values(classCounts), 0);
   }
 
   const adjustedConfidences: Record<string, number> = {};
   classes.forEach(c => {
-    let conf = confidences[c.id] || confidences[c.label] || 0;
+    // Phase A: Giữ nguyên năng lượng do mô hình bé tự dự đoán (kể cả khi OOD)
+    // Phase B: Khi OOD/Anomaly mới tuột về 0%
+    let conf = (isPhaseB && isAnomaly) ? 0 : (effectiveConfidences[c.id] || effectiveConfidences[c.label] || 0);
     const cCount = classCounts ? (classCounts[c.id] || 0) : 0;
     
     // Thuật toán: Thể hiện sự thiên vị (Bias) một cách RẤT NHẸ NHÀNG lên thanh năng lượng.
     // Vì thanh năng lượng khá ngắn, nếu tuột nhiều sẽ giống như bị lỗi.
     // Chúng ta chỉ trừ tối đa khoảng 20% năng lượng của nhãn ít ảnh nhất.
-    if (classCounts && maxCount > 0) {
+    if (classCounts && maxCount > 0 && !isAnomaly) {
       const penaltyRatio = cCount / maxCount; // 0.0 -> 1.0
       
       // Công thức softPenalty: 
@@ -105,7 +111,7 @@ export default function AIConfidenceEnergyBars({ classes, confidences, isAnomaly
 
       {isAnomaly && (
         <p className="mt-3 text-xs font-semibold text-rose-600 text-center leading-relaxed bg-rose-50 border border-rose-200 rounded-xl p-2 animate-pulse">
-          ⚠️ Khác thường, không phải dữ liệu AI đã học!
+          {anomalyMessage || '⚠️ Khác thường, dữ liệu này chưa có trong thư viện ảnh của bé!'}
         </p>
       )}
     </div>

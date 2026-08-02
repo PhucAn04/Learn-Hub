@@ -161,10 +161,13 @@ export default function TeacherTeachTwoHandsPage() {
 
 
   const getVideoThumb = () => {
+    const vW = videoRef.current?.videoWidth || 640;
+    const vH = videoRef.current?.videoHeight || 480;
     const cv = document.createElement('canvas');
-    cv.width = 240; cv.height = 240;
+    cv.width = vW;
+    cv.height = vH;
     const ctx = cv.getContext('2d');
-    if (ctx && videoRef.current) ctx.drawImage(videoRef.current, 0, 0, 240, 240);
+    if (ctx && videoRef.current) ctx.drawImage(videoRef.current, 0, 0, vW, vH);
     return cv.toDataURL('image/jpeg', 0.8);
   };
 

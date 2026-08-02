@@ -67,16 +67,13 @@ export function useVideoExtractor() {
           if (ctx) {
             ctx.drawImage(video, 0, 0, w, h);
 
-            // Create high quality thumbnail (240x240 center-crop)
+            // Create high quality thumbnail (320x240 4:3 ratio)
             const thumbCanvas = document.createElement('canvas');
-            thumbCanvas.width = 240;
+            thumbCanvas.width = 320;
             thumbCanvas.height = 240;
             const thumbCtx = thumbCanvas.getContext('2d');
             if (thumbCtx) {
-              const minDim = Math.min(w, h);
-              const sx = (w - minDim) / 2;
-              const sy = (h - minDim) / 2;
-              thumbCtx.drawImage(canvas, sx, sy, minDim, minDim, 0, 0, 240, 240);
+              thumbCtx.drawImage(canvas, 0, 0, w, h, 0, 0, 320, 240);
 
               frames.push({
                 canvas,

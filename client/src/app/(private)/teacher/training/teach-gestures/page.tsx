@@ -16,6 +16,7 @@ import SampleGallery from '@/components/SampleGallery';
 import DataCollector from '@/components/journey/DataCollector';
 import { TfTrainer } from '@/lib/tf-trainer';
 import { uploadSamplesToCloudinary, isCloudinaryConfigured } from '@/lib/cloudinary';
+import { assessQuality, calculateROI } from '@/lib/image-quality';
 // Predefined classes for teaching
 const CLASSES = [
   { id: 'class_1', label: 'Thích (Thumbs Up) 👍', voicePrompt: 'Hãy dạy bạn A I nhận biết cử chỉ Thích nhé!' },
@@ -77,16 +78,19 @@ export default function TeacherTeachGesturesPage() {
   }, []);
 
   const getVideoThumb = (hands?: HandResult[]) => {
+    const vW = videoRef.current?.videoWidth || 640;
+    const vH = videoRef.current?.videoHeight || 480;
     const cv = document.createElement('canvas');
-    cv.width = 240; cv.height = 240;
+    cv.width = vW;
+    cv.height = vH;
     const ctx = cv.getContext('2d');
     if (ctx && videoRef.current) {
-      ctx.drawImage(videoRef.current, 0, 0, 240, 240);
+      ctx.drawImage(videoRef.current, 0, 0, vW, vH);
       if (hands && hands.length > 0) {
         hands.forEach((hand, idx) => {
           const kps = hand.keypoints;
           if (kps && kps.length >= 21) {
-            drawHandSkeleton(ctx, kps, videoRef.current!.videoWidth || 640, videoRef.current!.videoHeight || 480, 240, 240, {
+            drawHandSkeleton(ctx, kps, vW, vH, vW, vH, {
               lineColor: idx === 0 ? '#6366f1' : '#ec4899',
               jointColor1: idx === 0 ? '#4f46e5' : '#db2777',
               jointColor2: idx === 0 ? '#4f46e5' : '#db2777',
@@ -117,6 +121,16 @@ export default function TeacherTeachGesturesPage() {
     const rawThumbnail = getVideoThumb();
     const thumbnail = getVideoThumb(hands);
 
+    const vW = videoRef.current ? videoRef.current.videoWidth || 640 : 640;
+    const vH = videoRef.current ? videoRef.current.videoHeight || 480 : 480;
+    const frameCv = document.createElement('canvas');
+    frameCv.width = vW;
+    frameCv.height = vH;
+    const frameCtx = frameCv.getContext('2d');
+    if (frameCtx && videoRef.current) {
+      frameCtx.drawImage(videoRef.current, 0, 0, vW, vH);
+    }
+
     setSamples(prev => {
       const newSamples: StoredSample[] = [];
 
@@ -130,7 +144,21 @@ export default function TeacherTeachGesturesPage() {
           const features = normalizeHandKeypoints(hands[handIndex].keypoints);
           let isValid = true;
 
-          if (GOLDEN_GESTURES_DATASET.length > 0) {
+          // Quality Assessment (Dark/Blurry Check)
+          const roi = hands[handIndex]?.keypoints
+            ? calculateROI(hands[handIndex].keypoints as { x: number; y: number }[], frameCv.width, frameCv.height, 0.1)
+            : undefined;
+          const quality = frameCtx ? assessQuality(frameCv, roi) : undefined;
+          if (quality?.isDark || quality?.isBlurry) {
+            isValid = false;
+            if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
+            setValidationToast(quality.isDark
+              ? `⚠️ Ảnh bị quá tối (độ sáng: ${Math.round(quality.brightness)}/255). Hãy đảm bảo đủ ánh sáng!`
+              : `⚠️ Ảnh bị mờ. Vui lòng giữ tay thật yên lặng khi chụp!`);
+            toastTimeoutRef.current = setTimeout(() => setValidationToast(null), 4000);
+          }
+
+          if (isValid && GOLDEN_GESTURES_DATASET.length > 0) {
             const mappedGolden = GOLDEN_GESTURES_DATASET.map(g => ({
               label: g.expectedLabel,
               features: g.features
@@ -159,7 +187,8 @@ export default function TeacherTeachGesturesPage() {
             sourceId: activeClass,
             thumbnail,
             rawThumbnail,
-            isValid
+            isValid,
+            quality
           });
         }
       };

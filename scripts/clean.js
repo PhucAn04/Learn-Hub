@@ -56,6 +56,18 @@ if (!cloudName || !apiKey || !apiSecret) {
 
 console.log(`\n🧹 Đang dọn dẹp Cloudinary (${cloudName})...`);
 
+const fetchWithRetry = async (url, options, retries = 3) => {
+  for (let i = 0; i < retries; i++) {
+    try {
+      return await fetch(url, options);
+    } catch (err) {
+      if (i === retries - 1) throw err;
+      console.log(`⚠️ Lỗi kết nối (${err.message}). Đang thử lại (${i + 1}/${retries})...`);
+      await new Promise(resolve => setTimeout(resolve, 2000));
+    }
+  }
+};
+
 const deleteCloudinaryResourcesByType = async (resourceType) => {
   try {
     const auth = Buffer.from(`${apiKey}:${apiSecret}`).toString('base64');
@@ -67,7 +79,7 @@ const deleteCloudinaryResourcesByType = async (resourceType) => {
       let url = `https://api.cloudinary.com/v1_1/${cloudName}/resources/${resourceType}/upload?prefix=learn-hub/&max_results=500`;
       if (nextCursor) url += `&next_cursor=${nextCursor}`;
 
-      const res = await fetch(url, {
+      const res = await fetchWithRetry(url, {
         headers: { 'Authorization': `Basic ${auth}` }
       });
       
@@ -90,7 +102,7 @@ const deleteCloudinaryResourcesByType = async (resourceType) => {
         const params = new URLSearchParams();
         chunk.forEach(id => params.append('public_ids[]', id));
         
-        const delRes = await fetch(delUrl, {
+        const delRes = await fetchWithRetry(delUrl, {
           method: 'DELETE',
           headers: {
             'Authorization': `Basic ${auth}`,

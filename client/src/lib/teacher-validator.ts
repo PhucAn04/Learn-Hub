@@ -1,4 +1,4 @@
-import { StoredSample, classifyKNN, classifyKNNDetailed, analyzeDataBalance, countExtendedFingers, HandKeypoint } from './knn-classifier';
+import { StoredSample, classifyKNN, classifyKNNDetailed, classifyKNNWithVotes, analyzeDataBalance, countExtendedFingers, HandKeypoint } from './knn-classifier';
 import { TfTrainer } from './tf-trainer';
 
 export type DatasetPhase = 'PHASE_A' | 'PHASE_B';
@@ -15,12 +15,14 @@ export interface DatasetQualityResult {
 export interface CrossCheckResult {
   isAnomaly: boolean;          // High distance or low confidence
   isOOD: boolean;              // Out of Distribution (e.g. 3 fingers when dataset only has 1 & 2)
+  isMissingData: boolean;      // NEW: Teacher knows this pose, but Student is missing this variation
   isConflict: boolean;         // Teacher predicts class A, Student predicts class B
   studentLabel: string;
   studentConfidence: number;
   teacherLabel?: string;
   teacherConfidence?: number;
   message?: string;
+  teacherNearestSampleIds?: string[];
 }
 
 /**
@@ -128,45 +130,59 @@ export function crossCheckLiveFeatures(
     return {
       isAnomaly: isOOD || studentResult.maxCount < threshold,
       isOOD,
+      isMissingData: false,
       isConflict: false,
       studentLabel: studentResult.label,
       studentConfidence: studentResult.confidence,
     };
   }
 
-  const teacherResult = classifyKNN(liveFeatures, teacherSamples, kValue);
+  const teacherResult = classifyKNNWithVotes(liveFeatures, teacherSamples, kValue);
 
   // Structural Skeleton Validation against Teacher Model:
   // If Teacher Skeleton Model recognizes the normalized keypoint skeleton as a valid class with high confidence:
   const isTeacherValidPose = teacherResult.confidence >= 60 && teacherResult.minDistance <= 0.65;
 
-  // Check if live pose is far from teacher's known skeleton poses (OOD)
-  const isOODToTeacher = isFingerOOD || (!isTeacherValidPose && teacherResult.minDistance > distanceOodThreshold);
-  const isOODToStudent = isFingerOOD || (!isTeacherValidPose && studentResult.minDistance > distanceOodThreshold);
-
-  // Check if teacher predicts a different label with high consensus
-  const isConflict =
-    !isFingerOOD &&
-    teacherResult.maxCount >= threshold &&
-    studentResult.maxCount >= threshold &&
-    teacherResult.label !== studentResult.label;
-
+  let isMissingData = false;
+  let isOOD = false;
+  let isConflict = false;
   let message = '';
-  if (isOODToTeacher || isOODToStudent) {
+
+  if (isFingerOOD) {
+    isOOD = true;
     message = 'Dữ liệu chưa được học! Hình như bé đang thực hiện cử chỉ lạ (ngoài thư viện ảnh của bé)?';
-  } else if (isConflict) {
-    message = `Khoan đã! Cô thấy đây là "${teacherResult.label}". AI của bé đoán nhầm là "${studentResult.label}"!`;
+  } else if (isTeacherValidPose) {
+    // Teacher knows this pose. Let's check if the student knows it.
+    // If student's model is uncertain (high distance) OR guesses the wrong label confidently.
+    if (studentResult.minDistance > distanceOodThreshold || (studentResult.label !== teacherResult.label && studentResult.maxCount >= threshold)) {
+      isMissingData = true;
+      message = 'Cử chỉ này khá chuẩn, nhưng AI của bé chưa được học góc độ này. Bé hãy chụp thêm ảnh để AI học nhé!';
+    } else {
+      // Both know it and agree.
+      isMissingData = false;
+    }
+  } else {
+    // Teacher DOES NOT know this pose.
+    if (teacherResult.minDistance > distanceOodThreshold || studentResult.minDistance > distanceOodThreshold) {
+      isOOD = true;
+      message = 'Dữ liệu chưa được học! Hình như bé đang thực hiện cử chỉ lạ (ngoài thư viện ảnh của bé)?';
+    } else if (teacherResult.maxCount >= threshold && studentResult.maxCount >= threshold && teacherResult.label !== studentResult.label) {
+      isConflict = true;
+      message = `Khoan đã! Cô thấy đây là "${teacherResult.label}". AI của bé đoán nhầm là "${studentResult.label}"!`;
+    }
   }
 
   return {
-    isAnomaly: isOODToTeacher || isOODToStudent || isConflict,
-    isOOD: isOODToTeacher || isOODToStudent,
+    isAnomaly: isOOD || isMissingData || isConflict,
+    isOOD,
+    isMissingData,
     isConflict,
     studentLabel: studentResult.label,
     studentConfidence: studentResult.confidence,
     teacherLabel: teacherResult.label,
     teacherConfidence: teacherResult.confidence,
     message,
+    teacherNearestSampleIds: isMissingData ? teacherResult.kNearestIds : undefined,
   };
 }
 

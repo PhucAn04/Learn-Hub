@@ -343,8 +343,9 @@ export default function TeacherTeachPage() {
 
   // Run real model training
   const handleTrain = async () => {
-    const c1 = samples.filter(s => s.sourceId === 'class_1' || (s.label === CLASSES[0].label && !s.sourceId)).length;
-    const c2 = samples.filter(s => s.sourceId === 'class_2' || (s.label === CLASSES[1].label && !s.sourceId)).length;
+    const validSamples = samples.filter(s => s.isValid !== false);
+    const c1 = validSamples.filter(s => s.sourceId === 'class_1' || (s.label === CLASSES[0].label && !s.sourceId)).length;
+    const c2 = validSamples.filter(s => s.sourceId === 'class_2' || (s.label === CLASSES[1].label && !s.sourceId)).length;
     if (c1 < 10 || c2 < 10) {
       speakEnglish('Need more samples to learn');
       return;
@@ -356,7 +357,7 @@ export default function TeacherTeachPage() {
 
     try {
       if (trainerRef.current) {
-        await trainerRef.current.train(samples, (epoch, progress, loss, acc) => {
+        await trainerRef.current.train(validSamples, (epoch, progress, loss, acc) => {
           setTrainingProgress(progress);
         });
         
@@ -633,10 +634,11 @@ export default function TeacherTeachPage() {
               </div>
               <div className="space-y-3 mb-4">
                 {CLASSES.slice(0, 2).map(cls => {
-                  const rawCount = samples.filter(s => s.sourceId === cls.id || (s.label === cls.label && !s.sourceId)).length;
+                  const validSamples = samples.filter(s => s.isValid !== false);
+                  const rawCount = validSamples.filter(s => s.sourceId === cls.id || (s.label === cls.label && !s.sourceId)).length;
                   const classSampleCount = rawCount;
                   const isSelected = activeClass === cls.id;
-                  const hasEnough = classSampleCount >= 3;
+                  const hasEnough = classSampleCount >= 10;
                   
                   return (
                     <div
@@ -718,7 +720,8 @@ export default function TeacherTeachPage() {
               {/* Requirement notification block */}
               {(() => {
                 const getCount = (id: string, label: string) => {
-                  return samples.filter(s => s.sourceId === id || (s.label === label && !s.sourceId)).length;
+                  const validSamples = samples.filter(s => s.isValid !== false);
+                  return validSamples.filter(s => s.sourceId === id || (s.label === label && !s.sourceId)).length;
                 };
                 const c1 = getCount(CLASSES[0].id, CLASSES[0].label);
                 const c2 = getCount(CLASSES[1].id, CLASSES[1].label);

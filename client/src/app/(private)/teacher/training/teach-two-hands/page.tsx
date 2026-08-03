@@ -292,8 +292,9 @@ export default function TeacherTeachTwoHandsPage() {
   };
 
   const handleTrain = async () => {
-    const c3 = samples.filter(s => s.sourceId === 'class_3').length;
-    const c4 = samples.filter(s => s.sourceId === 'class_4').length;
+    const validSamples = samples.filter(s => s.isValid !== false);
+    const c3 = validSamples.filter(s => s.sourceId === 'class_3').length;
+    const c4 = validSamples.filter(s => s.sourceId === 'class_4').length;
 
     if (c3 < 6 || c4 < 6) { // c3/c4 need 6 samples (3 captures x 2 hands)
       speakEnglish('Need more samples to learn');
@@ -306,7 +307,7 @@ export default function TeacherTeachTwoHandsPage() {
 
     try {
       if (trainerRef.current) {
-        await trainerRef.current.train(samples, (epoch, progress, loss, acc) => {
+        await trainerRef.current.train(validSamples, (epoch, progress, loss, acc) => {
           setTrainingProgress(progress);
         });
         
@@ -565,10 +566,12 @@ export default function TeacherTeachTwoHandsPage() {
               <div className="mb-2">
                 <span className="text-xs font-black text-emerald-600 tracking-wider uppercase">Bước 2: 2 Bàn tay 👐</span>
               </div>
+              {/* Class Tabs */}
               <div className="space-y-3 mb-6">
-                {CLASSES.map(cls => {
-                  const rawCount = samples.filter(s => s.sourceId === cls.id || (s.label === cls.label && !s.sourceId)).length;
-                  const classSampleCount = rawCount;
+                {CLASSES.slice(2, 4).map(cls => {
+                  const validSamples = samples.filter(s => s.isValid !== false);
+                  const rawCount = validSamples.filter(s => s.sourceId === cls.id).length;
+                  const classSampleCount = Math.floor(rawCount / 2);
                   const isSelected = activeClass === cls.id;
                   const hasEnough = classSampleCount >= 3;
                   

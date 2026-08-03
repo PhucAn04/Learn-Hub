@@ -93,8 +93,13 @@ export function analyzeBrightness(canvas: HTMLCanvasElement, roi?: ROI): number 
  * Nếu truyền roi, chỉ tính trên các pixel trong roi (Bounding Box của tay/cơ thể).
  * @returns Điểm số Variance.
  */
-export function analyzeBlur(canvas: HTMLCanvasElement, roi?: ROI, brightness: number = 128): { variance: number; maxLaplacian: number; isBlurry: boolean; sharpnessRatio: number } {
-  const ctx = canvas.getContext('2d');
+export function analyzeBlur(
+  canvas: HTMLCanvasElement, 
+  roi?: ROI, 
+  brightness: number = 128,
+  keypoints?: {x: number, y: number}[]
+): { variance: number; maxLaplacian: number; isBlurry: boolean; sharpnessRatio: number } {
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
   if (!ctx) return { variance: 0, maxLaplacian: 0, isBlurry: true, sharpnessRatio: 0 };
 
   const x = roi ? Math.max(0, Math.floor(roi.x)) : 0;
@@ -102,18 +107,42 @@ export function analyzeBlur(canvas: HTMLCanvasElement, roi?: ROI, brightness: nu
   const w = roi ? Math.min(canvas.width - x, Math.floor(roi.w)) : canvas.width;
   const h = roi ? Math.min(canvas.height - y, Math.floor(roi.h)) : canvas.height;
 
-  // Tránh lỗi khi bounding box quá nhỏ hoặc ảo
   if (w < 3 || h < 3) return { variance: 0, maxLaplacian: 0, isBlurry: true, sharpnessRatio: 0 };
 
-  // Lấy ảnh của vùng ROI
   const imageData = ctx.getImageData(x, y, w, h);
   const data = imageData.data;
 
-  // Chuyển đổi sang grayscale
   const gray = new Float32Array(w * h);
   for (let i = 0; i < w * h; i++) {
     const idx = i * 4;
     gray[i] = data[idx] * 0.299 + data[idx + 1] * 0.587 + data[idx + 2] * 0.114;
+  }
+
+  const step = 2;
+  const marginX = Math.floor(w * 0.15);
+  const marginY = Math.floor(h * 0.15);
+  const startY = Math.max(step, marginY);
+  const endY = Math.min(h - step, h - marginY);
+  const startX = Math.max(step, marginX);
+  const endX = Math.min(w - step, w - marginX);
+
+  // Tạo Keypoint Mask (Distance Map) nếu có keypoints
+  const hasKeypoints = keypoints && keypoints.length > 0;
+  const kpPixels: {kx: number, ky: number}[] = [];
+  
+  if (hasKeypoints) {
+    // Determine if normalized
+    let maxX = 0;
+    for (const kp of keypoints!) if (kp.x > maxX) maxX = kp.x;
+    const isNormalized = maxX <= 1;
+
+    for (const kp of keypoints!) {
+      const absX = isNormalized ? kp.x * canvas.width : kp.x;
+      const absY = isNormalized ? kp.y * canvas.height : kp.y;
+      const relX = Math.floor(absX - x);
+      const relY = Math.floor(absY - y);
+      kpPixels.push({kx: relX, ky: relY});
+    }
   }
 
   let laplacianSum = 0;
@@ -122,32 +151,50 @@ export function analyzeBlur(canvas: HTMLCanvasElement, roi?: ROI, brightness: nu
   let strongPixels = 0;
   let maxLaplacian = 0;
 
-  const step = 2; // Sample every 2nd pixel to save CPU
+  const noiseFloor = brightness < 60 ? 20 : 12;
+  const strongEdge = noiseFloor * 3;
+  
+  // Tính bán kính ảnh hưởng của skeleton
+  const radius = Math.max(10, Math.floor(Math.min(w, h) * 0.1));
+  const radiusSq = radius * radius;
 
-  for (let row = 1; row < h - 1; row += step) {
-    for (let col = 1; col < w - 1; col += step) {
+  for (let row = startY; row < endY; row += step) {
+    for (let col = startX; col < endX; col += step) {
+      
+      // Nếu có keypoints, chỉ tính điểm ảnh nếu nó nằm gần (trong bán kính) một keypoint bất kỳ
+      if (hasKeypoints) {
+        let isNearSkeleton = false;
+        for (const kp of kpPixels) {
+          const dx = col - kp.kx;
+          const dy = row - kp.ky;
+          if (dx*dx + dy*dy <= radiusSq) {
+            isNearSkeleton = true;
+            break;
+          }
+        }
+        if (!isNearSkeleton) continue;
+      }
+
       const idx = row * w + col;
-
-      let laplacian =
-        - gray[idx - w]     // top
-        - gray[idx - 1]     // left
-        + 4 * gray[idx]     // center
-        - gray[idx + 1]     // right
-        - gray[idx + w];    // bottom
+      
+      const laplacian =
+        - gray[idx - w * step]
+        - gray[idx - step]
+        + 4 * gray[idx]
+        - gray[idx + step]
+        - gray[idx + w * step];
 
       const absLap = Math.abs(laplacian);
       if (absLap > maxLaplacian) {
         maxLaplacian = absLap;
       }
-
-      // Loại bỏ hoàn toàn nhiễu dao động phông nền trơn (nền phẳng webcam noise thường là 0-14)
-      if (absLap > 14) {
+      
+      if (absLap > noiseFloor) {
         laplacianSum += laplacian;
         laplacianSqSum += laplacian * laplacian;
         activePixels++;
         
-        // Đếm số lượng pixel có độ nét cao chuẩn webcam (cạnh rõ > 30)
-        if (absLap > 30) {
+        if (absLap > strongEdge) {
           strongPixels++;
         }
       }
@@ -158,28 +205,22 @@ export function analyzeBlur(canvas: HTMLCanvasElement, roi?: ROI, brightness: nu
 
   const mean = laplacianSum / activePixels;
   const variance = Math.max(0, (laplacianSqSum / activePixels) - (mean * mean));
-  
-  // Tỉ lệ cạnh sắc (Sharpness Ratio): tỉ lệ pixel cạnh gắt trên tổng số pixel active
   const sharpnessRatio = (strongPixels / activePixels) * 100;
   
-  // Hệ số bù sáng: Nếu ảnh đủ sáng (>= 100) thì hệ số = 1. Nếu ảnh hơi tối, hệ số bù tối đa = 2.0.
+  // 3. THRESHOLDS: Nhờ việc cắt bỏ background và triệt tiêu ISO noise, tín hiệu giờ đây rất sạch!
+  // Chỉ số Variance và Sharpness giờ đây phản ánh thuần túy độ sắc nét của bàn tay/cơ thể.
   const brightnessFactor = brightness < 100 ? Math.min(2.0, 100 / Math.max(brightness, 20)) : 1;
   
-  // Ngưỡng phương sai & tỉ lệ cạnh gắt thân thiện với webcam của bé (Child-friendly ROI threshold)
-  const minVarianceThreshold = 150 / brightnessFactor;
-  const standardSharpnessThreshold = 4.0 / brightnessFactor; // Ngưỡng Sharp% 4.0% phù hợp cho webcam của bé
+  // Ngưỡng tiêu chuẩn (rất ổn định vì tín hiệu sạch)
+  const minVarianceThreshold = 250 / brightnessFactor;
+  const standardSharpnessThreshold = 20.0 / Math.sqrt(brightnessFactor); 
 
   let isBlurry = true;
-  // 1. Ảnh có ActiveVar >= 250 (đủ tương phản viền tay trên webcam) và Sharp% >= 3.0%: Duyệt nét ngay
-  if (variance >= 250 / brightnessFactor && (sharpnessRatio >= 3.0 || maxLaplacian >= 35)) {
+  
+  if (variance >= minVarianceThreshold && sharpnessRatio >= standardSharpnessThreshold) {
     isBlurry = false;
   }
-  // 2. Ảnh tiêu chuẩn (ActiveVar >= 150 và Sharp% >= 4.0%)
-  else if (variance >= minVarianceThreshold && sharpnessRatio >= standardSharpnessThreshold) {
-    isBlurry = false;
-  }
-  // 3. Ảnh có đỉnh tương phản gắt (maxLaplacian >= 45 và ActiveVar >= 150)
-  else if (maxLaplacian >= 45 && variance >= minVarianceThreshold) {
+  else if (maxLaplacian >= 60 && variance >= minVarianceThreshold * 0.7 && sharpnessRatio >= standardSharpnessThreshold * 0.7) {
     isBlurry = false;
   }
 
@@ -189,9 +230,13 @@ export function analyzeBlur(canvas: HTMLCanvasElement, roi?: ROI, brightness: nu
 /**
  * Đánh giá tổng thể chất lượng ảnh trong một vùng ROI.
  */
-export function assessQuality(canvas: HTMLCanvasElement, roi?: ROI): SampleQualityMeta {
+export function assessQuality(
+  canvas: HTMLCanvasElement, 
+  roi?: ROI, 
+  keypoints?: {x: number, y: number}[]
+): SampleQualityMeta {
   const brightness = analyzeBrightness(canvas, roi);
-  const blurResult = analyzeBlur(canvas, roi, brightness);
+  const blurResult = analyzeBlur(canvas, roi, brightness, keypoints);
 
   const quality = {
     brightness,
@@ -201,7 +246,7 @@ export function assessQuality(canvas: HTMLCanvasElement, roi?: ROI): SampleQuali
     isBlurry: blurResult.isBlurry, 
   };
 
-  console.log(`[Quality FINAL] Bright: ${brightness.toFixed(1)} | ActiveVar: ${blurResult.variance.toFixed(1)} | Sharp%: ${blurResult.sharpnessRatio.toFixed(1)} => isBlurry: ${quality.isBlurry}`);
+  console.log(`[Quality V4] Bright: ${brightness.toFixed(1)} | ActiveVar: ${blurResult.variance.toFixed(1)} | Sharp%: ${blurResult.sharpnessRatio.toFixed(1)} | MaxLap: ${blurResult.maxLaplacian.toFixed(1)} => isBlurry: ${quality.isBlurry}`);
   
   return quality;
 }

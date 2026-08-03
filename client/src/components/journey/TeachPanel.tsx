@@ -236,7 +236,9 @@ export default function TeachPanel({
   const [voteCounts, setVoteCounts] = useState<Record<string, number>>({});
   const [nnConfidences, setNnConfidences] = useState<Record<string, number> | null>(null);
   const [isAnomaly, setIsAnomaly] = useState(false);
+  const [isMissingData, setIsMissingData] = useState(false);
   const [anomalyMessage, setAnomalyMessage] = useState<string | undefined>(undefined);
+  const [teacherHintImages, setTeacherHintImages] = useState<string[]>([]);
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
   const [activeTab, setActiveTab] = useState<'camera' | 'upload' | 'video'>('camera');
 
@@ -335,7 +337,8 @@ export default function TeachPanel({
     (classId: string) => {
       const classLabel =
         classes.find((c) => c.id === classId)?.label || classId;
-      return samples.filter(
+      const validSamples = samples.filter((s) => s.isValid !== false);
+      return validSamples.filter(
         (s) =>
           s.sourceId === classId ||
           (s.label === classLabel && !s.sourceId),
@@ -454,13 +457,14 @@ export default function TeachPanel({
 
           const keypoints = hands[handIndex].keypoints!;
           const roi = calculateROI(keypoints as { x: number; y: number }[], rawCanvas.width, rawCanvas.height, 0.1);
-          const quality = assessQuality(rawCanvas, roi);
+          const quality = assessQuality(rawCanvas, roi, keypoints as { x: number; y: number }[]);
 
           const features = normalizeHandKeypoints(keypoints);
           let isValid = true;
           
           // Ưu tiên 1: Nếu ảnh mờ/tối, bỏ qua việc kiểm tra xương (tránh ảo giác)
           if (quality.isBlurry || quality.isDark) {
+            isValid = false;
             rejectedAny = true;
             rejectionMsg = quality.isBlurry 
               ? 'Ảnh hơi mờ! Bé cố gắng giữ chắc tay nhé 🔍' 
@@ -597,6 +601,7 @@ export default function TeachPanel({
   // ══════════════════════════════════════
   // TRAINING
   // ══════════════════════════════════════
+
   const canTrain = classes.every((cls) => {
     const count = getClassSampleCount(cls.id);
     const effective = isTwoHandMode ? Math.floor(count / 2) : count;
@@ -612,7 +617,8 @@ export default function TeachPanel({
 
     try {
       if (trainerRef.current) {
-        await trainerRef.current.train(samples, (epoch, progress) => {
+        const validSamples = samples.filter((s) => s.isValid !== false);
+        await trainerRef.current.train(validSamples, (epoch, progress) => {
           setTrainingProgress(progress);
         });
         // progress reaches 100 here, which will trigger the useEffect below
@@ -822,23 +828,46 @@ export default function TeachPanel({
               // Adaptive Mentorship: Only cross-check with Teacher Validator if student is in Phase B
               let isAnom = false;
               let isOODOrConflict = false;
+              let isMissingDataLocal = false;
 
               if (datasetQuality?.isDatasetPerfect && teacherSamples.length > 0) {
                 const crossCheck = crossCheckLiveFeatures(features, samples, teacherSamples, kValue, threshold, 0.65, kps);
-                if (crossCheck.isAnomaly || crossCheck.isOOD || crossCheck.isConflict) {
+                isMissingDataLocal = crossCheck.isMissingData || false;
+                setIsMissingData(isMissingDataLocal);
+                
+                if (crossCheck.isAnomaly || crossCheck.isOOD || crossCheck.isConflict || crossCheck.isMissingData) {
                   isAnom = true;
                   setIsAnomaly(true);
                   setAnomalyMessage(crossCheck.message || '⚠️ Cử chỉ này chưa có trong thư viện ảnh của bé!');
+                  
                   if (crossCheck.isOOD || crossCheck.isConflict) {
                     isOODOrConflict = true;
                     currentPredLabel = 'Dữ liệu chưa được học... 🤔';
+                    setTeacherHintImages([]);
+                  } else if (crossCheck.isMissingData) {
+                    // It's missing data, not completely OOD. Keep the Teacher's predicted label if any.
+                    if (crossCheck.teacherLabel) {
+                      currentPredLabel = classes.find(c => c.id === crossCheck.teacherLabel)?.label || currentPredLabel;
+                    }
+                    if (crossCheck.teacherNearestSampleIds) {
+                      const hints = teacherSamples
+                        .filter(s => s.id && crossCheck.teacherNearestSampleIds!.includes(s.id))
+                        .map(s => s.thumbnail || s.rawThumbnail || '')
+                        .filter(url => url !== '')
+                        .slice(0, 3);
+                      setTeacherHintImages(hints);
+                    } else {
+                      setTeacherHintImages([]);
+                    }
                   }
                 } else {
                   setIsAnomaly(resultKNN.minDistance > 0.65);
                   setAnomalyMessage(undefined);
+                  setTeacherHintImages([]);
                 }
               } else {
                 // Phase A: Teacher Validator OFF
+                setIsMissingData(false);
                 isAnom = resultKNN.minDistance > 0.65;
                 setIsAnomaly(isAnom);
                 setAnomalyMessage(undefined);
@@ -846,10 +875,16 @@ export default function TeachPanel({
 
               setPredictedLabel(currentPredLabel);
 
-              if (isOODOrConflict) {
+              if (isOODOrConflict || isMissingDataLocal) {
                 setKNearestIds([]);
                 setVoteCounts({});
-                setNnConfidences(null);
+                
+                // For missing data, we still want to show the Teacher's predicted confidences if available, 
+                // but since the student doesn't have it, we just set it to null so the energy bar component 
+                // can show it at 0% to encourage collection via isAnomaly flag.
+                if (isOODOrConflict) {
+                  setNnConfidences(null);
+                }
               } else {
                 if (resultNN && resultNN.confidences) {
                   setNnConfidences(resultNN.confidences);
@@ -1349,8 +1384,10 @@ export default function TeachPanel({
             classes={classes} 
             confidences={nnConfidences} 
             isAnomaly={isAnomaly}
+            isMissingData={isMissingData}
             anomalyMessage={anomalyMessage}
             isPhaseB={datasetQuality?.isDatasetPerfect}
+            teacherHintImages={teacherHintImages}
             classCounts={classes.reduce((acc, c) => {
               acc[c.id] = getClassSampleCount(c.id);
               return acc;

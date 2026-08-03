@@ -244,10 +244,11 @@ export default function TeacherTeachGesturesPage() {
 
   // Run real model training
   const handleTrain = async () => {
-    const c1 = samples.filter(s => s.sourceId === 'class_1' || (s.label === CLASSES[0].label && !s.sourceId)).length;
-    const c2 = samples.filter(s => s.sourceId === 'class_2' || (s.label === CLASSES[1].label && !s.sourceId)).length;
-    const c3 = samples.filter(s => s.sourceId === 'class_3').length;
-    const c4 = samples.filter(s => s.sourceId === 'class_4').length;
+    const validSamples = samples.filter(s => s.isValid !== false);
+    const c1 = validSamples.filter(s => s.sourceId === 'class_1' || (s.label === CLASSES[0].label && !s.sourceId)).length;
+    const c2 = validSamples.filter(s => s.sourceId === 'class_2' || (s.label === CLASSES[1].label && !s.sourceId)).length;
+    const c3 = validSamples.filter(s => s.sourceId === 'class_3').length;
+    const c4 = validSamples.filter(s => s.sourceId === 'class_4').length;
 
     if (c1 < 3 || c2 < 3 || c3 < 3 || c4 < 3) {
       speakEnglish('Need more samples to learn');
@@ -260,7 +261,7 @@ export default function TeacherTeachGesturesPage() {
 
     try {
       if (trainerRef.current) {
-        await trainerRef.current.train(samples, (epoch, progress, loss, acc) => {
+        await trainerRef.current.train(validSamples, (epoch, progress, loss, acc) => {
           setTrainingProgress(progress);
         });
         
@@ -519,7 +520,8 @@ export default function TeacherTeachGesturesPage() {
               {/* Class Tabs */}
               <div className="space-y-3 mb-6">
                 {CLASSES.map(cls => {
-                  const rawCount = samples.filter(s => s.sourceId === cls.id || (s.label === cls.label && !s.sourceId)).length;
+                  const validSamples = samples.filter(s => s.isValid !== false);
+                  const rawCount = validSamples.filter(s => s.sourceId === cls.id || (s.label === cls.label && !s.sourceId)).length;
                   const classSampleCount = rawCount;
                   const isSelected = activeClass === cls.id;
                   const hasEnough = classSampleCount >= 3;

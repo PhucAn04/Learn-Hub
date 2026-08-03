@@ -140,8 +140,14 @@ export default function BodyTeachPanel({
     const rawThumbnail = cv.toDataURL('image/jpeg', 0.8);
     
     // Đánh giá chất lượng TRƯỚC KHI vẽ bộ xương lên canvas
-    const roi = calculateROI(pose.keypoints as { x: number; y: number }[], cv.width, cv.height, 0.1);
-    const quality = assessQuality(cv, roi);
+    const roi = calculateROI(
+      pose.keypoints as { x: number; y: number }[],
+      cv.width,
+      cv.height,
+      0.1
+    );
+
+    const quality = assessQuality(cv, roi, pose.keypoints as { x: number; y: number }[]);
     
     if (ctx && pose.keypoints && videoRef.current) {
         drawBodySkeleton(ctx, pose.keypoints, vW, vH, vW, vH);
@@ -168,7 +174,7 @@ export default function BodyTeachPanel({
         features,
         thumbnail,
         rawThumbnail,
-        isValid: true,
+        isValid: !isBadQuality,
         quality
       }
     ]);
@@ -230,7 +236,8 @@ export default function BodyTeachPanel({
 
     try {
       if (trainerRef.current) {
-        await trainerRef.current.train(samples, (epoch, progress) => {
+        const validSamples = samples.filter((s) => s.isValid !== false);
+        await trainerRef.current.train(validSamples, (epoch, progress) => {
           setTrainingProgress(progress);
         });
         // progress reaches 100 here, which will trigger the useEffect below
@@ -358,7 +365,10 @@ export default function BodyTeachPanel({
   };
 
   // ── Render ──────────────────────────
-  const canTrain = classesState.length > 0 && classesState.every(c => samples.filter(s => s.sourceId === c.id || (s.label === c.label && !s.sourceId)).length >= minSamplesPerClass);
+  const canTrain = classesState.length > 0 && classesState.every(c => {
+    const validSamples = samples.filter((s) => s.isValid !== false);
+    return validSamples.filter(s => s.sourceId === c.id || (s.label === c.label && !s.sourceId)).length >= minSamplesPerClass;
+  });
 
   return (
     <div className="w-full flex flex-col gap-6">
@@ -388,7 +398,8 @@ export default function BodyTeachPanel({
 
         <div className="flex flex-col gap-3 mb-6">
           {classesState.map((c) => {
-            const count = samples.filter((s) => s.sourceId === c.id || (s.label === c.label && !s.sourceId)).length;
+            const validSamples = samples.filter(s => s.isValid !== false);
+            const count = validSamples.filter((s) => s.sourceId === c.id || (s.label === c.label && !s.sourceId)).length;
             const isActive = activeClass === c.id;
             const progress = Math.min(100, (count / minSamplesPerClass) * 100);
             return (

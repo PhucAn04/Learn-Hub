@@ -9,13 +9,7 @@ import { StoredSample } from '@/lib/knn-classifier';
 import { uploadSamplesToCloudinary, isCloudinaryConfigured } from '@/lib/cloudinary';
 import BodyTeachPanel from '@/components/journey/BodyTeachPanel';
 
-const BODY_EXERCISES = [
-  { id: 'teach-body-vuon-tho', title: 'Động tác vươn thở' },
-  { id: 'teach-body-tay', title: 'Động tác tay' },
-  { id: 'teach-body-luon', title: 'Động tác lườn' },
-  { id: 'teach-body-bung', title: 'Động tác bụng' },
-  { id: 'teach-body-chan', title: 'Động tác chân' }
-];
+import { BODY_EXERCISES } from '@/lib/body-exercises';
 
 export default function TeacherBodyExercisePage() {
   const router = useRouter();
@@ -48,7 +42,7 @@ export default function TeacherBodyExercisePage() {
         setUploadProgress('Đang tải ảnh lên Cloud...');
         processedSamples = await uploadSamplesToCloudinary(
           samples,
-          selectedExercise,
+          'teach-body-' + selectedExercise,
           (uploaded, total) => {
             setUploadProgress(`Tải ảnh ${uploaded}/${total}...`);
           }
@@ -57,7 +51,7 @@ export default function TeacherBodyExercisePage() {
       }
 
       await api.createDataset(
-        selectedExercise,
+        'teach-body-' + selectedExercise,
         processedSamples,
         100, // Teacher sets standard
         '', 
@@ -113,7 +107,7 @@ export default function TeacherBodyExercisePage() {
                className="bg-transparent text-indigo-900 font-bold px-4 py-2 outline-none cursor-pointer"
              >
                {BODY_EXERCISES.map(ex => (
-                 <option key={ex.id} value={ex.id}>{ex.title}</option>
+                 <option key={ex.id} value={ex.id}>{ex.name}</option>
                ))}
              </select>
           </div>
@@ -147,7 +141,7 @@ export default function TeacherBodyExercisePage() {
               </button>
               <h2 className="text-2xl font-black flex items-center gap-2">
                 <Save className="w-7 h-7" />
-                Lưu Bộ Dữ Liệu Mẫu ({exercise?.title})
+                Lưu Bộ Dữ Liệu Mẫu ({exercise?.name})
               </h2>
               <p className="text-indigo-100 mt-2 font-medium">
                 Bạn đã thu thập mẫu thành công. Học sinh sẽ thấy các nhãn và ảnh mẫu này!

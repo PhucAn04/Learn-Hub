@@ -11,13 +11,7 @@ import { DatasetResponse } from '@/types/models';
 import { uploadSamplesToCloudinary, isCloudinaryConfigured } from '@/lib/cloudinary';
 import BodyTeachPanel from '@/components/journey/BodyTeachPanel';
 
-const BODY_EXERCISES = [
-  { id: 'teach-body-vuon-tho', title: 'Động tác vươn thở' },
-  { id: 'teach-body-tay', title: 'Động tác tay' },
-  { id: 'teach-body-luon', title: 'Động tác lườn' },
-  { id: 'teach-body-bung', title: 'Động tác bụng' },
-  { id: 'teach-body-chan', title: 'Động tác chân' }
-];
+import { BODY_EXERCISES } from '@/lib/body-exercises';
 
 export default function StudentBodyExercisePage() {
   const router = useRouter();
@@ -33,7 +27,7 @@ export default function StudentBodyExercisePage() {
 
   useEffect(() => {
     let ignore = false;
-    api.getTemplates(selectedExercise)
+    api.getTemplates('teach-body-' + selectedExercise)
       .then(async res => {
         if (ignore) return;
         if (res && res.length > 0) {
@@ -96,7 +90,7 @@ export default function StudentBodyExercisePage() {
         setUploadProgress('Đang tải ảnh lên Cloud...');
         processedSamples = await uploadSamplesToCloudinary(
           samples,
-          selectedExercise,
+          'teach-body-' + selectedExercise,
           (uploaded, total) => {
             setUploadProgress(`Tải ảnh ${uploaded}/${total}...`);
           }
@@ -104,7 +98,7 @@ export default function StudentBodyExercisePage() {
         setUploadProgress('Đang lưu bài...');
       }
 
-      const created = await api.createDataset(selectedExercise, processedSamples, submitScore, `${reflectionAnswer}`);
+      const created = await api.createDataset('teach-body-' + selectedExercise, processedSamples, submitScore, `${reflectionAnswer}`);
       if (created?.model?.id) {
         await api.updateModelArtifacts(created.model.id, {
           algorithm: 'mlp',
@@ -126,8 +120,8 @@ export default function StudentBodyExercisePage() {
         }
       }
 
-      await api.submitAssignment(submitScore, { samples: processedSamples }, reflectionAnswer, selectedExercise);
-      await api.saveProgress(selectedExercise, submitScore);
+      await api.submitAssignment(submitScore, { samples: processedSamples }, reflectionAnswer, 'teach-body-' + selectedExercise);
+      await api.saveProgress('teach-body-' + selectedExercise, submitScore);
       
       setSubmitSuccess(true);
       playSuccessSound();
@@ -171,7 +165,7 @@ export default function StudentBodyExercisePage() {
                  className="bg-transparent text-indigo-900 font-bold px-4 py-2 outline-none cursor-pointer"
                >
                  {BODY_EXERCISES.map(ex => (
-                   <option key={ex.id} value={ex.id}>{ex.title}</option>
+                   <option key={ex.id} value={ex.id}>{ex.name}</option>
                  ))}
                </select>
             </div>
@@ -187,7 +181,7 @@ export default function StudentBodyExercisePage() {
           <div className="bg-white rounded-3xl p-12 shadow-xl border-4 border-indigo-100 text-center">
             <div className="text-4xl mb-4">⏳</div>
             <h2 className="text-2xl font-bold text-slate-700">Đang chờ giáo viên giao bài</h2>
-            <p className="text-slate-500 mt-2">Cô/Thầy chưa tạo dữ liệu mẫu cho bài tập <b>{exercise?.title}</b>. Bé quay lại sau nhé!</p>
+            <p className="text-slate-500 mt-2">Cô/Thầy chưa tạo dữ liệu mẫu cho bài tập <b>{exercise?.name}</b>. Bé quay lại sau nhé!</p>
           </div>
         ) : (
           <div className="bg-white rounded-3xl p-6 shadow-xl border-4 border-indigo-100">

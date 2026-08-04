@@ -15,15 +15,17 @@ import { TfTrainer } from '@/lib/tf-trainer';
 import ScoreHeader from '@/components/ScoreHeader';
 import CameraView from '@/components/CameraView';
 import MatchProgressBar from '@/components/MatchProgressBar';
-import { getExerciseById, exercisePosesToClasses } from '@/lib/body-exercises';
+import { getExerciseById, exercisePosesToClasses, BODY_EXERCISES } from '@/lib/body-exercises';
 
 import { LeaderboardEntry } from '@/types/models';
 
-const exercise = getExerciseById('vuon-tho')!;
-const CLASSES = exercisePosesToClasses(exercise);
-
 export default function BodyExerciseChallenge() {
   const router = useRouter();
+  
+  const [selectedExercise, setSelectedExercise] = useState(BODY_EXERCISES[0].id);
+  const exercise = getExerciseById(selectedExercise)!;
+  const CLASSES = exercisePosesToClasses(exercise);
+
   const [samples, setSamples] = useState<StoredSample[]>([]);
   const [isLoadingModel, setIsLoadingModel] = useState(true);
   
@@ -46,9 +48,13 @@ export default function BodyExerciseChallenge() {
   const trainerRef = useRef<TfTrainer | null>(null);
 
   useEffect(() => {
+    let ignore = false;
     const fetchMyModel = async () => {
+      setIsLoadingModel(true);
+      setSamples([]);
+      trainerRef.current = null;
       try {
-        const datasets = await api.getMyDatasets('teach-body');
+        const datasets = await api.getMyDatasets('teach-body-' + selectedExercise);
         if (datasets && datasets.length > 0) {
           // get the most recent dataset
           const fileRes = await api.getDatasetFile(datasets[0].id);
@@ -59,20 +65,24 @@ export default function BodyExerciseChallenge() {
             loadedSamples = fileRes.samples;
           }
           
-          if (loadedSamples.length > 0) {
+          if (loadedSamples.length > 0 && !ignore) {
             setSamples(loadedSamples);
             trainerRef.current = new TfTrainer();
             await trainerRef.current.train(loadedSamples);
+            setTargetPoseIdx(0);
+            setScore(0);
           }
         }
       } catch (err) {
         console.error('Failed to fetch teach-body model', err);
       } finally {
-        setIsLoadingModel(false);
+        if (!ignore) setIsLoadingModel(false);
       }
     };
     fetchMyModel();
-  }, []);
+
+    return () => { ignore = true; };
+  }, [selectedExercise]);
 
   // Fetch leaderboard
   useEffect(() => {
@@ -202,7 +212,18 @@ export default function BodyExerciseChallenge() {
           {/* Left panel */}
           <div className="bg-white rounded-3xl p-6 border-4 border-sky-400 shadow-xl flex flex-col justify-between">
             <div>
-              <div className="text-sm font-extrabold text-sky-600 tracking-wider mb-2 uppercase">Bài Tập Thể Dục</div>
+              <div className="flex items-center justify-between mb-4">
+                <div className="text-sm font-extrabold text-sky-600 tracking-wider uppercase">Bài Tập Thể Dục</div>
+                <select 
+                   value={selectedExercise}
+                   onChange={(e) => setSelectedExercise(e.target.value)}
+                   className="bg-sky-50 text-sky-900 font-bold px-3 py-1 rounded-xl outline-none border border-sky-200 cursor-pointer"
+                 >
+                   {BODY_EXERCISES.map(ex => (
+                     <option key={ex.id} value={ex.id}>{ex.name}</option>
+                   ))}
+                 </select>
+              </div>
               <h2 className="text-2xl font-black text-gray-800 leading-tight mb-4">
                 Làm theo động tác này:
               </h2>

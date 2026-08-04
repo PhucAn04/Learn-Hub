@@ -23,7 +23,7 @@ export interface BodyExercise {
 export const BODY_EXERCISES: BodyExercise[] = [
   // ── 1. Vươn Thở ──────────────────────────────────────
   {
-    id: 'vuon-tho',
+    id: '1',
     name: 'Động Tác Vươn Thở',
     emoji: '🧘',
     description:
@@ -48,7 +48,7 @@ export const BODY_EXERCISES: BodyExercise[] = [
 
   // ── 2. Tay ────────────────────────────────────────────
   {
-    id: 'tay',
+    id: '2',
     name: 'Động Tác Tay',
     emoji: '💪',
     description:
@@ -73,7 +73,7 @@ export const BODY_EXERCISES: BodyExercise[] = [
 
   // ── 3. Lườn ───────────────────────────────────────────
   {
-    id: 'luon',
+    id: '3',
     name: 'Động Tác Lườn',
     emoji: '🤸',
     description:
@@ -105,7 +105,7 @@ export const BODY_EXERCISES: BodyExercise[] = [
 
   // ── 4. Bụng ───────────────────────────────────────────
   {
-    id: 'bung',
+    id: '4',
     name: 'Động Tác Bụng',
     emoji: '🏋️',
     description:
@@ -137,7 +137,7 @@ export const BODY_EXERCISES: BodyExercise[] = [
 
   // ── 5. Chân ───────────────────────────────────────────
   {
-    id: 'chan',
+    id: '5',
     name: 'Động Tác Chân',
     emoji: '🦿',
     description:

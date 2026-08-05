@@ -71,10 +71,11 @@ export default function StudentBodyExercisePage() {
 
   const handleTrainComplete = (
     trainedSamples: StoredSample[],
-    getModelBlobs?: () => Promise<{ jsonBlob: Blob; weightsBlob: Blob } | null>
+    getModelBlobs?: () => Promise<{ jsonBlob: Blob; weightsBlob: Blob } | null>,
+    accuracyScore?: number
   ) => {
     setSamples(trainedSamples);
-    setSubmitScore(100);
+    setSubmitScore(accuracyScore !== undefined ? Math.round(accuracyScore) : 100);
     if (getModelBlobs) setGetModelBlobsFn(() => getModelBlobs);
     setShowSubmitModal(true);
   };

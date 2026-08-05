@@ -63,7 +63,8 @@ interface TeachPanelProps {
   maxVisibleSkeletons?: number;
   onTrainComplete: (
     samples: StoredSample[], 
-    getModelBlobs?: () => Promise<{ jsonBlob: Blob; weightsBlob: Blob } | null>
+    getModelBlobs?: () => Promise<{ jsonBlob: Blob; weightsBlob: Blob } | null>,
+    accuracyScore?: number
   ) => void;
   teacherTemplate?: TeacherTemplate | DatasetResponse;
 }
@@ -633,71 +634,23 @@ export default function TeachPanel({
   // Handle train completion & re-evaluation
   useEffect(() => {
     if (isTraining && trainingProgress >= 100) {
-      setIsTraining(false);
-      setIsTrained(true);
-      playSuccessSound();
-      
-      // Perform initial evaluation immediately
-      const targetDataset = ((teacherTemplate?.samples?.length ?? 0) > 0) ? teacherTemplate!.samples! : samples;
-      let hasIssues = false;
-      
-      const evaluated = samples.map(sample => {
-        const refDataset = (targetDataset === samples) ? samples.filter(s => s.id !== sample.id) : targetDataset;
-        if (refDataset.length === 0) return sample;
+      setTimeout(() => {
+        setIsTraining(false);
+        setIsTrained(true);
+        playSuccessSound();
         
-        const result = classifyKNNDetailed(sample.features, refDataset, kValue);
-        const actualThreshold = Math.min(threshold, kValue);
-        const bestVotes = (result.counts as Record<string, number>)[result.label] || 0;
+        // Perform initial evaluation immediately
+        const targetDataset = ((teacherTemplate?.samples?.length ?? 0) > 0) ? teacherTemplate!.samples! : samples;
+        let hasIssues = false;
         
-        let predictedLabel = 'Chưa rõ ràng';
-        if (bestVotes >= actualThreshold) {
-          predictedLabel = result.label;
-        }
-        
-        const studentClassId = sample.sourceId;
-        const classDef = classes.find(c => c.id === studentClassId);
-        const expectedLabel = classDef ? classDef.label : sample.label;
-        
-        const isMisclassified = (sample.quality?.isBlurry || sample.quality?.isDark) 
-          ? false 
-          : predictedLabel !== expectedLabel;
-        
-        if (isMisclassified || sample.quality?.isBlurry || sample.quality?.isDark || sample.isValid === false) {
-          hasIssues = true;
-        }
-        
-        return {
-          ...sample,
-          aiFeedback: {
-            isMisclassified,
-            predictedLabel,
-            nearestMatchThumbnail: result.nearest[0]?.thumbnail
-          }
-        };
-      });
-      
-      setSamples(evaluated);
-      setIsModelOutdated(false);
-      
-      // Removed auto-popup and auto-submit so the user can test the camera freely
-    }
-  }, [isTraining, trainingProgress, classes, kValue, threshold, teacherTemplate, samples, onTrainComplete]);
-
-  // Re-evaluate when K or threshold changes
-  useEffect(() => {
-    if (isTrained && !isTraining) {
-      setSamples(prevSamples => {
-        let hasChanges = false;
-        const targetDataset = ((teacherTemplate?.samples?.length ?? 0) > 0) ? teacherTemplate!.samples! : prevSamples;
-        
-        const evaluated = prevSamples.map(sample => {
-          const refDataset = (targetDataset === prevSamples) ? prevSamples.filter(s => s.id !== sample.id) : targetDataset;
+        const evaluated = samples.map(sample => {
+          const refDataset = (targetDataset === samples) ? samples.filter(s => s.id !== sample.id) : targetDataset;
           if (refDataset.length === 0) return sample;
           
           const result = classifyKNNDetailed(sample.features, refDataset, kValue);
           const actualThreshold = Math.min(threshold, kValue);
-          
           const bestVotes = (result.counts as Record<string, number>)[result.label] || 0;
+          
           let predictedLabel = 'Chưa rõ ràng';
           if (bestVotes >= actualThreshold) {
             predictedLabel = result.label;
@@ -707,30 +660,82 @@ export default function TeachPanel({
           const classDef = classes.find(c => c.id === studentClassId);
           const expectedLabel = classDef ? classDef.label : sample.label;
           
-          const isMisclassified = (sample.quality?.isBlurry || sample.quality?.isDark)
-            ? false
+          const isMisclassified = (sample.quality?.isBlurry || sample.quality?.isDark) 
+            ? false 
             : predictedLabel !== expectedLabel;
           
-          const currentFeedback = sample.aiFeedback;
-          if (!currentFeedback || currentFeedback.isMisclassified !== isMisclassified || currentFeedback.predictedLabel !== predictedLabel) {
-            hasChanges = true;
-            return {
-              ...sample,
-              aiFeedback: {
-                isMisclassified,
-                predictedLabel,
-                nearestMatchThumbnail: result.nearest[0]?.thumbnail
-              }
-            };
+          if (isMisclassified || sample.quality?.isBlurry || sample.quality?.isDark || sample.isValid === false) {
+            hasIssues = true;
           }
           
-          return sample;
+          return {
+            ...sample,
+            aiFeedback: {
+              isMisclassified,
+              predictedLabel,
+              nearestMatchThumbnail: result.nearest[0]?.thumbnail
+            }
+          };
         });
         
-        return hasChanges ? evaluated : prevSamples;
-      });
+        setSamples(evaluated);
+        setIsModelOutdated(false);
+        
+        // Removed auto-popup and auto-submit so the user can test the camera freely
+      }, 0);
     }
-  }, [kValue, threshold, isTrained, isTraining]);
+  }, [isTraining, trainingProgress, classes, kValue, threshold, teacherTemplate, samples, onTrainComplete]);
+
+  // Re-evaluate when K or threshold changes
+  useEffect(() => {
+    if (isTrained && !isTraining) {
+      setTimeout(() => {
+        setSamples(prevSamples => {
+          let hasChanges = false;
+          const targetDataset = ((teacherTemplate?.samples?.length ?? 0) > 0) ? teacherTemplate!.samples! : prevSamples;
+          
+          const evaluated = prevSamples.map(sample => {
+            const refDataset = (targetDataset === prevSamples) ? prevSamples.filter(s => s.id !== sample.id) : targetDataset;
+            if (refDataset.length === 0) return sample;
+            
+            const result = classifyKNNDetailed(sample.features, refDataset, kValue);
+            const actualThreshold = Math.min(threshold, kValue);
+            
+            const bestVotes = (result.counts as Record<string, number>)[result.label] || 0;
+            let predictedLabel = 'Chưa rõ ràng';
+            if (bestVotes >= actualThreshold) {
+              predictedLabel = result.label;
+            }
+            
+            const studentClassId = sample.sourceId;
+            const classDef = classes.find(c => c.id === studentClassId);
+            const expectedLabel = classDef ? classDef.label : sample.label;
+            
+            const isMisclassified = (sample.quality?.isBlurry || sample.quality?.isDark)
+              ? false
+              : predictedLabel !== expectedLabel;
+            
+            const currentFeedback = sample.aiFeedback;
+            if (!currentFeedback || currentFeedback.isMisclassified !== isMisclassified || currentFeedback.predictedLabel !== predictedLabel) {
+              hasChanges = true;
+              return {
+                ...sample,
+                aiFeedback: {
+                  isMisclassified,
+                  predictedLabel,
+                  nearestMatchThumbnail: result.nearest[0]?.thumbnail
+                }
+              };
+            }
+            
+            return sample;
+          });
+          
+          return hasChanges ? evaluated : prevSamples;
+        });
+      }, 0);
+    }
+  }, [kValue, threshold, isTrained, isTraining, classes, teacherTemplate]);
 
   // ══════════════════════════════════════
   // PREDICTION LOOP
@@ -782,7 +787,7 @@ export default function TeachPanel({
             
             // Lấy kết quả tự tin cao hơn
             let bestPred = pred1NN;
-            let bestConf = pred1NN?.confidences?.[pred1NN.label] || 0;
+            const bestConf = pred1NN?.confidences?.[pred1NN.label] || 0;
             const conf2 = pred2NN?.confidences?.[pred2NN.label] || 0;
             if (conf2 > bestConf) {
               bestPred = pred2NN;
@@ -823,7 +828,7 @@ export default function TeachPanel({
                 currentPredLabel = classes.find(c => c.id === resultNN.label)?.label || 'Chưa rõ ràng... 🤔';
               }
 
-              const teacherSamples: StoredSample[] = (teacherTemplate as any)?.dataset?.samples || teacherTemplate?.samples || [];
+              const teacherSamples: StoredSample[] = (teacherTemplate as TeacherTemplate)?.dataset?.samples || teacherTemplate?.samples || [];
 
               // Adaptive Mentorship: Only cross-check with Teacher Validator if student is in Phase B
               let isAnom = false;
@@ -912,7 +917,7 @@ export default function TeachPanel({
 
     runPrediction();
     return () => cancelAnimationFrame(rafId);
-  }, [isTrained, modelStatus, isFaceMode, isTwoHandMode, samples, allFacesRef, handsRef]);
+  }, [isTrained, modelStatus, isFaceMode, isTwoHandMode, samples, allFacesRef, handsRef, classes, datasetQuality?.isDatasetPerfect, isTraining, kValue, teacherTemplate, threshold]);
 
   // ══════════════════════════════════════
   // CANVAS DRAWING LOOP
@@ -1351,7 +1356,7 @@ export default function TeachPanel({
                 className="w-full accent-pink-400"
               />
               <p className="text-[10px] text-purple-300 mt-1 italic">
-                Nếu không đủ đồng thuận → biểu đồ hiện dấu "?".
+                Nếu không đủ đồng thuận → biểu đồ hiện dấu &quot;?&quot;.
               </p>
             </div>
           </div>
@@ -1401,9 +1406,21 @@ export default function TeachPanel({
         onClose={() => setShowFeedbackModal(false)}
         onProceed={() => {
           setShowFeedbackModal(false);
+          let correctCount = 0;
+          let validCount = 0;
+          samples.forEach(s => {
+             if (s.isValid !== false) {
+                 validCount++;
+                 if (!s.aiFeedback?.isMisclassified && !s.quality?.isBlurry && !s.quality?.isDark) {
+                     correctCount++;
+                 }
+             }
+          });
+          const accuracyScore = validCount > 0 ? (correctCount / validCount) * 100 : 0;
+          
           onTrainComplete(samples, async () => {
             return trainerRef.current ? trainerRef.current.saveToBlobs() : null;
-          });
+          }, accuracyScore);
         }}
         studentSamples={samples}
         teacherTemplate={teacherTemplate}

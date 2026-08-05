@@ -7,13 +7,12 @@ import { useMl5BodyPose } from '@/hooks/useMl5BodyPose';
 import { drawBodySkeleton } from '@/lib/body-drawing';
 import { normalizeBodyKeypoints } from '@/lib/body-pose-classifier';
 import { classifyKNN, classifyKNNDetailed, StoredSample } from '@/lib/knn-classifier';
-import { playClickSound, playSuccessSound } from '@/lib/audio';
+import { playClickSound, playSuccessSound, speakEnglish } from '@/lib/audio';
 import { assessQuality, calculateROI } from '@/lib/image-quality';
 import CameraView from '@/components/CameraView';
 import DataCollector from '@/components/journey/DataCollector';
 import SampleGallery from '@/components/SampleGallery';
 import AIFeedbackModal from '@/components/journey/AIFeedbackModal';
-import { BodyKeypoint } from '@/types/ml5';
 import { TfTrainer } from '@/lib/tf-trainer';
 import { TeacherTemplate, DatasetResponse } from '@/types/models';
 
@@ -27,7 +26,8 @@ interface BodyTeachPanelProps {
   onClassesChange?: (newClasses: { id: string; label: string; emoji?: string }[]) => void;
   onTrainComplete: (
     samples: StoredSample[],
-    getModelBlobs?: () => Promise<{ jsonBlob: Blob; weightsBlob: Blob } | null>
+    getModelBlobs?: () => Promise<{ jsonBlob: Blob; weightsBlob: Blob } | null>,
+    accuracyScore?: number
   ) => void;
 }
 
@@ -50,7 +50,7 @@ export default function BodyTeachPanel({
   // Keep activeClass in sync if classesState changes and activeClass is no longer valid
   useEffect(() => {
     if (classesState.length > 0 && !classesState.find(c => c.id === activeClass)) {
-      setActiveClass(classesState[0].id);
+      setTimeout(() => setActiveClass(classesState[0].id), 0);
     }
   }, [classesState, activeClass]);
 
@@ -184,8 +184,10 @@ export default function BodyTeachPanel({
   useEffect(() => {
     if (countdown === null) return;
     if (countdown === 0) {
-      captureSingleBodyPose();
-      setCountdown(null);
+      setTimeout(() => {
+        captureSingleBodyPose();
+        setCountdown(null);
+      }, 0);
       return;
     }
     const timer = setTimeout(() => {
@@ -252,75 +254,24 @@ export default function BodyTeachPanel({
   // Handle train completion & re-evaluation
   useEffect(() => {
     if (isTraining && trainingProgress >= 100) {
-      setIsTraining(false);
-      setIsTrained(true);
-      playSuccessSound();
-      
-      // Perform initial evaluation immediately
-      const targetDataset = ((teacherTemplate?.samples?.length ?? 0) > 0) ? teacherTemplate!.samples! : samples;
-      let hasIssues = false;
-      
-      const evaluated = samples.map(sample => {
-        const refDataset = (targetDataset === samples) ? samples.filter(s => s.id !== sample.id) : targetDataset;
-        if (refDataset.length === 0) return sample;
+      setTimeout(() => {
+        setIsTraining(false);
+        setIsTrained(true);
+        playSuccessSound();
         
-        const result = classifyKNNDetailed(sample.features, refDataset, kValue);
-        const actualThreshold = Math.min(threshold, kValue);
-        const bestVotes = (result.counts as Record<string, number>)[result.label] || 0;
+        // Perform initial evaluation immediately
+        const targetDataset = ((teacherTemplate?.samples?.length ?? 0) > 0) ? teacherTemplate!.samples! : samples;
+        let hasIssues = false;
+        let correctCount = 0;
         
-        let predictedLabel = 'Chưa rõ ràng';
-        if (bestVotes >= actualThreshold) {
-          predictedLabel = result.label;
-        }
-        
-        const studentClassId = sample.sourceId;
-        const classDef = classesState.find(c => c.id === studentClassId);
-        const expectedLabel = classDef ? classDef.label : sample.label;
-        
-        const isMisclassified = (sample.quality?.isBlurry || sample.quality?.isDark) 
-          ? false 
-          : predictedLabel !== expectedLabel;
-        
-        if (isMisclassified || sample.quality?.isBlurry || sample.quality?.isDark || sample.isValid === false) {
-          hasIssues = true;
-        }
-        
-        return {
-          ...sample,
-          aiFeedback: {
-            isMisclassified,
-            predictedLabel,
-            nearestMatchThumbnail: result.nearest[0]?.thumbnail
-          }
-        };
-      });
-      
-      setSamples(evaluated);
-      setIsModelOutdated(false);
-      
-      if (!hasIssues) {
-        onTrainComplete(evaluated);
-      } else {
-        setShowFeedbackModal(true);
-      }
-    }
-  }, [isTraining, trainingProgress, classesState, kValue, threshold, teacherTemplate, samples, onTrainComplete]);
-
-  // Re-evaluate when K or threshold changes
-  useEffect(() => {
-    if (isTrained && !isTraining) {
-      setSamples(prevSamples => {
-        let hasChanges = false;
-        const targetDataset = ((teacherTemplate?.samples?.length ?? 0) > 0) ? teacherTemplate!.samples! : prevSamples;
-        
-        const evaluated = prevSamples.map(sample => {
-          const refDataset = (targetDataset === prevSamples) ? prevSamples.filter(s => s.id !== sample.id) : targetDataset;
+        const evaluated = samples.map(sample => {
+          const refDataset = (targetDataset === samples) ? samples.filter(s => s.id !== sample.id) : targetDataset;
           if (refDataset.length === 0) return sample;
           
           const result = classifyKNNDetailed(sample.features, refDataset, kValue);
           const actualThreshold = Math.min(threshold, kValue);
-          
           const bestVotes = (result.counts as Record<string, number>)[result.label] || 0;
+          
           let predictedLabel = 'Chưa rõ ràng';
           if (bestVotes >= actualThreshold) {
             predictedLabel = result.label;
@@ -330,30 +281,100 @@ export default function BodyTeachPanel({
           const classDef = classesState.find(c => c.id === studentClassId);
           const expectedLabel = classDef ? classDef.label : sample.label;
           
-          const isMisclassified = (sample.quality?.isBlurry || sample.quality?.isDark)
-            ? false
+          const isMisclassified = (sample.quality?.isBlurry || sample.quality?.isDark) 
+            ? false 
             : predictedLabel !== expectedLabel;
-          
-          const currentFeedback = sample.aiFeedback;
-          if (!currentFeedback || currentFeedback.isMisclassified !== isMisclassified || currentFeedback.predictedLabel !== predictedLabel) {
-            hasChanges = true;
-            return {
-              ...sample,
-              aiFeedback: {
-                isMisclassified,
-                predictedLabel,
-                nearestMatchThumbnail: result.nearest[0]?.thumbnail
-              }
-            };
+            
+          if (sample.isValid !== false) {
+             if (!isMisclassified && !sample.quality?.isBlurry && !sample.quality?.isDark) {
+                 correctCount++;
+             }
           }
           
-          return sample;
+          if (isMisclassified || sample.quality?.isBlurry || sample.quality?.isDark || sample.isValid === false) {
+            hasIssues = true;
+          }
+          
+          return {
+            ...sample,
+            aiFeedback: {
+              isMisclassified,
+              predictedLabel,
+              nearestMatchThumbnail: result.nearest[0]?.thumbnail
+            }
+          };
         });
         
-        return hasChanges ? evaluated : prevSamples;
-      });
+        setSamples(evaluated);
+        setIsModelOutdated(false);
+        
+        const validSamplesCount = samples.filter(s => s.isValid !== false).length;
+        const accuracyScore = validSamplesCount > 0 ? (correctCount / validSamplesCount) * 100 : 0;
+        
+        if (!hasIssues) {
+          speakEnglish('Perfect model!');
+        } else {
+          speakEnglish('Model trained, but check warnings.');
+          setShowFeedbackModal(true);
+        }
+        
+        onTrainComplete(evaluated, async () => {
+          return trainerRef.current ? trainerRef.current.saveToBlobs() : null;
+        }, accuracyScore);
+      }, 0);
     }
-  }, [kValue, threshold, isTrained, isTraining]);
+  }, [isTraining, trainingProgress, samples, kValue, threshold, onTrainComplete, teacherTemplate, classesState]);
+
+  // Re-evaluate when K or threshold changes
+  useEffect(() => {
+    if (isTrained && !isTraining) {
+      setTimeout(() => {
+        setSamples(prevSamples => {
+          let hasChanges = false;
+          const targetDataset = ((teacherTemplate?.samples?.length ?? 0) > 0) ? teacherTemplate!.samples! : prevSamples;
+          
+          const evaluated = prevSamples.map(sample => {
+            const refDataset = (targetDataset === prevSamples) ? prevSamples.filter(s => s.id !== sample.id) : targetDataset;
+            if (refDataset.length === 0) return sample;
+            
+            const result = classifyKNNDetailed(sample.features, refDataset, kValue);
+            const actualThreshold = Math.min(threshold, kValue);
+            
+            const bestVotes = (result.counts as Record<string, number>)[result.label] || 0;
+            let predictedLabel = 'Chưa rõ ràng';
+            if (bestVotes >= actualThreshold) {
+              predictedLabel = result.label;
+            }
+            
+            const studentClassId = sample.sourceId;
+            const classDef = classesState.find(c => c.id === studentClassId);
+            const expectedLabel = classDef ? classDef.label : sample.label;
+            
+            const isMisclassified = (sample.quality?.isBlurry || sample.quality?.isDark)
+              ? false
+              : predictedLabel !== expectedLabel;
+            
+            const currentFeedback = sample.aiFeedback;
+            if (!currentFeedback || currentFeedback.isMisclassified !== isMisclassified || currentFeedback.predictedLabel !== predictedLabel) {
+              hasChanges = true;
+              return {
+                ...sample,
+                aiFeedback: {
+                  isMisclassified,
+                  predictedLabel,
+                  nearestMatchThumbnail: result.nearest[0]?.thumbnail
+                }
+              };
+            }
+            
+            return sample;
+          });
+          
+          return hasChanges ? evaluated : prevSamples;
+        });
+      }, 0);
+    }
+  }, [kValue, threshold, isTrained, isTraining, classesState, teacherTemplate]);
 
   const handleClearClass = (classId: string) => {
     if (confirm('Bé có chắc muốn xóa hết ảnh của nhãn này không? 🗑️')) {

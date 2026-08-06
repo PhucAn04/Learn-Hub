@@ -756,7 +756,7 @@ export default function TeachPanel({
             const resultNN = await trainerRef.current!.predict(features);
             
             if (resultNN && resultNN.label) {
-              setPredictedLabel(classes.find(c => c.id === resultNN.label)?.label || 'Chưa rõ ràng... 🤔');
+              setPredictedLabel(classes.find(c => c.id === resultNN.label || c.label === resultNN.label)?.label || resultNN.label || 'Chưa rõ ràng... 🤔');
             }
             if (resultNN && resultNN.confidences) {
               setNnConfidences(resultNN.confidences);
@@ -794,7 +794,7 @@ export default function TeachPanel({
             }
 
             if (bestPred && bestPred.label) {
-              setPredictedLabel(classes.find(c => c.id === bestPred.label)?.label || 'Chưa rõ ràng... 🤔');
+              setPredictedLabel(classes.find(c => c.id === bestPred.label || c.label === bestPred.label)?.label || bestPred.label || 'Chưa rõ ràng... 🤔');
             }
             if (bestPred && bestPred.confidences) {
               setNnConfidences(bestPred.confidences);
@@ -804,18 +804,27 @@ export default function TeachPanel({
             const isAnomaly2 = pred2KNN.minDistance > 0.7;
             setIsAnomaly(isAnomaly1 && isAnomaly2);
 
-            if (pred1NN.label === pred2NN.label) {
-              setPredictedLabel(pred1NN.label);
+            if (isAnomaly1 && isAnomaly2 && datasetQuality?.isDatasetPerfect) {
+               setAnomalyMessage('Khác thường, không có dữ liệu này trong thư viện ảnh của bé!');
+               setPredictedLabel('Khác thường, không có dữ liệu này trong thư viện ảnh của bé!');
+               setKNearestIds([]);
+               setVoteCounts({});
+               setNnConfidences(null);
             } else {
-              setPredictedLabel(`Tay 1: ${pred1NN.label} | Tay 2: ${pred2NN.label}`);
+              setAnomalyMessage(undefined);
+              if (pred1NN.label === pred2NN.label) {
+                setPredictedLabel(pred1NN.label);
+              } else {
+                setPredictedLabel(`Tay 1: ${pred1NN.label} | Tay 2: ${pred2NN.label}`);
+              }
+              
+              setKNearestIds([...pred1KNN.kNearestIds, ...pred2KNN.kNearestIds]);
+              const merged: Record<string, number> = { ...pred1KNN.voteCounts };
+              Object.entries(pred2KNN.voteCounts).forEach(([k, v]) => {
+                merged[k] = (merged[k] || 0) + v;
+              });
+              setVoteCounts(merged);
             }
-            
-            setKNearestIds([...pred1KNN.kNearestIds, ...pred2KNN.kNearestIds]);
-            const merged: Record<string, number> = { ...pred1KNN.voteCounts };
-            Object.entries(pred2KNN.voteCounts).forEach(([k, v]) => {
-              merged[k] = (merged[k] || 0) + v;
-            });
-            setVoteCounts(merged);
           } else {
             const kps = hands[0].keypoints;
             if (kps && kps.length >= 21) {
@@ -825,7 +834,7 @@ export default function TeachPanel({
               
               let currentPredLabel = 'Chưa rõ ràng... 🤔';
               if (resultNN && resultNN.label) {
-                currentPredLabel = classes.find(c => c.id === resultNN.label)?.label || 'Chưa rõ ràng... 🤔';
+                currentPredLabel = classes.find(c => c.id === resultNN.label || c.label === resultNN.label)?.label || resultNN.label || 'Chưa rõ ràng... 🤔';
               }
 
               const teacherSamples: StoredSample[] = (teacherTemplate as TeacherTemplate)?.dataset?.samples || teacherTemplate?.samples || [];
@@ -852,7 +861,7 @@ export default function TeachPanel({
                   } else if (crossCheck.isMissingData) {
                     // It's missing data, not completely OOD. Keep the Teacher's predicted label if any.
                     if (crossCheck.teacherLabel) {
-                      currentPredLabel = classes.find(c => c.id === crossCheck.teacherLabel)?.label || currentPredLabel;
+                      currentPredLabel = classes.find(c => c.id === crossCheck.teacherLabel || c.label === crossCheck.teacherLabel)?.label || crossCheck.teacherLabel || currentPredLabel;
                     }
                     if (crossCheck.teacherNearestSampleIds) {
                       const hints = teacherSamples
@@ -875,7 +884,14 @@ export default function TeachPanel({
                 setIsMissingData(false);
                 isAnom = resultKNN.minDistance > 0.65;
                 setIsAnomaly(isAnom);
-                setAnomalyMessage(undefined);
+                
+                if (isAnom && datasetQuality?.isDatasetPerfect) {
+                  isOODOrConflict = true;
+                  setAnomalyMessage('Khác thường, không có dữ liệu này trong thư viện ảnh của bé!');
+                  currentPredLabel = 'Khác thường, không có dữ liệu này trong thư viện ảnh của bé!';
+                } else {
+                  setAnomalyMessage(undefined);
+                }
               }
 
               setPredictedLabel(currentPredLabel);

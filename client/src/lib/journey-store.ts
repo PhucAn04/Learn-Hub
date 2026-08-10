@@ -121,7 +121,9 @@ export function useJourneyStore(): [JourneyState, UpdateFn] {
 
   // Hydrate from localStorage once mounted on the client
   useEffect(() => {
-    setState(getJourneyState());
+    queueMicrotask(() => {
+      setState(getJourneyState());
+    });
   }, []);
 
   const update = useCallback<UpdateFn>((patch) => {

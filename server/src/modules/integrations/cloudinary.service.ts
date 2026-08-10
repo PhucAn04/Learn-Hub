@@ -1,5 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { v2 as cloudinary, UploadApiResponse, UploadApiErrorResponse } from 'cloudinary';
+import {
+  v2 as cloudinary,
+  UploadApiResponse,
+  UploadApiErrorResponse,
+} from 'cloudinary';
 import * as streamifier from 'streamifier';
 
 @Injectable()
@@ -21,7 +25,7 @@ export class CloudinaryService {
     buffer: Buffer,
     folder: string,
     filename: string,
-    resourceType: 'auto' | 'image' | 'video' | 'raw' = 'raw'
+    resourceType: 'auto' | 'image' | 'video' | 'raw' = 'raw',
   ): Promise<UploadApiResponse> {
     return new Promise((resolve, reject) => {
       const uploadStream = cloudinary.uploader.upload_stream(
@@ -31,10 +35,13 @@ export class CloudinaryService {
           resource_type: resourceType,
           overwrite: true,
         },
-        (error: UploadApiErrorResponse, result: UploadApiResponse) => {
-          if (error) {
-            this.logger.error(`Cloudinary upload failed: ${error.message}`);
-            return reject(error);
+        (error?: UploadApiErrorResponse, result?: UploadApiResponse) => {
+          if (error || !result) {
+            const uploadErr = new Error(
+              error?.message || 'Cloudinary upload failed with no response',
+            );
+            this.logger.error(`Cloudinary upload failed: ${uploadErr.message}`);
+            return reject(uploadErr);
           }
           resolve(result);
         },

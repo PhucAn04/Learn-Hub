@@ -209,6 +209,9 @@ export const api = {
         k?: number;
       };
       trainingLogs?: { epoch: number; loss: number; acc: number }[];
+      version?: number;
+      parentModelId?: string;
+      evaluation?: Record<string, unknown>;
     }
   ) {
     return request<ModelResponse>(`/models/${modelId}/artifacts`, {
@@ -236,6 +239,81 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify({ isPublished }),
     });
+  },
+
+  // ── Model Chain (Version Tracking) ──
+
+  async getModelChain(challengeType: string) {
+    return request<ModelResponse[]>(`/models/chain/${encodeURIComponent(challengeType)}`, {
+      method: 'GET',
+    });
+  },
+
+  // ── Action Logs ──
+
+  async createActionLogs(
+    modelId: string,
+    logs: {
+      action: string;
+      details?: {
+        samplesAdded?: number;
+        samplesDeleted?: number;
+        targetLabel?: string;
+        wasWeakestLabel?: boolean;
+        triggerSource?: string;
+      };
+    }[]
+  ) {
+    return request<unknown>('/action-logs', {
+      method: 'POST',
+      body: JSON.stringify({ modelId, logs }),
+    });
+  },
+
+  async getActionLogsByModel(modelId: string) {
+    return request<{ id: string; action: string; details?: Record<string, unknown>; createdAt: string }[]>(
+      `/action-logs/model/${modelId}`,
+      { method: 'GET' }
+    );
+  },
+
+  // ── Assessments (Skill Scores) ──
+
+  async upsertAssessment(data: {
+    challengeType: string;
+    modelChain: {
+      modelId: string;
+      version: number;
+      testScore: number;
+      sampleCount: number;
+      classSummary: Record<string, number>;
+    }[];
+    dataCurationScore: number;
+    debuggingScore: number;
+    improvementScore: number;
+    overallScore: number;
+    narrative?: {
+      summary: string;
+      strengths: string[];
+      improvements: string[];
+    };
+  }) {
+    return request<unknown>('/assessments', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async getMyAssessments() {
+    return request<unknown[]>('/assessments/my', { method: 'GET' });
+  },
+
+  async getAllAssessments() {
+    return request<unknown[]>('/assessments/all', { method: 'GET' });
+  },
+
+  async getAssessmentsByUser(userId: string) {
+    return request<unknown[]>(`/assessments/user/${userId}`, { method: 'GET' });
   },
 };
 

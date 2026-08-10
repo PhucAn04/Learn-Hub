@@ -43,6 +43,56 @@ export class Model {
   @Column({ type: 'text', nullable: true })
   teacherFeedback?: string;
 
+  // ── MỚI: Version Chain ──
+  @Column({ default: 1 })
+  version!: number;
+
+  @Column({ type: 'uuid', nullable: true })
+  parentModelId?: string;
+
+  @ManyToOne(() => Model, { nullable: true, onDelete: 'SET NULL' })
+  @JoinColumn({ name: 'parentModelId' })
+  parentModel?: Model;
+
+  // ── MỚI: Evaluation (gộp tất cả kết quả đánh giá) ──
+  @Column({ type: 'json', nullable: true })
+  evaluation?: {
+    goldenAccuracy: number;
+    goldenCorrectCount: number;
+    goldenTotalCount: number;
+    confusionMatrix: {
+      labels: string[];
+      matrix: number[][];
+      perClassAccuracy: Record<string, number>;
+      weakestLabel: string;
+      strongestLabel: string;
+      misclassifications: {
+        trueLabel: string;
+        predictedLabel: string;
+        count: number;
+        percentage: number;
+      }[];
+    };
+    crossCheck: {
+      hasTeacherTemplate: boolean;
+      totalSamples: number;
+      conflictCount: number;
+      agreementRate: number;
+    };
+    datasetHealth: {
+      sampleCount: number;
+      classSummary: Record<string, number>;
+      balanceRatio: number;
+      isImbalanced: boolean;
+      phase: 'PHASE_A' | 'PHASE_B';
+      qualityScore: number;
+      blurrySampleCount: number;
+      darkSampleCount: number;
+    };
+    evaluatedAt: string;
+    evaluationVersion: string;
+  };
+
   @CreateDateColumn()
   createdAt!: Date;
 

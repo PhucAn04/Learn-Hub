@@ -48,12 +48,15 @@ export class DatasetsService {
         buffer,
         'learn-hub/datasets',
         fileId,
-        'raw'
+        'raw',
       );
       fileUrl = uploadResult.secure_url;
       this.logger.log(`Uploaded dataset JSON to Cloudinary: ${fileUrl}`);
     } catch (err) {
-      this.logger.error('Failed to upload dataset to Cloudinary, falling back to local file system', err);
+      this.logger.error(
+        'Failed to upload dataset to Cloudinary, falling back to local file system',
+        err,
+      );
       // Fallback: Save samples to local JSON file
       const filePath = path.join(this.uploadDir, fileName);
       await fs.promises.writeFile(filePath, buffer, 'utf-8');
@@ -98,7 +101,7 @@ export class DatasetsService {
       savedDataset.id,
       dto.challengeType,
       samples,
-      buffer
+      buffer,
     ).catch((err: unknown) => {
       const errMsg = err instanceof Error ? err.message : String(err);
       this.logger.error(`Background upload to Google Drive failed: ${errMsg}`);
@@ -140,7 +143,7 @@ export class DatasetsService {
             datasetJsonBuffer,
             `${datasetId}.json`,
             'application/json',
-            folderId
+            folderId,
           );
         } catch (err) {
           this.logger.error(`Failed to upload JSON to Google Drive: ${err}`);
@@ -241,10 +244,13 @@ export class DatasetsService {
       try {
         const response = await fetch(dataset.dataFileUrl);
         if (!response.ok) throw new Error('Network response was not ok');
-        const content = await response.json();
-        return content as TrainingSample[];
+        const content = (await response.json()) as TrainingSample[];
+        return content;
       } catch (err) {
-        this.logger.error(`Failed to fetch dataset from cloud: ${dataset.dataFileUrl}`, err);
+        this.logger.error(
+          `Failed to fetch dataset from cloud: ${dataset.dataFileUrl}`,
+          err,
+        );
         throw new NotFoundException('Lỗi khi tải dữ liệu từ máy chủ đám mây.');
       }
     }

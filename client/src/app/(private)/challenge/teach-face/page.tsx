@@ -1,16 +1,19 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { ArrowLeft, HelpCircle, X } from 'lucide-react';
+import { ArrowLeft, HelpCircle } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
 import { playSuccessSound, speakEnglish, playClickSound } from '@/lib/audio';
 import { StoredSample } from '@/lib/knn-classifier';
 import { calculateAutoHyperparameters } from '@/lib/ml-classifier';
-import { DatasetResponse } from '@/types/models';
+import { DatasetResponse, ModelResponse } from '@/types/models';
 import { uploadSamplesToCloudinary, isCloudinaryConfigured } from '@/lib/cloudinary';
 import TeachPanel from '@/components/journey/TeachPanel';
+import { GOLDEN_FACE_DATASET } from '@/lib/golden-face-dataset';
+import ReportCard from '@/components/journey/ReportCard';
+import { useModelEvaluation } from '@/hooks/useModelEvaluation';
 
 const CLASSES = [
   { id: 'class_1', label: 'Vui vẻ (Happy)', emoji: '😀' },
@@ -26,6 +29,8 @@ export default function TeachFacePage() {
   const [samples, setSamples] = useState<StoredSample[]>([]);
   const [showSubmitModal, setShowSubmitModal] = useState(false);
   const [teacherTemplate, setTeacherTemplate] = useState<DatasetResponse | null>(null);
+  const [showReportCard, setShowReportCard] = useState(false);
+  const [createdModelId, setCreatedModelId] = useState<string | null>(null);
 
   useEffect(() => {
     api.getTemplates('teach-face')
@@ -52,6 +57,19 @@ export default function TeachFacePage() {
   const [uploadProgress, setUploadProgress] = useState('');
   const [submitSuccess, setSubmitSuccess] = useState(false);
   const [getModelBlobsFn, setGetModelBlobsFn] = useState<(() => Promise<{ jsonBlob: Blob; weightsBlob: Blob } | null>) | null>(null);
+
+  const {
+    evaluation,
+    previousEvaluation,
+    modelVersion,
+    isEvaluating,
+    runEvaluation,
+  } = useModelEvaluation({
+    challengeType: 'teach-face',
+    classes: CLASSES,
+    goldenDataset: GOLDEN_FACE_DATASET,
+    teacherSamples: teacherTemplate?.samples,
+  });
 
   const handleTrainComplete = (
     trainedSamples: StoredSample[],
@@ -104,21 +122,124 @@ export default function TeachFacePage() {
             });
           }
         }
+
+        setCreatedModelId(created.model.id);
+
+        // Run evaluation
+        setUploadProgress('Đang đánh giá AI...');
+        await runEvaluation(processedSamples, created.model.id);
       }
 
       await api.submitAssignment(submitScore, { samples: processedSamples }, `${reflectionAnswer} | Lời nhắn: ${teacherMessage}`, 'teach-face');
       await api.saveProgress('teach-face', submitScore);
       
-      setSubmitSuccess(true);
       setUploadProgress('');
+      setShowSubmitModal(false);
+      setShowReportCard(true);
       playSuccessSound();
-      speakEnglish('Submission successful!');
     } catch (err) {
       console.error('Failed to submit assignment', err);
       setUploadProgress('');
       speakEnglish('Submission failed!');
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const handleRevise = () => {
+    setShowReportCard(false);
+    setShowSubmitModal(false);
+    setSubmitSuccess(false);
+    setCreatedModelId(null);
+    playClickSound();
+  };
+
+  const handleFinalize = async () => {
+    try {
+      setUploadProgress('Đang tổng hợp điểm kỹ năng...');
+      setIsSubmitting(true);
+      setShowReportCard(false);
+      setShowSubmitModal(true);
+
+      const chain = await api.getModelChain('teach-face').catch(() => []);
+      
+      let dataCurationScore = 0;
+      let debuggingScore = 0;
+      let improvementScore = 0;
+      let overallScore = 0;
+      const strengths: string[] = [];
+      const improvements: string[] = [];
+      let summary = '';
+
+      if (chain.length > 0) {
+        const latest = chain[chain.length - 1];
+        const eval_ = latest.evaluation;
+        
+        if (eval_?.datasetHealth) {
+          const dh = eval_.datasetHealth;
+          dataCurationScore = Math.round((dh.qualityScore + dh.balanceRatio * 100) / 2);
+          if (dh.blurrySampleCount > 0) dataCurationScore -= dh.blurrySampleCount * 2;
+          if (dh.darkSampleCount > 0) dataCurationScore -= dh.darkSampleCount * 2;
+          dataCurationScore = Math.max(0, Math.min(100, dataCurationScore));
+        }
+
+        if (eval_?.confusionMatrix) {
+          const cm = eval_.confusionMatrix;
+          const minAcc = Math.min(...Object.values(cm.perClassAccuracy) as number[]);
+          debuggingScore = minAcc;
+        }
+
+        if (chain.length > 1) {
+          const first = chain[0];
+          const improvement = latest.testScore - first.testScore;
+          improvementScore = Math.max(0, Math.min(100, 50 + improvement));
+        } else {
+          improvementScore = dataCurationScore;
+        }
+
+        overallScore = Math.round((dataCurationScore + debuggingScore + improvementScore) / 3);
+
+        if (overallScore >= 80) summary = 'Bé thể hiện kỹ năng dạy AI xuất sắc!';
+        else if (overallScore >= 60) summary = 'Bé đã biết cách dạy AI, nhưng cần cẩn thận hơn một chút.';
+        else summary = 'Bé cần chú ý chụp ảnh rõ nét và đủ số lượng cho các nhãn nhé.';
+
+        if (dataCurationScore >= 80) strengths.push('Chụp ảnh rõ nét và dữ liệu cân bằng tốt.');
+        else improvements.push('Cần chụp ảnh rõ nét hơn, tránh ảnh bị mờ hoặc tối.');
+
+        if (debuggingScore >= 80) strengths.push('Không có nhãn nào bị yếu quá mức, AI học đều.');
+        else improvements.push(`Cải thiện thêm cho nhãn "${eval_?.confusionMatrix?.weakestLabel || 'nhãn yếu nhất'}".`);
+
+        const formattedChain = chain.map((m: ModelResponse) => ({
+          modelId: m.id,
+          version: m.version || 1,
+          testScore: m.testScore,
+          sampleCount: m.evaluation?.datasetHealth?.sampleCount || 0,
+          classSummary: m.evaluation?.datasetHealth?.classSummary || {}
+        }));
+
+        await api.upsertAssessment({
+          challengeType: 'teach-face',
+          modelChain: formattedChain,
+          dataCurationScore,
+          debuggingScore,
+          improvementScore,
+          overallScore,
+          narrative: {
+            summary,
+            strengths,
+            improvements,
+          }
+        });
+      }
+
+      setSubmitSuccess(true);
+      playSuccessSound();
+      speakEnglish('Submission successful!');
+    } catch (err) {
+      console.error('Failed to finalize and create assessment', err);
+    } finally {
+      setIsSubmitting(false);
+      setUploadProgress('');
     }
   };
 
@@ -143,7 +264,7 @@ export default function TeachFacePage() {
         </div>
 
         {/* Teach Panel */}
-        {!showSubmitModal && (
+        {!showSubmitModal && !showReportCard && (
           <TeachPanel
             mode="emotion"
             classes={CLASSES}
@@ -153,7 +274,18 @@ export default function TeachFacePage() {
           />
         )}
 
-
+        {/* ReportCard Modal */}
+        {showReportCard && evaluation && (
+          <ReportCard
+            isOpen={showReportCard}
+            onClose={() => setShowReportCard(false)}
+            onRevise={handleRevise}
+            onFinalize={handleFinalize}
+            evaluation={evaluation}
+            version={modelVersion}
+            previousEvaluation={previousEvaluation}
+          />
+        )}
 
         {/* Submission Modal */}
         {showSubmitModal && (

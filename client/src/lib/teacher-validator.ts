@@ -243,3 +243,76 @@ export async function validateStudentSamplesWithTeacherModel(
   const accuracyScore = Math.round((correctCount / studentSamples.length) * 100);
   return { results, accuracyScore };
 }
+
+export interface TeacherValidationResult {
+  isValid: boolean;
+  errors: string[];
+  warnings: string[];
+}
+
+/**
+ * Validates a dataset created by a teacher before it can be used as a template
+ * or golden dataset.
+ */
+export function validateTeacherTemplate(
+  teacherSamples: StoredSample[], 
+  classes: { id: string; label: string }[]
+): TeacherValidationResult {
+  const result: TeacherValidationResult = {
+    isValid: true,
+    errors: [],
+    warnings: [],
+  };
+
+  if (!teacherSamples || teacherSamples.length === 0) {
+    result.isValid = false;
+    result.errors.push('Dataset trống. Vui lòng thêm dữ liệu.');
+    return result;
+  }
+
+  const counts: Record<string, number> = {};
+  classes.forEach(c => { counts[c.id] = 0; });
+
+  teacherSamples.forEach(sample => {
+    const classId = sample.sourceId || classes.find(c => c.label === sample.label)?.id;
+    if (classId) {
+      if (counts[classId] !== undefined) {
+        counts[classId]++;
+      } else {
+        counts[classId] = 1;
+      }
+    }
+  });
+
+  const MIN_SAMPLES_PER_CLASS = 15;
+  const RECOMMENDED_SAMPLES = 25;
+
+  let minCount = Infinity;
+  let maxCount = -Infinity;
+
+  classes.forEach(c => {
+    const count = counts[c.id] || 0;
+    if (count < minCount) minCount = count;
+    if (count > maxCount) maxCount = count;
+
+    if (count < MIN_SAMPLES_PER_CLASS) {
+      result.isValid = false;
+      result.errors.push(`Nhãn "${c.label}" chỉ có ${count} ảnh. Cần ít nhất ${MIN_SAMPLES_PER_CLASS} ảnh.`);
+    } else if (count < RECOMMENDED_SAMPLES) {
+      result.warnings.push(`Nhãn "${c.label}" nên có từ ${RECOMMENDED_SAMPLES} ảnh trở lên để AI học chuẩn xác.`);
+    }
+  });
+
+  if (minCount === Infinity) minCount = 0;
+  if (maxCount === -Infinity) maxCount = 0;
+
+  // Imbalance check
+  if (minCount > 0 && maxCount > 0) {
+    const ratio = minCount / maxCount;
+    if (ratio < 0.6) {
+      result.warnings.push(`Dữ liệu mất cân bằng. Nhãn ít nhất (${minCount}) so với nhãn nhiều nhất (${maxCount}) chênh lệch quá lớn.`);
+    }
+  }
+
+  return result;
+}

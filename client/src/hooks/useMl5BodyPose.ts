@@ -18,7 +18,9 @@ export function useMl5BodyPose(
 
   useEffect(() => {
     if (!cameraActive) {
-      setModelStatus('loading');
+      queueMicrotask(() => {
+        setModelStatus('loading');
+      });
       return;
     }
 

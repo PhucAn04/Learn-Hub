@@ -1,3 +1,4 @@
+import 'multer';
 import { Injectable, NotFoundException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -47,10 +48,20 @@ export class ModelsService {
     return queryBuilder.getMany();
   }
 
+  async getModelChain(userId: string, challengeType: string): Promise<Model[]> {
+    return this.modelRepository
+      .createQueryBuilder('model')
+      .leftJoinAndSelect('model.dataset', 'dataset')
+      .where('model.userId = :userId', { userId })
+      .andWhere('dataset.challengeType = :challengeType', { challengeType })
+      .orderBy('model.version', 'ASC')
+      .getMany();
+  }
+
   async getModelById(modelId: string): Promise<Model> {
     const model = await this.modelRepository.findOne({
       where: { id: modelId },
-      relations: { dataset: true, user: true },
+      relations: { dataset: true, user: true, parentModel: true },
     });
     if (!model) {
       throw new NotFoundException('Model không tồn tại.');
@@ -72,6 +83,9 @@ export class ModelsService {
         k?: number;
       };
       trainingLogs?: { epoch: number; loss: number; acc: number }[];
+      version?: number;
+      parentModelId?: string;
+      evaluation?: Model['evaluation'];
     },
   ): Promise<Model> {
     const model = await this.modelRepository.findOne({
@@ -89,6 +103,10 @@ export class ModelsService {
     if (data.testScore !== undefined) model.testScore = data.testScore;
     if (data.hyperparameters) model.hyperparameters = data.hyperparameters;
     if (data.trainingLogs) model.trainingLogs = data.trainingLogs;
+    if (data.version !== undefined) model.version = data.version;
+    if (data.parentModelId !== undefined)
+      model.parentModelId = data.parentModelId;
+    if (data.evaluation) model.evaluation = data.evaluation;
 
     return this.modelRepository.save(model);
   }
@@ -102,7 +120,9 @@ export class ModelsService {
       where: { id: modelId, userId },
     });
     if (!model) {
-      throw new NotFoundException('Model không tồn tại hoặc bạn không có quyền truy cập.');
+      throw new NotFoundException(
+        'Model không tồn tại hoặc bạn không có quyền truy cập.',
+      );
     }
 
     let folderUrl = '';
@@ -113,7 +133,7 @@ export class ModelsService {
           file.buffer,
           `learn-hub/models/${modelId}`,
           file.originalname,
-          'raw'
+          'raw',
         );
         // Save the base folder URL (by removing the filename from secure_url)
         if (!folderUrl) {
@@ -132,33 +152,44 @@ export class ModelsService {
     }
 
     // [Background Task] Upload model to Google Drive if user is connected
-    this.usersService.findById(userId).then(async (user) => {
-      if (user && user.googleAccessToken) {
-        this.logger.log(`Starting background upload to Google Drive for model ${modelId}`);
-        const folderName = `Learn-Hub-Model-${new Date().toISOString().split('T')[0]}`;
-        try {
-          const folderId = await this.googleDriveService.ensureAppFolder(
-            user.googleAccessToken,
-            folderName,
+    this.usersService
+      .findById(userId)
+      .then(async (user) => {
+        if (user && user.googleAccessToken) {
+          this.logger.log(
+            `Starting background upload to Google Drive for model ${modelId}`,
           );
-          for (const file of files) {
-            await this.googleDriveService.uploadFile(
+          const folderName = `Learn-Hub-Model-${new Date().toISOString().split('T')[0]}`;
+          try {
+            const folderId = await this.googleDriveService.ensureAppFolder(
               user.googleAccessToken,
-              file.buffer,
-              file.originalname,
-              'application/octet-stream',
-              folderId
+              folderName,
+            );
+            for (const file of files) {
+              await this.googleDriveService.uploadFile(
+                user.googleAccessToken,
+                file.buffer,
+                file.originalname,
+                'application/octet-stream',
+                folderId,
+              );
+            }
+            this.logger.log(
+              `Finished Google Drive upload for model ${modelId}`,
+            );
+          } catch (err) {
+            const errMsg = err instanceof Error ? err.message : String(err);
+            this.logger.error(
+              `Background upload to Google Drive failed: ${errMsg}`,
             );
           }
-          this.logger.log(`Finished Google Drive upload for model ${modelId}`);
-        } catch (err) {
-          const errMsg = err instanceof Error ? err.message : String(err);
-          this.logger.error(`Background upload to Google Drive failed: ${errMsg}`);
         }
-      }
-    }).catch(err => {
-      this.logger.error(`Failed to fetch user for Google Drive upload: ${err}`);
-    });
+      })
+      .catch((err) => {
+        this.logger.error(
+          `Failed to fetch user for Google Drive upload: ${err}`,
+        );
+      });
 
     return model;
   }

@@ -100,6 +100,124 @@ export interface ModelResponse {
   };
   trainingLogs?: { epoch: number; loss: number; acc: number }[];
   teacherFeedback?: string;
+  version?: number;
+  parentModelId?: string;
+  evaluation?: ModelEvaluation;
+  createdAt: string;
+}
+
+// ── Model Evaluation (stored per model version) ──────────────────────────────
+
+export interface ModelEvaluation {
+  goldenAccuracy: number;
+  goldenCorrectCount: number;
+  goldenTotalCount: number;
+  confusionMatrix: {
+    labels: string[];
+    matrix: number[][];
+    perClassAccuracy: Record<string, number>;
+    perClassPrecision?: Record<string, number>;
+    perClassRecall?: Record<string, number>;
+    weakestLabel: string;
+    strongestLabel: string;
+    misclassifications: {
+      trueLabel: string;
+      predictedLabel: string;
+      count: number;
+      percentage: number;
+    }[];
+  };
+  crossCheck: {
+    hasTeacherTemplate: boolean;
+    totalSamples: number;
+    conflictCount: number;
+    agreementRate: number;
+  };
+  datasetHealth: {
+    sampleCount: number;
+    classSummary: Record<string, number>;
+    balanceRatio: number;
+    isImbalanced: boolean;
+    phase: 'PHASE_A' | 'PHASE_B';
+    qualityScore: number;
+    blurrySampleCount: number;
+    darkSampleCount: number;
+  };
+  // ── Dẫn Chứng Cụ Thể (cho GV drill-down) ──
+  sampleEvidence?: {
+    // Ảnh có vấn đề chất lượng (mờ/tối) — kèm thumbnail
+    qualityIssues: {
+      label: string;
+      isBlurry: boolean;
+      isDark: boolean;
+      brightness?: number;
+      blurScore?: number;
+      thumbnail?: string;
+    }[];
+    // Ảnh bị AI dự đoán sai nhãn — kèm thumbnail
+    misclassifiedSamples: {
+      label: string;
+      predictedLabel: string;
+      thumbnail?: string;
+    }[];
+    // Kết quả từng câu hỏi kiểm tra Golden Test
+    goldenTestDetails: {
+      expectedLabel: string;
+      predictedLabel: string;
+      isCorrect: boolean;
+      confidence: number;
+    }[];
+    // Phân bổ ảnh từng nhãn kèm thumbnails mẫu (tối đa 4 ảnh/nhãn)
+    classPreviews: {
+      label: string;
+      count: number;
+      sampleThumbnails: string[];
+    }[];
+  };
+  evaluatedAt: string;
+  evaluationVersion: string;
+}
+
+// ── Assessment (skill scores per student per challenge) ──────────────────────
+
+export interface AssessmentResponse {
+  id: string;
+  userId: string;
+  challengeType: string;
+  modelChain: {
+    modelId: string;
+    version: number;
+    testScore: number;
+    sampleCount: number;
+    classSummary: Record<string, number>;
+  }[];
+  dataCurationScore: number;
+  debuggingScore: number;
+  improvementScore: number;
+  overallScore: number;
+  narrative?: {
+    summary: string;
+    strengths: string[];
+    improvements: string[];
+  };
+  createdAt: string;
+  user?: UserProfile;
+}
+
+// ── Action Log (student behavior tracking) ───────────────────────────────────
+
+export interface ActionLogResponse {
+  id: string;
+  userId: string;
+  modelId: string;
+  action: string;
+  details?: {
+    samplesAdded?: number;
+    samplesDeleted?: number;
+    targetLabel?: string;
+    wasWeakestLabel?: boolean;
+    triggerSource?: string;
+  };
   createdAt: string;
 }
 

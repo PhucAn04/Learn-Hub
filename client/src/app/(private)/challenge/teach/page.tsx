@@ -1,16 +1,19 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { ArrowLeft, HelpCircle, X } from 'lucide-react';
+import { ArrowLeft, HelpCircle } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
 import { playSuccessSound, speakEnglish, playClickSound } from '@/lib/audio';
 import { StoredSample } from '@/lib/knn-classifier';
 import { calculateAutoHyperparameters } from '@/lib/ml-classifier';
-import { DatasetResponse } from '@/types/models';
+import { DatasetResponse, ModelResponse } from '@/types/models';
 import { uploadSamplesToCloudinary, isCloudinaryConfigured } from '@/lib/cloudinary';
+import { GOLDEN_TEST_DATASET } from '@/lib/golden-dataset';
 import TeachPanel from '@/components/journey/TeachPanel';
+import ReportCard from '@/components/journey/ReportCard';
+import { useModelEvaluation } from '@/hooks/useModelEvaluation';
 
 const CLASSES = [
   { id: 'class_1', label: '1 Ngón Tay ☝️', emoji: '☝️' },
@@ -23,6 +26,7 @@ export default function TeachAiPage() {
   // States
   const [samples, setSamples] = useState<StoredSample[]>([]);
   const [showSubmitModal, setShowSubmitModal] = useState(false);
+  const [showReportCard, setShowReportCard] = useState(false);
   const [teacherTemplate, setTeacherTemplate] = useState<DatasetResponse | null>(null);
 
   useEffect(() => {
@@ -50,6 +54,21 @@ export default function TeachAiPage() {
   const [uploadProgress, setUploadProgress] = useState('');
   const [submitSuccess, setSubmitSuccess] = useState(false);
   const [getModelBlobsFn, setGetModelBlobsFn] = useState<(() => Promise<{ jsonBlob: Blob; weightsBlob: Blob } | null>) | null>(null);
+  const [createdModelId, setCreatedModelId] = useState<string | null>(null);
+
+  // Evaluation Hook
+  const {
+    evaluation,
+    previousEvaluation,
+    modelVersion,
+    isEvaluating,
+    runEvaluation,
+  } = useModelEvaluation({
+    challengeType: 'teach',
+    classes: CLASSES,
+    goldenDataset: GOLDEN_TEST_DATASET,
+    teacherSamples: teacherTemplate?.samples,
+  });
 
   const handleTrainComplete = (
     trainedSamples: StoredSample[],
@@ -83,6 +102,8 @@ export default function TeachAiPage() {
 
       const created = await api.createDataset('teach', processedSamples, submitScore, `${reflectionAnswer} | Lời nhắn: ${teacherMessage}`);
       if (created?.model?.id) {
+        setCreatedModelId(created.model.id);
+
         await api.updateModelArtifacts(created.model.id, {
           algorithm: 'mlp',
           testScore: submitScore,
@@ -102,21 +123,129 @@ export default function TeachAiPage() {
             });
           }
         }
+
+        // ── RUN EVALUATION ──
+        setUploadProgress('Đang đánh giá AI...');
+        await runEvaluation(processedSamples, created.model.id);
       }
 
       await api.submitAssignment(submitScore, { samples: processedSamples }, `${reflectionAnswer} | Lời nhắn: ${teacherMessage}`, 'teach');
       await api.saveProgress('teach', submitScore);
       
-      setSubmitSuccess(true);
       setUploadProgress('');
+
+      // Instead of showing success immediately, show ReportCard
+      setShowSubmitModal(false);
+      setShowReportCard(true);
       playSuccessSound();
-      speakEnglish('Submission successful!');
     } catch (err) {
       console.error('Failed to submit assignment', err);
       setUploadProgress('');
       speakEnglish('Submission failed!');
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const handleRevise = () => {
+    // Go back to TeachPanel to improve data
+    setShowReportCard(false);
+    setShowSubmitModal(false);
+    setSubmitSuccess(false);
+    setCreatedModelId(null);
+    playClickSound();
+  };
+
+  const handleFinalize = async () => {
+    try {
+      setUploadProgress('Đang tổng hợp điểm kỹ năng...');
+      setIsSubmitting(true);
+      setShowReportCard(false);
+      setShowSubmitModal(true);
+
+      // Fetch full chain to calculate assessment
+      const chain = await api.getModelChain('teach').catch(() => []);
+      
+      let dataCurationScore = 0;
+      let debuggingScore = 0;
+      let improvementScore = 0;
+      let overallScore = 0;
+      const strengths: string[] = [];
+      const improvements: string[] = [];
+      let summary = '';
+
+      if (chain.length > 0) {
+        const latest = chain[chain.length - 1];
+        const eval_ = latest.evaluation;
+        
+        // Compute Data Curation Score
+        if (eval_?.datasetHealth) {
+          const dh = eval_.datasetHealth;
+          dataCurationScore = Math.round((dh.qualityScore + dh.balanceRatio * 100) / 2);
+          if (dh.blurrySampleCount > 0) dataCurationScore -= dh.blurrySampleCount * 2;
+          if (dh.darkSampleCount > 0) dataCurationScore -= dh.darkSampleCount * 2;
+          dataCurationScore = Math.max(0, Math.min(100, dataCurationScore));
+        }
+
+        // Compute Debugging Score
+        if (eval_?.confusionMatrix) {
+          const cm = eval_.confusionMatrix;
+          const minAcc = Math.min(...Object.values(cm.perClassAccuracy) as number[]);
+          debuggingScore = minAcc;
+        }
+
+        // Compute Improvement Score
+        if (chain.length > 1) {
+          const first = chain[0];
+          const improvement = latest.testScore - first.testScore;
+          improvementScore = Math.max(0, Math.min(100, 50 + improvement)); // Base 50, +improvement
+        } else {
+          improvementScore = dataCurationScore; // No history, use curation
+        }
+
+        overallScore = Math.round((dataCurationScore + debuggingScore + improvementScore) / 3);
+
+        if (overallScore >= 80) summary = 'Bé thể hiện kỹ năng dạy AI xuất sắc!';
+        else if (overallScore >= 60) summary = 'Bé đã biết cách dạy AI, nhưng cần cẩn thận hơn một chút.';
+        else summary = 'Bé cần chú ý chụp ảnh rõ nét và đủ số lượng cho các nhãn nhé.';
+
+        if (dataCurationScore >= 80) strengths.push('Chụp ảnh rõ nét và dữ liệu cân bằng tốt.');
+        else improvements.push('Cần chụp ảnh rõ nét hơn, tránh ảnh bị mờ hoặc tối.');
+
+        if (debuggingScore >= 80) strengths.push('Không có nhãn nào bị yếu quá mức, AI học đều.');
+        else improvements.push(`Cải thiện thêm cho nhãn "${eval_?.confusionMatrix?.weakestLabel || 'nhãn yếu nhất'}".`);
+
+        const formattedChain = chain.map((m: ModelResponse) => ({
+          modelId: m.id,
+          version: m.version || 1,
+          testScore: m.testScore,
+          sampleCount: m.evaluation?.datasetHealth?.sampleCount || 0,
+          classSummary: m.evaluation?.datasetHealth?.classSummary || {}
+        }));
+
+        await api.upsertAssessment({
+          challengeType: 'teach',
+          modelChain: formattedChain,
+          dataCurationScore,
+          debuggingScore,
+          improvementScore,
+          overallScore,
+          narrative: {
+            summary,
+            strengths,
+            improvements,
+          }
+        });
+      }
+
+      setSubmitSuccess(true);
+      playSuccessSound();
+      speakEnglish('Submission successful!');
+    } catch (err) {
+      console.error('Failed to finalize and create assessment', err);
+    } finally {
+      setIsSubmitting(false);
+      setUploadProgress('');
     }
   };
 
@@ -141,7 +270,7 @@ export default function TeachAiPage() {
         </div>
 
         {/* Teach Panel */}
-        {!showSubmitModal && (
+        {!showSubmitModal && !showReportCard && (
           <TeachPanel
             mode="hand-1"
             classes={CLASSES}
@@ -151,7 +280,18 @@ export default function TeachAiPage() {
           />
         )}
 
-
+        {/* ReportCard Modal */}
+        {showReportCard && evaluation && (
+          <ReportCard
+            isOpen={showReportCard}
+            onClose={() => setShowReportCard(false)}
+            onRevise={handleRevise}
+            onFinalize={handleFinalize}
+            evaluation={evaluation}
+            version={modelVersion}
+            previousEvaluation={previousEvaluation}
+          />
+        )}
 
         {/* Submission Modal */}
         {showSubmitModal && (

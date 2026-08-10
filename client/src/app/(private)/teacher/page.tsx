@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { ArrowLeft, RefreshCw, Users, FileCheck, Target, CheckCircle2, XCircle } from 'lucide-react';
+import { usePageData } from '@/hooks/usePageData';
+import { ArrowLeft, RefreshCw, Users, FileCheck, Target, CheckCircle2, XCircle, Eye } from 'lucide-react';
 import Link from 'next/link';
 import { api } from '@/lib/api';
 import { playClickSound } from '@/lib/audio';
@@ -14,6 +14,7 @@ interface DatasetRecord {
   user?: { id: string; username: string; avatar?: string; email: string };
   model?: {
     testScore: number;
+    algorithm?: string;
   };
 }
 
@@ -26,96 +27,79 @@ interface StudentProgress {
 }
 
 export default function TeacherDashboard() {
-  const [loading, setLoading] = useState(true);
-  const [students, setStudents] = useState<StudentProgress[]>([]);
-  const [stats, setStats] = useState({
-    totalStudents: 0,
-    totalDatasets: 0,
-    averageAccuracy: 0
-  });
+  const { data, loading, refetch: fetchDashboardData } = usePageData(async () => {
+    const userProfile = await api.getProfile().catch(() => null);
 
-  const [profile, setProfile] = useState<{ username: string; email: string; avatar?: string } | null>(null);
+    // Fetch all four challenges
+    const [teachRes, faceRes, gesturesRes, twoHandsRes] = await Promise.all([
+      api.getDatasetsByChallenge('teach').catch(() => [] as DatasetRecord[]),
+      api.getDatasetsByChallenge('teach-face').catch(() => [] as DatasetRecord[]),
+      api.getDatasetsByChallenge('teach-gestures').catch(() => [] as DatasetRecord[]),
+      api.getDatasetsByChallenge('teach-two-hands').catch(() => [] as DatasetRecord[])
+    ]);
 
-  const fetchDashboardData = async () => {
-    try {
-      setLoading(true);
-      const userProfile = await api.getProfile().catch(() => null);
-      if (userProfile) setProfile(userProfile);
+    const allDatasets = [...teachRes, ...faceRes, ...gesturesRes, ...twoHandsRes];
+    const studentMap = new Map<string, StudentProgress>();
+    
+    let sumAccuracy = 0;
+    let countAccuracy = 0;
 
-      // Fetch all four challenges
-      const [teachRes, faceRes, gesturesRes, twoHandsRes] = await Promise.all([
-        api.getDatasetsByChallenge('teach').catch(() => [] as DatasetRecord[]),
-        api.getDatasetsByChallenge('teach-face').catch(() => [] as DatasetRecord[]),
-        api.getDatasetsByChallenge('teach-gestures').catch(() => [] as DatasetRecord[]),
-        api.getDatasetsByChallenge('teach-two-hands').catch(() => [] as DatasetRecord[])
-      ]);
-
-      const allDatasets = [...teachRes, ...faceRes, ...gesturesRes, ...twoHandsRes];
+    allDatasets.forEach(ds => {
+      if (!ds.user) return;
+      if (!studentMap.has(ds.userId)) {
+        studentMap.set(ds.userId, {
+          user: ds.user,
+          teach: { completed: false, bestScore: 0 },
+          teachFace: { completed: false, bestScore: 0 },
+          teachGestures: { completed: false, bestScore: 0 },
+          teachTwoHands: { completed: false, bestScore: 0 },
+        });
+      }
       
-      const studentMap = new Map<string, StudentProgress>();
+      const st = studentMap.get(ds.userId)!;
+      const score = ds.model?.testScore || 0;
       
-      let sumAccuracy = 0;
-      let countAccuracy = 0;
+      if (score > 0) {
+        sumAccuracy += score;
+        countAccuracy++;
+      }
 
-      allDatasets.forEach(ds => {
-        if (!ds.user) return;
-        if (!studentMap.has(ds.userId)) {
-          studentMap.set(ds.userId, {
-            user: ds.user,
-            teach: { completed: false, bestScore: 0 },
-            teachFace: { completed: false, bestScore: 0 },
-            teachGestures: { completed: false, bestScore: 0 },
-            teachTwoHands: { completed: false, bestScore: 0 },
-          });
-        }
-        
-        const st = studentMap.get(ds.userId)!;
-        const score = ds.model?.testScore || 0;
-        
-        if (score > 0) {
-          sumAccuracy += score;
-          countAccuracy++;
-        }
+      if (ds.challengeType === 'teach') {
+        st.teach.completed = true;
+        if (score > st.teach.bestScore) st.teach.bestScore = score;
+      } else if (ds.challengeType === 'teach-face') {
+        st.teachFace.completed = true;
+        if (score > st.teachFace.bestScore) st.teachFace.bestScore = score;
+      } else if (ds.challengeType === 'teach-gestures') {
+        st.teachGestures.completed = true;
+        if (score > st.teachGestures.bestScore) st.teachGestures.bestScore = score;
+      } else if (ds.challengeType === 'teach-two-hands') {
+        st.teachTwoHands.completed = true;
+        if (score > st.teachTwoHands.bestScore) st.teachTwoHands.bestScore = score;
+      }
+    });
 
-        if (ds.challengeType === 'teach') {
-          st.teach.completed = true;
-          if (score > st.teach.bestScore) st.teach.bestScore = score;
-        } else if (ds.challengeType === 'teach-face') {
-          st.teachFace.completed = true;
-          if (score > st.teachFace.bestScore) st.teachFace.bestScore = score;
-        } else if (ds.challengeType === 'teach-gestures') {
-          st.teachGestures.completed = true;
-          if (score > st.teachGestures.bestScore) st.teachGestures.bestScore = score;
-        } else if (ds.challengeType === 'teach-two-hands') {
-          st.teachTwoHands.completed = true;
-          if (score > st.teachTwoHands.bestScore) st.teachTwoHands.bestScore = score;
-        }
-      });
+    // Sort students by average score descending
+    const sortedStudents = Array.from(studentMap.values()).sort((a, b) => {
+      const avgA = (a.teach.bestScore + a.teachFace.bestScore + a.teachGestures.bestScore + a.teachTwoHands.bestScore) / 4;
+      const avgB = (b.teach.bestScore + b.teachFace.bestScore + b.teachGestures.bestScore + b.teachTwoHands.bestScore) / 4;
+      return avgB - avgA;
+    });
 
-      // Sort students by average score descending
-      const sortedStudents = Array.from(studentMap.values()).sort((a, b) => {
-        const avgA = (a.teach.bestScore + a.teachFace.bestScore + a.teachGestures.bestScore + a.teachTwoHands.bestScore) / 4;
-        const avgB = (b.teach.bestScore + b.teachFace.bestScore + b.teachGestures.bestScore + b.teachTwoHands.bestScore) / 4;
-        return avgB - avgA;
-      });
-
-      setStudents(sortedStudents);
-      setStats({
+    return {
+      profile: userProfile,
+      students: sortedStudents,
+      stats: {
         totalStudents: studentMap.size,
         totalDatasets: allDatasets.length,
         averageAccuracy: countAccuracy > 0 ? Math.round(sumAccuracy / countAccuracy) : 0
-      });
-
-    } catch (err) {
-      console.error('Failed to load dashboard data', err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchDashboardData();
+      }
+    };
   }, []);
+
+  const profile = data?.profile || null;
+  const students = data?.students || [];
+  const stats = data?.stats || { totalStudents: 0, totalDatasets: 0, averageAccuracy: 0 };
 
   const handleRefresh = () => {
     playClickSound();
@@ -327,19 +311,20 @@ export default function TeacherDashboard() {
                   <th className="px-6 py-4 text-center border-l border-slate-100">😀 Cảm xúc</th>
                   <th className="px-6 py-4 text-center border-l border-slate-100">🤟 Cử chỉ</th>
                   <th className="px-6 py-4 text-center border-l border-slate-100 bg-indigo-50/30 text-indigo-600">Trung bình</th>
+                  <th className="px-6 py-4 text-center border-l border-slate-100">Chi tiết</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {loading ? (
                   <tr>
-                    <td colSpan={6} className="px-6 py-12 text-center">
+                    <td colSpan={7} className="px-6 py-12 text-center">
                       <div className="inline-block animate-spin w-6 h-6 border-4 border-indigo-600 border-t-transparent rounded-full mb-2"></div>
                       <p className="text-sm font-semibold text-slate-500">Đang tổng hợp dữ liệu...</p>
                     </td>
                   </tr>
                 ) : students.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="px-6 py-12 text-center text-slate-500 font-semibold italic">
+                    <td colSpan={7} className="px-6 py-12 text-center text-slate-500 font-semibold italic">
                       Chưa có học sinh nào nộp bài.
                     </td>
                   </tr>
@@ -389,6 +374,15 @@ export default function TeacherDashboard() {
                               {avgScore}%
                             </span>
                           )}
+                        </td>
+                        <td className="px-6 py-4 text-center border-l border-slate-100">
+                          <Link
+                            href={`/teacher/students/${st.user.id}`}
+                            onClick={playClickSound}
+                            className="inline-flex items-center gap-1 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-xs rounded-xl border border-indigo-200 transition-colors"
+                          >
+                            <Eye className="w-3.5 h-3.5" /> Xem
+                          </Link>
                         </td>
                       </tr>
                     );

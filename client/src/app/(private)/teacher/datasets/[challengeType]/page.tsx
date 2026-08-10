@@ -1,8 +1,9 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
+import { usePageData } from '@/hooks/usePageData';
 import { ArrowLeft, RefreshCw, Calendar, TrendingUp, Eye, EyeOff, MessageSquare, ChevronDown, ChevronUp, Send, Users, AlertTriangle, X, ChevronLeft as ChevronLeftIcon, ChevronRight as ChevronRightIcon } from 'lucide-react';
 import { api } from '@/lib/api';
 import { playClickSound, playSuccessSound } from '@/lib/audio';
@@ -42,8 +43,6 @@ interface StudentGroup {
 export default function TeacherDatasetsByChallengePage() {
   const params = useParams();
   const challengeType = params.challengeType as string;
-  const [allDatasets, setAllDatasets] = useState<DatasetRecord[]>([]);
-  const [loading, setLoading] = useState(true);
   const [selectedStudent, setSelectedStudent] = useState<StudentGroup | null>(null);
   const [expandedDatasetId, setExpandedDatasetId] = useState<string | null>(null);
   const [expandedSamples, setExpandedSamples] = useState<StoredSample[] | null>(null);
@@ -56,19 +55,12 @@ export default function TeacherDatasetsByChallengePage() {
 
   const challengeLabel = CHALLENGE_LABELS[challengeType] || challengeType;
 
-  const fetchData = async () => {
-    try {
-      setLoading(true);
-      const data = await api.getDatasetsByChallenge(challengeType);
-      setAllDatasets(data);
-    } catch (err) {
-      console.error('Failed to load datasets', err);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const { data: allDatasetsData, loading, refetch: fetchData } = usePageData(async () => {
+    if (!challengeType || challengeType === 'undefined') return [];
+    return await api.getDatasetsByChallenge(challengeType);
+  }, [challengeType], Boolean(challengeType && challengeType !== 'undefined'));
 
-  useEffect(() => { fetchData(); }, [challengeType]);
+  const allDatasets = allDatasetsData || [];
 
   // Group datasets by student
   const studentGroups: StudentGroup[] = (() => {
@@ -99,12 +91,9 @@ export default function TeacherDatasetsByChallengePage() {
     return Array.from(map.values()).sort((a, b) => b.latestScore - a.latestScore);
   })();
 
-  // Auto-select first student
-  useEffect(() => {
-    if (studentGroups.length > 0 && !selectedStudent) {
-      setSelectedStudent(studentGroups[0]);
-    }
-  }, [studentGroups.length]);
+  const activeStudent = (selectedStudent && studentGroups.some(g => g.user.id === selectedStudent.user.id))
+    ? studentGroups.find(g => g.user.id === selectedStudent.user.id)!
+    : (studentGroups[0] || null);
 
   const toggleExpand = async (datasetId: string) => {
     if (expandedDatasetId === datasetId) {
@@ -193,7 +182,7 @@ export default function TeacherDatasetsByChallengePage() {
               </h3>
               <div className="space-y-3 max-h-[600px] overflow-y-auto pr-1">
                 {studentGroups.map(group => {
-                  const isSelected = selectedStudent?.user.id === group.user.id;
+                  const isSelected = activeStudent?.user.id === group.user.id;
                   return (
                     <div
                       key={group.user.id}
@@ -226,21 +215,21 @@ export default function TeacherDatasetsByChallengePage() {
 
             {/* RIGHT: Selected student's timeline */}
             <div className="lg:col-span-2 space-y-6">
-              {selectedStudent && (
+              {activeStudent && (
                 <>
                   {/* Student header */}
                   <div className="bg-white rounded-3xl border border-slate-200 shadow-sm p-6">
                     <div className="flex items-center gap-4">
-                      <span className="text-5xl">{selectedStudent.user.avatar}</span>
+                      <span className="text-5xl">{activeStudent.user.avatar}</span>
                       <div>
-                        <h2 className="text-2xl font-black text-slate-900">{selectedStudent.user.username}</h2>
-                        <p className="text-xs text-slate-400 font-semibold">{selectedStudent.user.email}</p>
+                        <h2 className="text-2xl font-black text-slate-900">{activeStudent.user.username}</h2>
+                        <p className="text-xs text-slate-400 font-semibold">{activeStudent.user.email}</p>
                         <div className="flex gap-3 mt-2">
                           <span className="text-xs font-bold bg-indigo-50 text-indigo-700 px-2 py-1 rounded-full">
-                            {selectedStudent.totalSubmissions} lần nộp
+                            {activeStudent.totalSubmissions} lần nộp
                           </span>
                           <span className="text-xs font-bold bg-green-50 text-green-700 px-2 py-1 rounded-full">
-                            Điểm cao nhất: {selectedStudent.bestScore}%
+                            Điểm cao nhất: {activeStudent.bestScore}%
                           </span>
                         </div>
                       </div>
@@ -248,9 +237,9 @@ export default function TeacherDatasetsByChallengePage() {
                   </div>
 
                   {/* Score trend */}
-                  {selectedStudent.datasets.length >= 2 && (() => {
-                    const latest = selectedStudent.datasets[0]?.model?.testScore || 0;
-                    const first = selectedStudent.datasets[selectedStudent.datasets.length - 1]?.model?.testScore || 0;
+                  {activeStudent.datasets.length >= 2 && (() => {
+                    const latest = activeStudent.datasets[0]?.model?.testScore || 0;
+                    const first = activeStudent.datasets[activeStudent.datasets.length - 1]?.model?.testScore || 0;
                     const diff = latest - first;
                     return (
                       <div className={`p-4 rounded-2xl border-2 flex items-center gap-3 ${
@@ -266,14 +255,14 @@ export default function TeacherDatasetsByChallengePage() {
                   })()}
 
                   {/* Dataset timeline */}
-                  {selectedStudent.datasets.map((ds, index) => {
+                  {activeStudent.datasets.map((ds, index) => {
                     const isExpanded = expandedDatasetId === ds.id;
                     const dateStr = new Date(ds.createdAt).toLocaleDateString('vi-VN', {
                       day: '2-digit', month: '2-digit', year: 'numeric',
                       hour: '2-digit', minute: '2-digit',
                     });
-                    const prevScore = index < selectedStudent.datasets.length - 1
-                      ? selectedStudent.datasets[index + 1]?.model?.testScore || 0 : null;
+                    const prevScore = index < activeStudent.datasets.length - 1
+                      ? activeStudent.datasets[index + 1]?.model?.testScore || 0 : null;
                     const improvement = prevScore !== null ? (ds.model?.testScore || 0) - prevScore : null;
 
                     return (
@@ -290,7 +279,7 @@ export default function TeacherDatasetsByChallengePage() {
                               </div>
                               <div>
                                 <div className="font-extrabold text-indigo-900">
-                                  Lần nộp #{selectedStudent.datasets.length - index}
+                                  Lần nộp #{activeStudent.datasets.length - index}
                                 </div>
                                 <div className="text-xs text-slate-400 font-semibold flex items-center gap-1 mt-0.5">
                                   <Calendar className="w-3 h-3" />

@@ -1,8 +1,9 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { usePageData } from '@/hooks/usePageData';
 import { ArrowLeft, Database, Clock, Eye, EyeOff, AlertTriangle, X, ChevronLeft as ChevronLeftIcon, ChevronRight as ChevronRightIcon } from 'lucide-react';
 import { api } from '@/lib/api';
 import { playClickSound } from '@/lib/audio';
@@ -14,34 +15,21 @@ export default function TemplateDetailPage() {
   const router = useRouter();
   const id = params.id as string;
   
-  const [template, setTemplate] = useState<DatasetResponse | null>(null);
-  const [samples, setSamples] = useState<StoredSample[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  
   const [previewIndex, setPreviewIndex] = useState<number | null>(null);
   const [showSkeleton, setShowSkeleton] = useState(true);
 
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        setLoading(true);
-        const [templateData, fileData] = await Promise.all([
-          api.getDatasetById(id),
-          api.getDatasetFile(id)
-        ]);
-        setTemplate(templateData);
-        setSamples(fileData.samples || []);
-      } catch (err: unknown) {
-        console.error('Failed to load template', err);
-        setError(err instanceof Error ? err.message : 'Không thể tải bộ dữ liệu mẫu này.');
-      } finally {
-        setLoading(false);
-      }
-    };
-    
-    if (id) fetchData();
-  }, [id]);
+  const { data, loading, error: fetchErr } = usePageData(async () => {
+    if (!id || id === 'undefined') return null;
+    const [templateData, fileData] = await Promise.all([
+      api.getDatasetById(id),
+      api.getDatasetFile(id)
+    ]);
+    return { template: templateData as DatasetResponse, samples: (fileData.samples || []) as StoredSample[] };
+  }, [id], Boolean(id && id !== 'undefined'));
+
+  const template = data?.template || null;
+  const samples = data?.samples || [];
+  const error = fetchErr ? fetchErr.message : '';
 
   if (loading) {
     return (

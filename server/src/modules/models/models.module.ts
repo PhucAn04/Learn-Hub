@@ -9,10 +9,10 @@ import { IntegrationsModule } from '../integrations/integrations.module';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Model]), 
-    AuthModule, 
+    TypeOrmModule.forFeature([Model]),
+    AuthModule,
     UsersModule,
-    IntegrationsModule
+    IntegrationsModule,
   ],
   providers: [ModelsService],
   controllers: [ModelsController],

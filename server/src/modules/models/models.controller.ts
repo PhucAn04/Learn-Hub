@@ -1,3 +1,4 @@
+import 'multer';
 import {
   Controller,
   Get,
@@ -23,6 +24,7 @@ import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { User } from '../users/entities/user.entity';
+import { Model } from './entities/model.entity';
 
 @ApiTags('Models')
 @Controller('models')
@@ -40,6 +42,18 @@ export class ModelsController {
     @Query('challengeType') challengeType?: string,
   ) {
     return this.modelsService.getModelsByUser(user.id, challengeType);
+  }
+
+  @Get('chain/:challengeType')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Lấy chuỗi model versions theo challengeType' })
+  @ApiResponse({ status: 200, description: 'Chuỗi model versions.' })
+  async getModelChain(
+    @CurrentUser() user: User,
+    @Param('challengeType') challengeType: string,
+  ) {
+    return this.modelsService.getModelChain(user.id, challengeType);
   }
 
   @Get(':id')
@@ -73,6 +87,9 @@ export class ModelsController {
         k?: number;
       };
       trainingLogs?: { epoch: number; loss: number; acc: number }[];
+      version?: number;
+      parentModelId?: string;
+      evaluation?: Model['evaluation'];
     },
   ) {
     return this.modelsService.updateModelArtifacts(id, user.id, body);
@@ -82,7 +99,9 @@ export class ModelsController {
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @UseInterceptors(AnyFilesInterceptor())
-  @ApiOperation({ summary: 'Upload file trọng số model (.json, .bin) lên Cloudinary' })
+  @ApiOperation({
+    summary: 'Upload file trọng số model (.json, .bin) lên Cloudinary',
+  })
   async uploadArtifacts(
     @CurrentUser() user: User,
     @Param('id') id: string,

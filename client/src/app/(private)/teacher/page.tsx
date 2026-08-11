@@ -377,7 +377,7 @@ export default function TeacherDashboard() {
                         </td>
                         <td className="px-6 py-4 text-center border-l border-slate-100">
                           <Link
-                            href={`/teacher/students/${st.user.id}`}
+                            href={`/teacher/students/${st.user?.id || 'unknown'}`}
                             onClick={playClickSound}
                             className="inline-flex items-center gap-1 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-xs rounded-xl border border-indigo-200 transition-colors"
                           >

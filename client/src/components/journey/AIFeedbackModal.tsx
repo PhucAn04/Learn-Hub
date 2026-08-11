@@ -10,7 +10,7 @@ import { TeacherTemplate, CorrectnessIssue, NearestNeighbor } from '@/types/mode
 interface AIFeedbackModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onProceed: () => void;
+  onProceed: (issueCount: number) => void;
   studentSamples: StoredSample[];
   teacherTemplate?: TeacherTemplate;
   kValue: number;
@@ -32,7 +32,24 @@ export default function AIFeedbackModal({
 }: AIFeedbackModalProps) {
   const [previewSample, setPreviewSample] = useState<StoredSample | null>(null);
 
-  const { balanceIssues, correctnessIssues, qualityIssues, counts, hasTeacherTemplate, datasetPhase } = useMemo(() => {
+  // ── Local K/Threshold — bé tự kéo thanh trong popup, kết quả cập nhật ngay ──
+  const [localK, setLocalK] = useState(kValue);
+  const [localThreshold, setLocalThreshold] = useState(threshold);
+
+  // Render-time sync: khi modal mở lại (isOpen: false→true), đồng bộ từ props
+  const [prevIsOpen, setPrevIsOpen] = useState(false);
+  if (isOpen && !prevIsOpen) {
+    setLocalK(kValue);
+    setLocalThreshold(threshold);
+  }
+  if (isOpen !== prevIsOpen) {
+    setPrevIsOpen(isOpen);
+  }
+
+  // Đảm bảo threshold không vượt quá K
+  const safeThreshold = Math.min(localThreshold, localK);
+
+  const { balanceIssues, correctnessIssues, qualityIssues, counts, hasTeacherTemplate, datasetPhase, robustIssueCount } = useMemo(() => {
     const counts: Record<string, number> = {};
     classes.forEach(c => counts[c.id] = 0);
     studentSamples.forEach(s => {
@@ -44,9 +61,10 @@ export default function AIFeedbackModal({
       ...c, count: counts[c.id]
     }));
 
-    const teacherSamples: StoredSample[] = (teacherTemplate as any)?.dataset?.samples || teacherTemplate?.samples || [];
+    const teacherSamples: StoredSample[] = (teacherTemplate as TeacherTemplate)?.dataset?.samples || teacherTemplate?.samples || [];
     const hasTeacherTemplate = teacherSamples.length > 0;
     const correctnessIssues: CorrectnessIssue[] = [];
+    let robustIssueCount = 0;
     
     studentSamples.forEach((studentSample, index) => {
       const studentClassId = studentSample.sourceId || classes.find(c => c.label === studentSample.label)?.id;
@@ -57,18 +75,15 @@ export default function AIFeedbackModal({
       }
 
       if (referenceSamples.length > 0) {
-        const knn = classifyKNNDetailed(studentSample.features, referenceSamples, kValue);
+        // ── Display cross-check: dùng localK/safeThreshold (slider bé kéo) ──
+        const knn = classifyKNNDetailed(studentSample.features, referenceSamples, localK);
         
-        // Find the matching class ID for the AI's best guess
         const bestClassId = classes.find(c => c.label === knn.label || c.id === knn.label)?.id || knn.label;
         const bestVotes = (knn.counts as Record<string, number>)[knn.label] || 0;
 
-        // What would the live AI actually output?
-        const finalPredictedClassId = (bestVotes >= threshold) ? bestClassId : 'unclear';
+        const finalPredictedClassId = (bestVotes >= safeThreshold) ? bestClassId : 'unclear';
         
-        // If the live AI doesn't output the student's class, it's a conflict!
         if (finalPredictedClassId !== studentClassId) {
-          
           let displayClassLabel = 'Chưa rõ ràng 🤔';
           let matchingNearest: NearestNeighbor[] = [];
           
@@ -78,7 +93,6 @@ export default function AIFeedbackModal({
             displayClassLabel = classes.find(c => c.id === bestClassId)?.label || bestClassId;
           }
 
-          // Show the images that contributed to the AI's best guess (even if it's unclear)
           matchingNearest = knn.nearest.filter((n: NearestNeighbor) => {
             const nClassId = classes.find(c => c.label === n.label || c.id === n.label)?.id || n.label;
             return nClassId === bestClassId;
@@ -93,6 +107,32 @@ export default function AIFeedbackModal({
             matchingNearest: matchingNearest
           });
         }
+
+        // ── Robust cross-check: cho chấm điểm công bằng (Golden Dataset logic) ──
+        // Dùng adaptive K lớn (≥50% references) để phá cluster ảnh sai nhãn.
+        // Khi không có teacher template, cluster 5 ảnh sai "bảo vệ nhau" với K=3,
+        // nhưng với K=10 (50% of 19), 10 ảnh đúng sẽ outvote 4 ảnh sai → phát hiện!
+        const robustK = hasTeacherTemplate
+          ? localK
+          : Math.max(localK, Math.ceil(referenceSamples.length * 0.5));
+        const robustThreshold = hasTeacherTemplate
+          ? safeThreshold
+          : Math.ceil(robustK * 0.5);
+
+        if (robustK !== localK || robustThreshold !== safeThreshold) {
+          const robustKnn = classifyKNNDetailed(studentSample.features, referenceSamples, robustK);
+          const rBestClassId = classes.find(c => c.label === robustKnn.label || c.id === robustKnn.label)?.id || robustKnn.label;
+          const rBestVotes = (robustKnn.counts as Record<string, number>)[robustKnn.label] || 0;
+          const rPredicted = (rBestVotes >= robustThreshold) ? rBestClassId : 'unclear';
+          if (rPredicted !== studentClassId) {
+            robustIssueCount++;
+          }
+        } else {
+          // localK already >= robust → reuse display result
+          if (finalPredictedClassId !== studentClassId) {
+            robustIssueCount++;
+          }
+        }
       }
     });
 
@@ -105,7 +145,6 @@ export default function AIFeedbackModal({
       const darkOnes = withQuality.filter(s => s.quality!.isDark);
       const blurryOnes = withQuality.filter(s => s.quality!.isBlurry);
       const badOnes = withQuality.filter(s => s.quality!.isDark || s.quality!.isBlurry);
-      // Only flag if >50% of samples have quality issues
       if (badOnes.length > withQuality.length * 0.5 && badOnes.length >= 2) {
         qualityIssues.push({
           classId: c.id,
@@ -113,15 +152,15 @@ export default function AIFeedbackModal({
           total: classSamples.length,
           darkCount: darkOnes.length,
           blurryCount: blurryOnes.length,
-          badSamples: badOnes.slice(0, 8), // Show max 8
+          badSamples: badOnes.slice(0, 8),
         });
       }
     });
 
     const datasetPhase = evaluateStudentDatasetPhase(studentSamples, classes, 3, 10);
 
-    return { balanceIssues, correctnessIssues, qualityIssues, counts, hasTeacherTemplate, datasetPhase };
-  }, [studentSamples, teacherTemplate, kValue, threshold, classes]);
+    return { balanceIssues, correctnessIssues, qualityIssues, counts, hasTeacherTemplate, datasetPhase, robustIssueCount };
+  }, [studentSamples, teacherTemplate, localK, safeThreshold, classes]);
 
   if (!isOpen) return null;
 
@@ -164,6 +203,75 @@ export default function AIFeedbackModal({
             </div>
           )}
 
+          {/* ── Thanh điều chỉnh K & Threshold — bé tự kéo, kết quả cập nhật ngay ── */}
+          <div className="bg-indigo-50 border-2 border-indigo-200 rounded-2xl p-4 mb-6">
+            <div className="flex items-center gap-2 mb-3">
+              <Target className="w-5 h-5 text-indigo-500" />
+              <h3 className="font-bold text-indigo-900">🔍 Tinh Chỉnh Bộ Phát Hiện</h3>
+            </div>
+            <p className="text-xs text-indigo-700 mb-4">Kéo thanh để thay đổi độ nhạy phát hiện ảnh sai nhãn. Kết quả cập nhật ngay!</p>
+            
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {/* K Slider */}
+              <div className="bg-white rounded-xl p-3 border border-indigo-100">
+                <div className="flex justify-between items-center mb-1">
+                  <label className="text-xs font-bold text-indigo-800">👀 K hàng xóm (so sánh)</label>
+                  <span className="text-lg font-black text-indigo-600 bg-indigo-100 px-2 py-0.5 rounded-lg">{localK}</span>
+                </div>
+                <input
+                  type="range"
+                  min={1}
+                  max={Math.max(3, studentSamples.length - 1)}
+                  value={localK}
+                  onChange={e => {
+                    const newK = Number(e.target.value);
+                    setLocalK(newK);
+                    if (localThreshold > newK) setLocalThreshold(newK);
+                  }}
+                  className="w-full accent-indigo-500 h-2"
+                />
+                <div className="flex justify-between text-[10px] text-indigo-400 mt-0.5">
+                  <span>1 (ít)</span>
+                  <span>{Math.max(3, studentSamples.length - 1)} (nhiều)</span>
+                </div>
+              </div>
+
+              {/* Threshold Slider */}
+              <div className="bg-white rounded-xl p-3 border border-indigo-100">
+                <div className="flex justify-between items-center mb-1">
+                  <label className="text-xs font-bold text-indigo-800">⚖️ Độ khắt khe (đồng thuận)</label>
+                  <span className="text-lg font-black text-indigo-600 bg-indigo-100 px-2 py-0.5 rounded-lg">{safeThreshold}</span>
+                </div>
+                <input
+                  type="range"
+                  min={1}
+                  max={localK}
+                  value={safeThreshold}
+                  onChange={e => setLocalThreshold(Number(e.target.value))}
+                  className="w-full accent-indigo-500 h-2"
+                />
+                <div className="flex justify-between text-[10px] text-indigo-400 mt-0.5">
+                  <span>1 (dễ tính)</span>
+                  <span>{localK} (khắt khe)</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Live result badge */}
+            <div className="mt-3 text-center">
+              <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold ${
+                correctnessIssues.length > 0 
+                  ? 'bg-amber-100 text-amber-800 border border-amber-200' 
+                  : 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+              }`}>
+                {correctnessIssues.length > 0 
+                  ? `⚠️ Phát hiện ${correctnessIssues.length} ảnh đáng ngờ`
+                  : '✅ Không tìm thấy ảnh sai nhãn'}
+                {' '}(K={localK}, Đồng thuận={safeThreshold})
+              </span>
+            </div>
+          </div>
+
           <div className="space-y-6">
               
               {/* BALANCE ISSUES */}
@@ -205,7 +313,7 @@ export default function AIFeedbackModal({
                       {qualityIssues.map((qi, idx) => (
                         <div key={idx} className="bg-orange-50 rounded-xl p-3 border border-orange-200">
                           <div className="text-sm font-bold text-orange-800 mb-2">
-                            Nhãn "{qi.classLabel}": {qi.darkCount + qi.blurryCount}/{qi.total} ảnh có vấn đề
+                            Nhãn &quot;{qi.classLabel}&quot;: {qi.darkCount + qi.blurryCount}/{qi.total} ảnh có vấn đề
                             {qi.darkCount > 0 && <span className="ml-2 text-xs bg-gray-800 text-white px-1.5 py-0.5 rounded">🌑 {qi.darkCount} tối</span>}
                             {qi.blurryCount > 0 && <span className="ml-2 text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded">🔍 {qi.blurryCount} mờ</span>}
                           </div>
@@ -263,8 +371,9 @@ export default function AIFeedbackModal({
                               <div className="flex-1 flex flex-col justify-center items-center">
                                 <ChevronRight className="w-8 h-8 text-slate-300 hidden sm:block" />
                                 <div className="text-center bg-white border-2 border-indigo-100 p-2 rounded-xl text-xs font-semibold text-slate-600 my-2 shadow-sm">
-                                  So với <span className="font-bold text-indigo-600 text-sm">K={kValue}</span> ảnh<br/>
-                                  Đồng thuận: <span className="text-indigo-600 font-bold text-sm">{issue.votes} phiếu</span>
+                                  So với <span className="font-bold text-indigo-600 text-sm">K={localK}</span> ảnh<br/>
+                                  Cần ≥ <span className="text-indigo-600 font-bold text-sm">{safeThreshold}</span> phiếu<br/>
+                                  Nhận: <span className={`font-bold text-sm ${issue.votes >= safeThreshold ? 'text-emerald-600' : 'text-rose-600'}`}>{issue.votes}/{localK}</span> phiếu
                                 </div>
                               </div>
 
@@ -319,7 +428,7 @@ export default function AIFeedbackModal({
           </button>
           
           <button 
-            onClick={onProceed}
+            onClick={() => onProceed(Math.max(correctnessIssues.length, robustIssueCount) + qualityIssues.length)}
             className={`px-8 py-3 rounded-xl font-black text-white shadow-lg transition-transform hover:-translate-y-0.5 active:translate-y-0 flex items-center gap-2 ${
               hasIssues 
                 ? 'bg-amber-500 hover:bg-amber-600 shadow-amber-200' 

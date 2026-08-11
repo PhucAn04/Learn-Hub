@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { ArrowLeft, HelpCircle } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -69,7 +69,7 @@ export default function TeachTwoHandsPage() {
     teacherSamples: teacherTemplate?.samples,
   });
 
-  const handleTrainComplete = (
+  const handleTrainComplete = useCallback((
     trainedSamples: StoredSample[],
     getModelBlobs?: () => Promise<{ jsonBlob: Blob; weightsBlob: Blob } | null>,
     accuracyScore?: number
@@ -78,7 +78,7 @@ export default function TeachTwoHandsPage() {
     setSubmitScore(accuracyScore !== undefined ? Math.round(accuracyScore) : 100);
     if (getModelBlobs) setGetModelBlobsFn(() => getModelBlobs);
     setShowSubmitModal(true);
-  };
+  }, []);
 
   const handleSubmitAssignment = async () => {
     if (submitScore === null) return;
@@ -261,7 +261,7 @@ export default function TeachTwoHandsPage() {
           </div>
         </div>
 
-        {/* Teach Panel */}
+        {/* Teach Panel — conditional render, dữ liệu được giữ qua initialSamples khi Sửa Bài */}
         {!showSubmitModal && !showReportCard && (
           <TeachPanel
             mode="hand-2"
@@ -269,6 +269,7 @@ export default function TeachTwoHandsPage() {
             minSamplesPerClass={10}
             onTrainComplete={handleTrainComplete}
             teacherTemplate={teacherTemplate || undefined}
+            initialSamples={samples}
           />
         )}
 
@@ -311,16 +312,22 @@ export default function TeachTwoHandsPage() {
                     <span>🎒</span> Trả Lời Câu Hỏi Cuối Cùng
                   </h3>
                   
-                  {/* Score badge */}
+                  {/* Score badge — thang 10 điểm thân thiện */}
                   <div className="bg-indigo-50 border-2 border-indigo-200 rounded-2xl p-4 flex items-center justify-between mb-6">
                     <div>
-                      <span className="text-xs text-indigo-700 font-bold block">Điểm tự động kiểm thử (Test Score):</span>
+                      <span className="text-xs text-indigo-700 font-bold block">Bạn AI đoán đúng bao nhiêu câu:</span>
                       <span className="text-lg text-indigo-900 font-black">
-                        {submitScore}% chính xác
+                        {Math.round((submitScore ?? 0) / 10)}/10 điểm
+                      </span>
+                      <span className="text-xs text-indigo-600 font-semibold block mt-0.5">
+                        {(submitScore ?? 0) >= 90 ? 'Xuất sắc! AI đoán gần như đúng hết!' 
+                         : (submitScore ?? 0) >= 70 ? 'Khá tốt! AI chỉ nhầm vài câu thôi.' 
+                         : (submitScore ?? 0) >= 50 ? 'AI đoán đúng khoảng nửa số câu.' 
+                         : 'AI còn nhầm nhiều lắm — cần dạy lại!'}
                       </span>
                     </div>
                     <span className="text-3xl">
-                      {(submitScore ?? 0) >= 80 ? '🦁🌟' : '🐨👍'}
+                      {(submitScore ?? 0) >= 90 ? '🦁🌟' : (submitScore ?? 0) >= 70 ? '🐨👍' : '🐣💪'}
                     </span>
                   </div>
 

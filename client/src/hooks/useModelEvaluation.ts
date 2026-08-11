@@ -49,6 +49,47 @@ export function useModelEvaluation(config: EvalConfig) {
       const dsQuality = evaluateStudentDatasetPhase(samples, config.classes, 3, 10);
       const balance = analyzeDataBalance(samples);
 
+      // 3b. Robust Self Cross-Check — phạt ảnh sai nhãn (Golden Dataset logic)
+      // Golden test đánh giá "model predict đúng không" nhưng không phạt ảnh sai nhãn
+      // vì ảnh đúng chiếm đa số → model vẫn predict đúng.
+      // Self cross-check với adaptive K phá cluster ảnh sai bảo vệ nhau.
+      let robustMislabeledCount = 0;
+      const hasTeacher = config.teacherSamples && config.teacherSamples.length > 0;
+      
+      if (!hasTeacher) {
+        samples.forEach((sample, index) => {
+          if (sample.quality?.isBlurry || sample.quality?.isDark) return;
+          
+          const refs = samples.filter((_, i) => i !== index);
+          if (refs.length === 0) return;
+          
+          const robustK = Math.max(k, Math.ceil(refs.length * 0.5));
+          const robustThreshold = Math.ceil(robustK * 0.5);
+          
+          const knn = classifyKNNDetailed(sample.features, refs, robustK);
+          const bestVotes = (knn.counts as Record<string, number>)[knn.label] || 0;
+          
+          if (bestVotes >= robustThreshold) {
+            // AI confident about a label
+            const predictedClassId = config.classes.find(c => c.label === knn.label)?.id || knn.label;
+            const sampleClassId = sample.sourceId || config.classes.find(c => c.label === sample.label)?.id || sample.label;
+            if (predictedClassId !== sampleClassId) {
+              robustMislabeledCount++;
+            }
+          }
+          // If not confident (votes < threshold), the sample is ambiguous but not necessarily wrong
+        });
+      }
+      
+      // Combine golden accuracy with mislabel penalty
+      // Golden accuracy measures model quality; mislabel penalty measures data quality
+      const mislabelPenalty = samples.length > 0 
+        ? (robustMislabeledCount / samples.length) 
+        : 0;
+      const adjustedGoldenAccuracy = Math.round(
+        goldenResult.accuracy * (1 - mislabelPenalty)
+      );
+
       // 4. Dataset Health stats
       const classSummary: Record<string, number> = {};
       samples.forEach(s => { classSummary[s.label] = (classSummary[s.label] || 0) + 1; });
@@ -122,7 +163,7 @@ export function useModelEvaluation(config: EvalConfig) {
 
       // 7. Build evaluation object
       const evalData: ModelEvaluation = {
-        goldenAccuracy: goldenResult.accuracy,
+        goldenAccuracy: adjustedGoldenAccuracy,
         goldenCorrectCount: goldenResult.correctCount,
         goldenTotalCount: goldenResult.totalCount,
         confusionMatrix: {

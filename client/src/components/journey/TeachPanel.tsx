@@ -67,6 +67,7 @@ interface TeachPanelProps {
     accuracyScore?: number
   ) => void;
   teacherTemplate?: TeacherTemplate | DatasetResponse;
+  initialSamples?: StoredSample[];
 }
 
 // ──────────────────────────────────────────────
@@ -216,13 +217,14 @@ export default function TeachPanel({
   maxVisibleSkeletons = 1,
   onTrainComplete,
   teacherTemplate,
+  initialSamples,
 }: TeachPanelProps) {
   const isHandMode = mode === 'hand-1' || mode === 'hand-2' || mode === 'gesture';
   const isFaceMode = mode === 'emotion';
   const isTwoHandMode = mode === 'hand-2';
 
   // ── State ───────────────────────────
-  const [samples, setSamples] = useState<StoredSample[]>([]);
+  const [samples, setSamples] = useState<StoredSample[]>(initialSamples || []);
   const [activeClass, setActiveClass] = useState<string>(classes[0]?.id || '');
   const [isCapturing, setIsCapturing] = useState(false);
   const [isTraining, setIsTraining] = useState(false);
@@ -1491,18 +1493,13 @@ export default function TeachPanel({
       <AIFeedbackModal
         isOpen={showFeedbackModal}
         onClose={() => setShowFeedbackModal(false)}
-        onProceed={() => {
+        onProceed={(issueCount: number) => {
           setShowFeedbackModal(false);
-          let correctCount = 0;
-          let validCount = 0;
-          samples.forEach(s => {
-             if (s.isValid !== false) {
-                 validCount++;
-                 if (!s.aiFeedback?.isMisclassified && !s.quality?.isBlurry && !s.quality?.isDark) {
-                     correctCount++;
-                 }
-             }
-          });
+          // Score = (valid samples - issues) / valid samples
+          // issueCount comes directly from AIFeedbackModal's cross-check
+          // so the score matches exactly what the student sees in the popup.
+          const validCount = samples.filter(s => s.isValid !== false).length;
+          const correctCount = Math.max(0, validCount - issueCount);
           const accuracyScore = validCount > 0 ? (correctCount / validCount) * 100 : 0;
           
           onTrainComplete(samples, async () => {

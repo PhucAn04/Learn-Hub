@@ -188,7 +188,7 @@ export default function BodyExerciseChallenge() {
       <div className="min-h-screen bg-sky-50 flex flex-col items-center justify-center p-6 text-center">
         <span className="text-7xl mb-4">😢</span>
         <h2 className="text-2xl font-black text-sky-900 mb-2">Bé chưa dạy AI bài tập nào!</h2>
-        <p className="text-slate-600 font-semibold mb-6">Hãy quay lại trang "Huấn Luyện AI" để dạy AI các động tác trước nhé.</p>
+        <p className="text-slate-600 font-semibold mb-6">Hãy quay lại trang &quot;Huấn Luyện AI&quot; để dạy AI các động tác trước nhé.</p>
         <Link
           href="/challenge/teach-body"
           className="px-6 py-3 bg-sky-600 text-white font-extrabold rounded-full hover:bg-sky-700 transition"

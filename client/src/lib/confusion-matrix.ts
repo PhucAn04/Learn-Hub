@@ -58,12 +58,17 @@ export function buildConfusionMatrix(
   });
 
   // 4. Find weakest/strongest
-  const weakestLabel = labels.length > 0
+  let weakestLabel = labels.length > 0
     ? labels.reduce((a, b) => (perClassAccuracy[a] ?? 0) < (perClassAccuracy[b] ?? 0) ? a : b)
     : '';
   const strongestLabel = labels.length > 0
     ? labels.reduce((a, b) => (perClassAccuracy[a] ?? 0) > (perClassAccuracy[b] ?? 0) ? a : b)
     : '';
+
+  // If the "weakest" label is already 100% accurate, then there is no weak label.
+  if (weakestLabel && perClassAccuracy[weakestLabel] === 100) {
+    weakestLabel = '';
+  }
 
   // 5. Misclassifications (off-diagonal)
   const misclassifications: ConfusionMatrixResult['misclassifications'] = [];

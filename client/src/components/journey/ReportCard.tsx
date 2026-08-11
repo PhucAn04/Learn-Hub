@@ -109,7 +109,12 @@ export default function ReportCard({
           <StarRating score={evaluation.goldenAccuracy} />
 
           {/* ── 2. Version Comparison (simple) ── */}
-          <VersionComparison delta={delta} version={version} />
+          <VersionComparison
+            delta={delta}
+            version={version}
+            currentScore={evaluation.goldenAccuracy}
+            previousScore={previousEvaluation?.goldenAccuracy}
+          />
 
           {/* ── 3. EVIDENCE: Ảnh bé chụp từng nhãn (gallery) ── */}
           {ev?.classPreviews && ev.classPreviews.length > 0 && (

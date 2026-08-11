@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Brain, Camera, Trash2 } from 'lucide-react';
+import { Brain, Camera, Trash2, FlaskConical, ShieldCheck } from 'lucide-react';
 import { useCamera } from '@/hooks/useCamera';
 import { useMl5Handpose } from '@/hooks/useMl5Handpose';
 import { useMl5FaceMesh } from '@/hooks/useMl5FaceMesh';
@@ -241,6 +241,7 @@ export default function TeachPanel({
   const [anomalyMessage, setAnomalyMessage] = useState<string | undefined>(undefined);
   const [teacherHintImages, setTeacherHintImages] = useState<string[]>([]);
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
+  const [carefulMode, setCarefulMode] = useState(false); // false = Explorer Mode (default)
   const [activeTab, setActiveTab] = useState<'camera' | 'upload' | 'video'>('camera');
 
   const captureIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -338,14 +339,18 @@ export default function TeachPanel({
     (classId: string) => {
       const classLabel =
         classes.find((c) => c.id === classId)?.label || classId;
-      const validSamples = samples.filter((s) => s.isValid !== false);
-      return validSamples.filter(
+      // Explorer Mode: count ALL samples (including questionable)
+      // Careful Mode: only count valid samples
+      const countableSamples = carefulMode
+        ? samples.filter((s) => s.isValid !== false)
+        : samples;
+      return countableSamples.filter(
         (s) =>
           s.sourceId === classId ||
           (s.label === classLabel && !s.sourceId),
       ).length;
     },
-    [samples, classes],
+    [samples, classes, carefulMode],
   );
 
   // ══════════════════════════════════════
@@ -372,22 +377,38 @@ export default function TeachPanel({
 
       setSamples((prev) => {
         let msg = '';
+        let isQuestionable = false;
+        let questionableReason = '';
+
         if (!validation.isValid) {
           msg = validation.suggestion;
+          isQuestionable = true;
+          questionableReason = msg;
         } else if (quality.isBlurry) {
           msg = 'Ảnh hơi mờ! Bé cố gắng giữ chắc tay nhé 🔍';
+          isQuestionable = true;
+          questionableReason = msg;
         } else if (quality.isDark) {
           msg = 'Ảnh hơi tối! Bé tìm chỗ sáng hơn xíu nha 🌑';
+          isQuestionable = true;
+          questionableReason = msg;
         }
 
         if (msg) {
           if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
-          setValidationToast(`⚠️ ${msg}`);
+          // Explorer Mode: positive tone, Careful Mode: warning tone
+          const toastMsg = carefulMode
+            ? `⚠️ ${msg}`
+            : `⚠️ ${msg} — Để xem AI sẽ học ra sao nhé!`;
+          setValidationToast(toastMsg);
           toastTimeoutRef.current = setTimeout(
             () => setValidationToast(null),
             4000,
           );
         }
+
+        // Explorer Mode: always valid (collect everything), Careful Mode: reject invalid
+        const finalIsValid = carefulMode ? validation.isValid : true;
 
         return [
           ...prev,
@@ -398,7 +419,9 @@ export default function TeachPanel({
             sourceId: activeClass,
             thumbnail,
             rawThumbnail,
-            isValid: validation.isValid,
+            isValid: finalIsValid,
+            isQuestionable,
+            questionableReason,
             quality,
           },
         ];
@@ -445,8 +468,8 @@ export default function TeachPanel({
 
       setSamples((prev) => {
         const newSamples: StoredSample[] = [];
-        let rejectedAny = false;
-        let rejectionMsg = '';
+        let hasWarning = false;
+        let warningMsg = '';
 
         const processHand = (handIndex: number) => {
           if (
@@ -461,19 +484,22 @@ export default function TeachPanel({
           const quality = assessQuality(rawCanvas, roi, keypoints as { x: number; y: number }[]);
 
           const features = normalizeHandKeypoints(keypoints);
-          let isValid = true;
+          let heuristicValid = true;
+          let isQuestionable = false;
+          let questionableReason = '';
           
           // Ưu tiên 1: Nếu ảnh mờ/tối, bỏ qua việc kiểm tra xương (tránh ảo giác)
           if (quality.isBlurry || quality.isDark) {
-            isValid = false;
-            rejectedAny = true;
-            rejectionMsg = quality.isBlurry 
+            heuristicValid = false;
+            isQuestionable = true;
+            hasWarning = true;
+            warningMsg = quality.isBlurry 
               ? 'Ảnh hơi mờ! Bé cố gắng giữ chắc tay nhé 🔍' 
               : 'Ảnh hơi tối! Bé tìm chỗ sáng hơn xíu nha 🌑';
+            questionableReason = warningMsg;
           } else {
             // Validation 2: Golden dataset distance
             if (
-              isValid &&
               goldenCurrentClass.length > 0 &&
               goldenOtherClasses.length > 0
             ) {
@@ -510,14 +536,19 @@ export default function TeachPanel({
                 }
               });
 
-              const threshold = mode === 'gesture' ? 0.7 : 0.9;
-              if (minDistToWrong < minDistToCorrect * threshold) {
-                isValid = false;
-                rejectedAny = true;
-                rejectionMsg = `Cử chỉ này trông giống "${closestWrongLabel}" hơn! Bé thử lại nhé? 🤔`;
+              const distThreshold = mode === 'gesture' ? 0.7 : 0.9;
+              if (minDistToWrong < minDistToCorrect * distThreshold) {
+                heuristicValid = false;
+                isQuestionable = true;
+                hasWarning = true;
+                warningMsg = `Cử chỉ này trông giống "${closestWrongLabel}" hơn! Bé thử lại nhé? 🤔`;
+                questionableReason = warningMsg;
               }
             }
           }
+
+          // Explorer Mode: always valid (collect everything), Careful Mode: reject invalid
+          const finalIsValid = carefulMode ? heuristicValid : true;
 
           newSamples.push({
             id: crypto.randomUUID(),
@@ -526,8 +557,10 @@ export default function TeachPanel({
             sourceId: activeClass,
             thumbnail,
             rawThumbnail,
-            isValid,
-            invalidReason: isValid ? undefined : rejectionMsg,
+            isValid: finalIsValid,
+            isQuestionable,
+            questionableReason,
+            invalidReason: finalIsValid ? undefined : warningMsg,
             quality,
           });
         };
@@ -535,9 +568,13 @@ export default function TeachPanel({
         processHand(0);
         if (isTwoHandMode) processHand(1);
 
-        if (rejectedAny && rejectionMsg) {
+        if (hasWarning && warningMsg) {
           if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
-          setValidationToast(`⚠️ ${rejectionMsg}`);
+          // Explorer Mode: positive tone, Careful Mode: warning tone
+          const toastMsg = carefulMode
+            ? `⚠️ ${warningMsg}`
+            : `⚠️ ${warningMsg} — Để xem AI sẽ học ra sao nhé!`;
+          setValidationToast(toastMsg);
           toastTimeoutRef.current = setTimeout(
             () => setValidationToast(null),
             5000,
@@ -560,6 +597,7 @@ export default function TeachPanel({
     allFacesRef,
     handsRef,
     getVideoThumbAndCanvas,
+    carefulMode,
   ]);
 
   const startCapturing = useCallback(() => {
@@ -618,8 +656,12 @@ export default function TeachPanel({
 
     try {
       if (trainerRef.current) {
-        const validSamples = samples.filter((s) => s.isValid !== false);
-        await trainerRef.current.train(validSamples, (epoch, progress) => {
+        // Explorer Mode: train with ALL samples (including questionable ones)
+        // Careful Mode: only train with valid samples
+        const trainingSamples = carefulMode
+          ? samples.filter((s) => s.isValid !== false)
+          : samples;
+        await trainerRef.current.train(trainingSamples, (epoch, progress) => {
           setTrainingProgress(progress);
         });
         // progress reaches 100 here, which will trigger the useEffect below
@@ -629,7 +671,7 @@ export default function TeachPanel({
       setIsTraining(false);
       alert('Lỗi huấn luyện mô hình. Vui lòng thử lại.');
     }
-  }, [canTrain, samples]);
+  }, [canTrain, samples, carefulMode]);
 
   // Handle train completion & re-evaluation
   useEffect(() => {
@@ -1071,10 +1113,35 @@ export default function TeachPanel({
   return (
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
       {/* ── LEFT PANEL: Class selector + capture + gallery ── */}
-      <div className="lg:col-span-3 bg-white rounded-3xl p-5 border-4 border-indigo-400 shadow-xl flex flex-col">
-        <div className="text-xs font-black text-indigo-600 tracking-wider mb-2 uppercase">
-          Lớp học AI của bé 🧑‍🏫
+      <div className={`lg:col-span-3 bg-white rounded-3xl p-5 border-4 shadow-xl flex flex-col transition-colors ${carefulMode ? 'border-indigo-400' : 'border-amber-400'}`}>
+        <div className="flex items-center justify-between mb-2">
+          <div className="text-xs font-black text-indigo-600 tracking-wider uppercase">
+            Lớp học AI của bé 🧑‍🏫
+          </div>
+          {/* Explorer / Careful Mode Toggle */}
+          <button
+            onClick={() => { playClickSound(); setCarefulMode(!carefulMode); }}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-extrabold border-2 transition-all hover:scale-105 ${
+              carefulMode
+                ? 'bg-indigo-50 border-indigo-300 text-indigo-700'
+                : 'bg-amber-50 border-amber-300 text-amber-700'
+            }`}
+            title={carefulMode ? 'Chế độ Cẩn Thận: Ảnh sai nhãn sẽ bị loại' : 'Chế độ Khám Phá: Thu tất cả ảnh, kể cả sai nhãn'}
+          >
+            {carefulMode ? (
+              <><ShieldCheck className="w-3.5 h-3.5" /> Cẩn Thận</>
+            ) : (
+              <><FlaskConical className="w-3.5 h-3.5" /> Khám Phá</>
+            )}
+          </button>
         </div>
+
+        {/* Explorer Mode Banner */}
+        {!carefulMode && (
+          <div className="mb-3 bg-amber-50 border-2 border-amber-200 rounded-2xl p-2.5 text-[11px] font-bold text-amber-700 flex items-start gap-2">
+            <span>Chế độ Khám Phá: AI sẽ học TẤT CẢ ảnh kể cả sai nhãn. Bé sẽ thấy hậu quả khi dữ liệu bẩn!</span>
+          </div>
+        )}
 
         {/* Class buttons */}
         <div className="space-y-2.5 mb-4">
@@ -1167,7 +1234,11 @@ export default function TeachPanel({
 
         {/* Validation toast */}
         {validationToast && (
-          <div className="mt-3 p-3 bg-red-100 border-2 border-red-400 rounded-2xl text-sm font-bold text-red-700 flex items-center gap-2 animate-bounce shadow-lg">
+          <div className={`mt-3 p-3 border-2 rounded-2xl text-sm font-bold flex items-center gap-2 animate-bounce shadow-lg ${
+            carefulMode
+              ? 'bg-red-100 border-red-400 text-red-700'
+              : 'bg-amber-50 border-amber-300 text-amber-700'
+          }`}>
             <span className="text-xl">🚨</span>
             <span>{validationToast}</span>
           </div>

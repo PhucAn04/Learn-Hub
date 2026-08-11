@@ -18,7 +18,9 @@ export default function SampleGallery({ samples, onDeleteSample, onClearAll, isT
   if (samples.length === 0) return null;
 
   const invalidSamples = samples.filter(s => s.isValid === false || s.aiFeedback?.isMisclassified === true);
+  const questionableSamples = samples.filter(s => s.isQuestionable === true && s.isValid !== false);
   const invalidCount = invalidSamples.length;
+  const questionableCount = questionableSamples.length;
   const previewSample = previewIndex !== null ? samples[previewIndex] : null;
 
   return (
@@ -45,6 +47,7 @@ export default function SampleGallery({ samples, onDeleteSample, onClearAll, isT
         <span className="text-xs font-bold text-gray-500">
           📷 Thư viện ảnh ({samples.length})
           {invalidCount > 0 && <span className="text-red-500 ml-1">• {invalidCount} ảnh nghi sai</span>}
+          {questionableCount > 0 && <span className="text-red-500 ml-1">• {questionableCount} ảnh nghi sai</span>}
         </span>
         <button
           onClick={(e) => {
@@ -62,6 +65,7 @@ export default function SampleGallery({ samples, onDeleteSample, onClearAll, isT
         {samples.map((s, index) => {
           const isInvalid = s.isValid === false || s.aiFeedback?.isMisclassified === true;
           const isBadQuality = s.quality?.isBlurry || s.quality?.isDark;
+          const isQuestionable = s.isQuestionable === true && !isInvalid;
           const key = s.id || `sample-${index}`;
           
           return (
@@ -75,7 +79,9 @@ export default function SampleGallery({ samples, onDeleteSample, onClearAll, isT
                 isBadQuality
                   ? 'border-4 border-yellow-500 ring-2 ring-yellow-300 ring-offset-1 z-10'
                   : isInvalid 
-                  ? 'border-4 border-red-500 ring-2 ring-red-300 ring-offset-1 z-10' 
+                  ? 'border-4 border-red-500 ring-2 ring-red-300 ring-offset-1 z-10'
+                  : isQuestionable
+                  ? 'border-4 border-red-400 ring-2 ring-red-200 ring-offset-1 z-10'
                   : 'border-2 border-indigo-100 hover:border-indigo-400'
               }`}
             >
@@ -103,9 +109,13 @@ export default function SampleGallery({ samples, onDeleteSample, onClearAll, isT
                     <AlertTriangle className="w-4 h-4" />
                   </div>
                 </div>
+              ) : isQuestionable ? (
+                <div className="absolute inset-0 bg-red-500/10 flex items-center justify-center pointer-events-none">
+                  
+                </div>
               ) : null}
 
-              {!isInvalid && !isBadQuality && (
+              {!isInvalid && !isBadQuality && !isQuestionable && (
                 <div className="absolute inset-0 flex items-center justify-center bg-black/40 text-white opacity-0 transition-opacity group-hover:opacity-100">
                   <Eye className="w-5 h-5" />
                 </div>
@@ -233,6 +243,17 @@ export default function SampleGallery({ samples, onDeleteSample, onClearAll, isT
                 <p className="text-xs text-red-600 mt-2 font-semibold leading-relaxed">
                   Bạn AI đã xem ảnh này và thấy nó không giống với nhãn "{previewSample.label}" mà bé đang dạy.
                   Bé nên xóa ảnh này đi và chụp lại cho đúng nhé! 🤗
+                </p>
+              </div>
+            ) : previewSample.isQuestionable ? (
+              <div className="p-4 rounded-xl border-2 bg-red-50 border-red-300 mb-4">
+                <div className="flex items-center gap-2 font-extrabold text-red-700 text-sm">
+                  <AlertTriangle className="w-5 h-5" />
+                  <span>Ảnh thí nghiệm — AI nghi ngờ!</span>
+                </div>
+                <p className="text-xs text-red-600 mt-2 font-semibold leading-relaxed">
+                  {previewSample.questionableReason || 'AI nghi ngờ ảnh này không đúng nhãn.'}
+                  {' '}Ảnh này vẫn được thu trong Chế độ Khám Phá. Nếu AI dự đoán sai, đây có thể là nguyên nhân! 🧪
                 </p>
               </div>
             ) : (

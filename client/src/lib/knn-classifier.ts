@@ -20,6 +20,8 @@ export interface StoredSample {
   thumbnail?: string; // base64 image data for preview (with skeleton)
   rawThumbnail?: string; // base64 image data for preview (without skeleton)
   isValid?: boolean;  // whether the sample was validated as correct by AI
+  isQuestionable?: boolean; // sample accepted in Explorer Mode despite AI suspecting wrong label
+  questionableReason?: string; // why AI thinks this sample might be wrong
   invalidReason?: string; // specific reason for invalidation (e.g. wrong finger count)
   quality?: SampleQualityMeta; // Image quality metadata (brightness, blur)
   aiFeedback?: {      // Feedback set by AI evaluation after training

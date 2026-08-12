@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
 import { useCamera } from '@/hooks/useCamera';
 import { useMl5FaceMesh } from '@/hooks/useMl5FaceMesh';
+import { useStabilityDetector } from '@/hooks/useStabilityDetector';
 import { 
   FACE_OVAL,
   FACE_L_EYE,
@@ -85,6 +86,16 @@ export default function TeacherTeachFacePage() {
   const { allFacesRef, modelStatus } = useMl5FaceMesh(videoRef, cameraActive, {
     maxFaces: 1,
   });
+
+  const { isStable, motionScore } = useStabilityDetector(
+    () => {
+      const faces = allFacesRef.current;
+      if (!faces || faces.length === 0) return null;
+      return faces[0] as { x: number; y: number }[];
+    },
+    videoRef,
+    modelStatus === 'ready'
+  );
 
   useEffect(() => {
   }, []);
@@ -234,6 +245,14 @@ export default function TeacherTeachFacePage() {
     const roi = calculateROI(kps as { x: number; y: number }[], vW, vH, 0.2);
     const quality = frameCtx ? assessQuality(frameCv, roi, kps as { x: number; y: number }[]) : undefined;
     
+    // Stability check
+    if (!isStable) {
+      if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
+      setValidationToast(`⚠️ Mặt đang di chuyển (motion: ${motionScore.toFixed(1)}px). Hãy giữ yên mặt rồi chụp lại!`);
+      toastTimeoutRef.current = setTimeout(() => setValidationToast(null), 3000);
+      return;
+    }
+
     if (quality?.isDark || quality?.isBlurry) {
       if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
       setValidationToast(quality.isDark

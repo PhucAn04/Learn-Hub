@@ -5,6 +5,7 @@ import { Brain, Camera, Trash2, FlaskConical, ShieldCheck } from 'lucide-react';
 import { useCamera } from '@/hooks/useCamera';
 import { useMl5Handpose } from '@/hooks/useMl5Handpose';
 import { useMl5FaceMesh } from '@/hooks/useMl5FaceMesh';
+import { useStabilityDetector } from '@/hooks/useStabilityDetector';
 import { drawHandSkeleton } from '@/lib/hand-drawing';
 import {
   FACE_OVAL,
@@ -280,6 +281,12 @@ export default function TeachPanel({
 
   const modelStatus = isHandMode ? handModelStatus : faceModelStatus;
 
+  const { isStable, motionScore } = useStabilityDetector(
+    () => handsRef.current?.[0]?.keypoints as { x: number; y: number }[] ?? null,
+    videoRef,
+    modelStatus === 'ready'
+  );
+
   // ── Thumbnail helper ────────────────
   const getVideoThumbAndCanvas = useCallback((hands?: HandResult[], faces?: FaceMeshResult[]) => {
     if (!videoRef.current) return { thumbnail: '', rawThumbnail: '', canvas: document.createElement('canvas'), rawCanvas: document.createElement('canvas') };
@@ -490,8 +497,14 @@ export default function TeachPanel({
           let isQuestionable = false;
           let questionableReason = '';
           
-          // Ưu tiên 1: Nếu ảnh mờ/tối, bỏ qua việc kiểm tra xương (tránh ảo giác)
-          if (quality.isBlurry || quality.isDark) {
+          // Stability check
+          if (!isStable) {
+            heuristicValid = false;
+            isQuestionable = true;
+            hasWarning = true;
+            warningMsg = `Tay đang rung! Bé giữ chắc tay nhé 📳`;
+            questionableReason = warningMsg;
+          } else if (quality.isBlurry || quality.isDark) {
             heuristicValid = false;
             isQuestionable = true;
             hasWarning = true;

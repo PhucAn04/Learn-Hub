@@ -17,6 +17,7 @@ import DataCollector from '@/components/journey/DataCollector';
 import { TfTrainer } from '@/lib/tf-trainer';
 import { uploadSamplesToCloudinary, isCloudinaryConfigured } from '@/lib/cloudinary';
 import { assessQuality, calculateROI } from '@/lib/image-quality';
+import { useStabilityDetector } from '@/hooks/useStabilityDetector';
 // Predefined classes for teaching
 const CLASSES = [
   { id: 'class_1', label: 'Thích (Thumbs Up) 👍', voicePrompt: 'Hãy dạy bạn A I nhận biết cử chỉ Thích nhé!' },
@@ -74,6 +75,12 @@ export default function TeacherTeachGesturesPage() {
     maxHands: 2,
   });
 
+  const { isStable, motionScore } = useStabilityDetector(
+    () => handsRef.current?.[0]?.keypoints as { x: number; y: number }[] ?? null,
+    videoRef,
+    modelStatus === 'ready'
+  );
+
   useEffect(() => {
   }, []);
 
@@ -116,7 +123,7 @@ export default function TeacherTeachGesturesPage() {
     }
 
     const activeClassLabel = CLASSES.find(c => c.id === activeClass)?.label || activeClass;
-    let knnLabel = activeClassLabel;
+    const knnLabel = activeClassLabel;
 
     const rawThumbnail = getVideoThumb();
     const thumbnail = getVideoThumb(hands);
@@ -129,6 +136,14 @@ export default function TeacherTeachGesturesPage() {
     const frameCtx = frameCv.getContext('2d');
     if (frameCtx && videoRef.current) {
       frameCtx.drawImage(videoRef.current, 0, 0, vW, vH);
+    }
+
+    // Stability check: tay đang rung?
+    if (!isStable) {
+      if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
+      setValidationToast(`⚠️ Tay đang rung (motion: ${motionScore.toFixed(1)}px). Hãy giữ yên tay rồi chụp lại!`);
+      toastTimeoutRef.current = setTimeout(() => setValidationToast(null), 3000);
+      return;
     }
 
     setSamples(prev => {

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Brain, Camera, Trash2, Clock } from 'lucide-react';
 import { useCamera } from '@/hooks/useCamera';
 import { useMl5BodyPose } from '@/hooks/useMl5BodyPose';
+import { useStabilityDetector } from '@/hooks/useStabilityDetector';
 import { drawBodySkeleton } from '@/lib/body-drawing';
 import { normalizeBodyKeypoints } from '@/lib/body-pose-classifier';
 import { classifyKNN, classifyKNNDetailed, StoredSample } from '@/lib/knn-classifier';
@@ -92,6 +93,13 @@ export default function BodyTeachPanel({
     cameraActive
   );
 
+  const { isStable, motionScore } = useStabilityDetector(
+    () => posesRef.current?.[0]?.keypoints as { x: number; y: number }[] ?? null,
+    videoRef,
+    modelStatus === 'ready',
+    { threshold: 12 } // Body pose cho phép nhiều chuyển động hơn
+  );
+
   // ── Drawing loop ────────────────────
   useEffect(() => {
     let animationId: number;
@@ -126,6 +134,12 @@ export default function BodyTeachPanel({
     const pose = poses[0];
     if (!pose || !pose.keypoints) return;
     
+    if (!isStable) {
+      setValidationToast(`⚠️ Cơ thể đang di chuyển (motion: ${motionScore.toFixed(1)}px). Hãy đứng yên rồi chụp lại!`);
+      setTimeout(() => setValidationToast(null), 3000);
+      return;
+    }
+
     const features = normalizeBodyKeypoints(pose.keypoints);
     if (!features || features.length === 0) return;
 
@@ -179,7 +193,7 @@ export default function BodyTeachPanel({
       }
     ]);
     playClickSound();
-  }, [posesRef, videoRef, classesState, activeClass]);
+  }, [posesRef, videoRef, classesState, activeClass, isStable, motionScore]);
 
   useEffect(() => {
     if (countdown === null) return;

@@ -17,6 +17,7 @@ import SampleGallery from '@/components/SampleGallery';
 import DataCollector from '@/components/journey/DataCollector';
 import { TfTrainer } from '@/lib/tf-trainer';
 import { uploadSamplesToCloudinary, isCloudinaryConfigured } from '@/lib/cloudinary';
+import { useStabilityDetector } from '@/hooks/useStabilityDetector';
 // Predefined classes for teaching
 const CLASSES = [
   { id: 'class_3', label: '2 Bàn Tay, 1 Ngón Tay ☝️☝️', voicePrompt: 'Hãy giơ hai bàn tay, mỗi tay một ngón nhé!' },
@@ -157,6 +158,16 @@ export default function TeacherTeachTwoHandsPage() {
     maxHands: 2,
   });
 
+  const { isStable, motionScore } = useStabilityDetector(
+    () => {
+      const hands = handsRef.current;
+      if (!hands || hands.length < 2) return null;
+      return [...(hands[0].keypoints as { x: number; y: number }[] ?? []), ...(hands[1].keypoints as { x: number; y: number }[] ?? [])];
+    },
+    videoRef,
+    modelStatus === 'ready'
+  );
+
   useEffect(() => {
   }, []);
 
@@ -199,6 +210,14 @@ export default function TeacherTeachTwoHandsPage() {
     const frameCtx = frameCv.getContext('2d');
     if (frameCtx && videoRef.current) {
       frameCtx.drawImage(videoRef.current, 0, 0, vW, vH);
+    }
+
+    // Stability check: tay đang rung?
+    if (!isStable) {
+      if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
+      setValidationToast(`⚠️ Tay đang rung (motion: ${motionScore.toFixed(1)}px). Hãy giữ yên tay rồi chụp lại!`);
+      toastTimeoutRef.current = setTimeout(() => setValidationToast(null), 3000);
+      return;
     }
 
     setSamples(prev => {

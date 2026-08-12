@@ -225,7 +225,6 @@ export function useModelEvaluation(config: EvalConfig) {
             count,
             sampleThumbnails: samples
               .filter(s => s.label === label && (s.thumbnail || s.rawThumbnail))
-              .slice(0, 4)
               .map(s => (s.thumbnail || s.rawThumbnail) as string),
           })),
         },

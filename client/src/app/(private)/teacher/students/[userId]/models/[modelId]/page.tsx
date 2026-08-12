@@ -104,6 +104,7 @@ export default function TeacherModelDetailPage() {
   const [feedbackText, setFeedbackText] = useState('');
   const [sendingFeedback, setSendingFeedback] = useState(false);
   const [zoomedImage, setZoomedImage] = useState<{ src: string; caption: string } | null>(null);
+  const [expandedClasses, setExpandedClasses] = useState<Record<string, boolean>>({});
 
   const { data, loading, refetch: fetchData } = usePageData(async () => {
     if (!modelId || modelId === 'undefined') return null;
@@ -237,18 +238,33 @@ export default function TeacherModelDetailPage() {
                           </div>
                         </div>
                         {cp.sampleThumbnails.length > 0 ? (
-                          <div className="grid grid-cols-4 gap-2">
-                            {cp.sampleThumbnails.map((thumb, i) => (
-                              <EvidenceImage
-                                key={i}
-                                src={thumb}
-                                caption={`${cp.label} #${i + 1}`}
-                                onClick={() => setZoomedImage({ src: thumb, caption: `${cp.label} — Ảnh mẫu #${i + 1}` })}
-                              />
-                            ))}
-                            {cp.count > 4 && (
-                              <div className="flex items-center justify-center aspect-square bg-slate-100 rounded-xl border-2 border-dashed border-slate-300">
-                                <span className="text-xs font-bold text-slate-400">+{cp.count - 4} ảnh</span>
+                          <div>
+                            <div className="grid grid-cols-4 gap-2">
+                              {(expandedClasses[cp.label] ? cp.sampleThumbnails : cp.sampleThumbnails.slice(0, 4)).map((thumb, i) => (
+                                <EvidenceImage
+                                  key={i}
+                                  src={thumb}
+                                  caption={`${cp.label} #${i + 1}`}
+                                  onClick={() => setZoomedImage({ src: thumb, caption: `${cp.label} — Ảnh mẫu #${i + 1}` })}
+                                />
+                              ))}
+                              {!expandedClasses[cp.label] && cp.sampleThumbnails.length > 4 && (
+                                <div 
+                                  onClick={() => setExpandedClasses(prev => ({ ...prev, [cp.label]: true }))}
+                                  className="flex items-center justify-center aspect-square bg-slate-100 rounded-xl border-2 border-dashed border-slate-300 cursor-pointer hover:bg-slate-200 hover:border-slate-400 transition-colors"
+                                >
+                                  <span className="text-xs font-bold text-slate-500">+{cp.sampleThumbnails.length - 4} ảnh</span>
+                                </div>
+                              )}
+                            </div>
+                            {expandedClasses[cp.label] && cp.sampleThumbnails.length > 4 && (
+                              <div className="mt-3 flex justify-center">
+                                <button
+                                  onClick={() => setExpandedClasses(prev => ({ ...prev, [cp.label]: false }))}
+                                  className="text-[10px] font-extrabold text-indigo-600 bg-indigo-50 px-3 py-1.5 rounded-full hover:bg-indigo-100 transition-colors"
+                                >
+                                  Ẩn bớt
+                                </button>
                               </div>
                             )}
                           </div>

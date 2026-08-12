@@ -87,7 +87,7 @@ export default function ConfusionMatrixViewer({ evaluation }: ConfusionMatrixVie
                   {!td.isCorrect && (
                     <div className="text-red-600 font-bold truncate">AI đoán: {td.predictedLabel}</div>
                   )}
-                  <div className="text-slate-400 font-medium">Tin cậy: {Math.round(td.confidence * 100)}%</div>
+                  <div className="text-slate-400 font-medium">Tin cậy: {Math.round(td.confidence)}%</div>
                 </div>
               </div>
             ))}

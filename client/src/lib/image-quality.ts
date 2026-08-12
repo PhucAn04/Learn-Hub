@@ -207,20 +207,37 @@ export function analyzeBlur(
   const variance = Math.max(0, (laplacianSqSum / activePixels) - (mean * mean));
   const sharpnessRatio = (strongPixels / activePixels) * 100;
   
-  // 3. THRESHOLDS: Nhờ việc cắt bỏ background và triệt tiêu ISO noise, tín hiệu giờ đây rất sạch!
-  // Chỉ số Variance và Sharpness giờ đây phản ánh thuần túy độ sắc nét của bàn tay/cơ thể.
+  // 3. THRESHOLDS
+  // Variance = chỉ số chính, ổn định cho cả nền trơn và nền có đồ vật.
+  // MaxLaplacian = xác nhận có edge thật (phân biệt ảnh nét vs ảnh mờ toàn phần).
+  // SharpnessRatio = % pixel edge mạnh — KHÔNG đáng tin trên nền trơn (tường)
+  //   vì ROI chứa chủ yếu pixel đồng nhất → tỷ lệ strongPixels luôn thấp.
+  //   → Dùng làm bonus, KHÔNG phải yêu cầu bắt buộc.
   const brightnessFactor = brightness < 100 ? Math.min(2.0, 100 / Math.max(brightness, 20)) : 1;
   
-  // Ngưỡng tiêu chuẩn (rất ổn định vì tín hiệu sạch)
-  const minVarianceThreshold = 250 / brightnessFactor;
-  const standardSharpnessThreshold = 20.0 / Math.sqrt(brightnessFactor); 
+  // Resolution scaling: Ngưỡng tự điều chỉnh theo kích thước ảnh thực tế.
+  const actualPixels = w * h;
+  const resolutionScale = actualPixels > 307200 ? Math.sqrt(307200 / actualPixels) : 1;
+
+  const minVarianceThreshold = (200 / brightnessFactor) * resolutionScale;
+  const minMaxLapThreshold = 22 * resolutionScale;
 
   let isBlurry = true;
   
-  if (variance >= minVarianceThreshold && sharpnessRatio >= standardSharpnessThreshold) {
+  // Bộ lọc motion blur: MaxLap cực cao + Sharp% thấp = motion streak
+  // (viền tay quét nhanh tạo 1 edge cực mạnh, nhưng phần còn lại mờ nhòe)
+  const isMotionArtifact = maxLaplacian > 55 * resolutionScale && sharpnessRatio < 6.0;
+  
+  if (isMotionArtifact) {
+    // Phát hiện motion blur → giữ isBlurry = true
+  }
+  // Điều kiện 1: Variance tốt + MaxLaplacian xác nhận có edge thật
+  // → Hoạt động cho CẢ nền trơn và nền có đồ vật
+  else if (variance >= minVarianceThreshold && maxLaplacian >= minMaxLapThreshold) {
     isBlurry = false;
   }
-  else if (maxLaplacian >= 60 && variance >= minVarianceThreshold * 0.7 && sharpnessRatio >= standardSharpnessThreshold * 0.7) {
+  // Điều kiện 2: Variance hơi thấp nhưng MaxLap cao (edge rõ, low-light fallback)
+  else if (maxLaplacian >= 45 * resolutionScale && variance >= minVarianceThreshold * 0.6) {
     isBlurry = false;
   }
 

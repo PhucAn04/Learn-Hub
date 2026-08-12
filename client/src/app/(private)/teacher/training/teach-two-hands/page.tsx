@@ -10,6 +10,7 @@ import { useMl5Handpose } from '@/hooks/useMl5Handpose';
 import { drawHandSkeleton } from '@/lib/hand-drawing';
 import { playSuccessSound, speakEnglish, playClickSound } from '@/lib/audio';
 import { normalizeHandKeypoints, classifyKNN, StoredSample, HandKeypoint } from '@/lib/knn-classifier';
+import { assessQuality, calculateROI } from '@/lib/image-quality';
 import { GOLDEN_TEST_DATASET } from '@/lib/golden-dataset';
 import CameraView from '@/components/CameraView';
 import SampleGallery from '@/components/SampleGallery';
@@ -190,6 +191,16 @@ export default function TeacherTeachTwoHandsPage() {
 
     const expectedFingers = getExpectedFingerCount(activeClass);
 
+    const vW = videoRef.current ? videoRef.current.videoWidth || 640 : 640;
+    const vH = videoRef.current ? videoRef.current.videoHeight || 480 : 480;
+    const frameCv = document.createElement('canvas');
+    frameCv.width = vW;
+    frameCv.height = vH;
+    const frameCtx = frameCv.getContext('2d');
+    if (frameCtx && videoRef.current) {
+      frameCtx.drawImage(videoRef.current, 0, 0, vW, vH);
+    }
+
     setSamples(prev => {
       const newSamples: StoredSample[] = [];
       let rejectedAny = false;
@@ -200,9 +211,18 @@ export default function TeacherTeachTwoHandsPage() {
           const features = normalizeHandKeypoints(hands[handIndex].keypoints);
           let isValid = true;
 
+          // Quality Assessment (Dark/Blurry Check)
+          const roi = calculateROI(hands[handIndex].keypoints as { x: number; y: number }[], frameCv.width, frameCv.height, 0.1);
+          const quality = frameCtx ? assessQuality(frameCv, roi, hands[handIndex].keypoints as { x: number; y: number }[]) : undefined;
+          if (quality?.isDark || quality?.isBlurry) {
+            isValid = false;
+            rejectedAny = true;
+            rejectionMsg = quality.isDark ? `⚠️ Ảnh bị quá tối.` : `⚠️ Ảnh bị mờ. Vui lòng giữ tay thật yên lặng khi chụp!`;
+          }
+
           // Validation 1: Finger counting heuristic
           // Kiểm tra trực tiếp số ngón tay duỗi ra so với nhãn mong đợi
-          if (expectedFingers > 0) {
+          if (isValid && expectedFingers > 0) {
             const detectedFingers = countExtendedFingers(hands[handIndex].keypoints);
             if (detectedFingers >= 0) {
               // Bỏ qua ngón cái khi đếm, nên bây giờ có thể so sánh chính xác số ngón
@@ -667,8 +687,8 @@ export default function TeacherTeachTwoHandsPage() {
                       <span className="text-red-800 text-sm font-extrabold block">⚠️ Yêu cầu dữ liệu:</span>
                       <span>Bạn cần chụp ít nhất 10 ảnh cho mỗi nhóm để AI có thể học tốt nhé:</span>
                       <ul className="list-disc pl-4 space-y-1">
-                        {c3 < 10 && <li>Nhóm "{CLASSES[0].label}": thiếu {10 - c3} ảnh mẫu.</li>}
-                        {c4 < 10 && <li>Nhóm "{CLASSES[1].label}": thiếu {10 - c4} ảnh mẫu.</li>}
+                        {c3 < 10 && <li>Nhóm &quot;{CLASSES[0].label}&quot;: thiếu {10 - c3} ảnh mẫu.</li>}
+                        {c4 < 10 && <li>Nhóm &quot;{CLASSES[1].label}&quot;: thiếu {10 - c4} ảnh mẫu.</li>}
                       </ul>
                     </div>
                   );
@@ -676,7 +696,7 @@ export default function TeacherTeachTwoHandsPage() {
 
                 return (
                   <div className="bg-green-50 border-2 border-green-200 text-green-700 rounded-2xl p-4 text-xs font-bold mb-6 shadow-inner">
-                    <span>🎉 Tuyệt vời! Bạn đã thu thập đủ dữ liệu rồi. Hãy nhấn nút <b>"HUẤN LUYỆN AI 🧠🚀"</b> bên dưới nhé!</span>
+                    <span>🎉 Tuyệt vời! Bạn đã thu thập đủ dữ liệu rồi. Hãy nhấn nút <b>&quot;HUẤN LUYỆN AI 🧠🚀&quot;</b> bên dưới nhé!</span>
                   </div>
                 );
               })()}
@@ -788,7 +808,7 @@ export default function TeacherTeachTwoHandsPage() {
                 </div>
               ) : (
                 <div className="text-center py-4 text-purple-200 font-bold">
-                  Bạn hãy chụp mẫu tay bên trái rồi bấm <span className="text-yellow-300">"Huấn Luyện AI"</span> để xem kết quả dự đoán trực tiếp ở đây nhé! 🤖✨
+                  Bạn hãy chụp mẫu tay bên trái rồi bấm <span className="text-yellow-300">&quot;Huấn Luyện AI&quot;</span> để xem kết quả dự đoán trực tiếp ở đây nhé! 🤖✨
                 </div>
               )}
             </div>

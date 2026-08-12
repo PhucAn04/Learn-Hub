@@ -148,7 +148,7 @@ export default function TeacherTeachGesturesPage() {
           const roi = hands[handIndex]?.keypoints
             ? calculateROI(hands[handIndex].keypoints as { x: number; y: number }[], frameCv.width, frameCv.height, 0.1)
             : undefined;
-          const quality = frameCtx ? assessQuality(frameCv, roi) : undefined;
+          const quality = frameCtx ? assessQuality(frameCv, roi, hands[handIndex].keypoints as { x: number; y: number }[]) : undefined;
           if (quality?.isDark || quality?.isBlurry) {
             isValid = false;
             if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);

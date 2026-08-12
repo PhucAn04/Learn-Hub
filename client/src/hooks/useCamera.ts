@@ -22,7 +22,9 @@ interface UseCameraOptions {
 }
 
 export function useCamera(options: UseCameraOptions = {}) {
-  const { width = 1280, height = 720, facingMode = 'user' } = options;
+  const width = options.width || 1280;
+  const height = options.height || 720;
+  const facingMode = options.facingMode || 'user';
 
   const [cameraActive, setCameraActive] = useState(false);
   const [cameraError, setCameraError] = useState('');

@@ -14,5 +14,5 @@ COPY . .
 
 EXPOSE 3000
 
-# Start development server
-CMD ["npm", "run", "dev"]
+# Clear stale Turbopack cache on start to prevent 404s after container restart
+CMD ["sh", "-c", "rm -rf .next && npm run dev"]

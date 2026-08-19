@@ -173,6 +173,24 @@ export interface ModelEvaluation {
       count: number;
       sampleThumbnails: string[];
     }[];
+    // Đánh giá chéo từng ảnh học sinh (bằng Teacher/Golden Dataset)
+    studentImageAudit?: {
+      id: string;
+      expectedLabel: string;
+      predictedLabel: string;
+      isMatch: boolean;
+      confidence: number;
+      evaluationSource: 'teacher' | 'golden' | 'self';
+      thumbnail?: string;
+    }[];
+    // Mô hình bé đánh giá từng ảnh GV — "Mô hình tự tin: X%"
+    modelConfidencePerImage?: {
+      expectedLabel: string;
+      predictedLabel: string;
+      isCorrect: boolean;
+      confidence: number;
+      thumbnail?: string;
+    }[];
   };
   evaluatedAt: string;
   evaluationVersion: string;

@@ -15,6 +15,7 @@ import type { ModelResponse } from '@/types/models';
 import DatasetSnapshotViewer from '@/components/teacher/DatasetSnapshotViewer';
 import VersionDiff from '@/components/teacher/VersionDiff';
 import ConfusionMatrixViewer from '@/components/teacher/ConfusionMatrixViewer';
+import StudentImageAuditViewer from '@/components/teacher/StudentImageAuditViewer';
 
 // ── Reusable UI Atoms ──────────────────────────────────────────────────────────
 
@@ -108,13 +109,17 @@ export default function TeacherModelDetailPage() {
 
   const { data, loading, refetch: fetchData } = usePageData(async () => {
     if (!modelId || modelId === 'undefined') return null;
-    const m = await api.getModelById(modelId);
-    let pm: ModelResponse | null = null;
-    if (m.parentModelId) {
-      pm = await api.getModelById(m.parentModelId).catch(() => null);
+    try {
+      const m = await api.getModelById(modelId);
+      let pm: ModelResponse | null = null;
+      if (m.parentModelId) {
+        pm = await api.getModelById(m.parentModelId).catch(() => null);
+      }
+      const logs = await api.getActionLogsByModel(modelId).catch(() => []);
+      return { model: m, parentModel: pm, actionLogs: logs };
+    } catch {
+      return null;
     }
-    const logs = await api.getActionLogsByModel(modelId).catch(() => []);
-    return { model: m, parentModel: pm, actionLogs: logs };
   }, [modelId], Boolean(modelId && modelId !== 'undefined'));
 
   const model = data?.model || null;
@@ -171,8 +176,19 @@ export default function TeacherModelDetailPage() {
             <div className="animate-spin w-8 h-8 border-4 border-indigo-600 border-t-transparent rounded-full" />
           </div>
         ) : !model ? (
-          <div className="bg-white rounded-3xl border border-slate-200 p-12 text-center">
-            <p className="text-slate-400 font-semibold italic">Không tìm thấy model.</p>
+          <div className="bg-white rounded-3xl border border-slate-200 p-12 text-center space-y-4">
+            <div className="text-5xl">🔍</div>
+            <p className="text-slate-600 font-bold text-lg">Không tìm thấy model</p>
+            <p className="text-slate-400 text-sm">
+              Model này có thể đã bị xóa hoặc đường dẫn không hợp lệ.
+            </p>
+            <Link
+              href={`/teacher/students/${userId}`}
+              onClick={playClickSound}
+              className="inline-flex items-center gap-1.5 px-4 py-2 bg-indigo-600 text-white font-bold text-sm rounded-xl hover:bg-indigo-700 transition-colors"
+            >
+              <ArrowLeft className="w-4 h-4" /> Quay lại trang học sinh
+            </Link>
           </div>
         ) : (
           <>
@@ -389,7 +405,12 @@ export default function TeacherModelDetailPage() {
             {/* ╔══════════════════════════════════════════════════════════════════╗ */}
             {/* ║  5. CONFUSION MATRIX — AI đoán đúng/sai từng nhãn              ║ */}
             {/* ╚══════════════════════════════════════════════════════════════════╝ */}
-            {cm && <ConfusionMatrixViewer evaluation={eval_} />}
+            {cm && <ConfusionMatrixViewer evaluation={eval_} onZoomImage={(src, caption) => setZoomedImage({ src, caption: caption || '' })} />}
+
+            {/* ╔══════════════════════════════════════════════════════════════════╗ */}
+            {/* ║  5.5 KIỂM ĐỊNH TỪNG ẢNH HỌC SINH                               ║ */}
+            {/* ╚══════════════════════════════════════════════════════════════════╝ */}
+            {eval_?.sampleEvidence?.studentImageAudit && <StudentImageAuditViewer evaluation={eval_} onZoomImage={(src, caption) => setZoomedImage({ src, caption })} />}
 
             {/* ╔══════════════════════════════════════════════════════════════════╗ */}
             {/* ║  6. CHẤT LƯỢNG DỮ LIỆU — Tổng hợp                             ║ */}

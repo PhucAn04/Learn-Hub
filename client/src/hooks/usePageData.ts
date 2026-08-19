@@ -17,6 +17,8 @@ export interface UsePageDataResult<T> {
  * 3. React 19 Ref Safety: Ref updates happen inside useEffect, satisfying react-hooks/refs.
  * 4. Memory Leak Prevention: Tracks component unmounting with `isMountedRef`.
  * 5. Automatic Parameter Guarding: Skips fetching when `enabled` is false.
+ * 6. Stale Fetch Cancellation: Uses a generation counter (`fetchIdRef`) so that when deps change
+ *    rapidly, only the latest fetch writes its result — older in-flight fetches are silently discarded.
  */
 export function usePageData<T>(
   fetcher: () => Promise<T>,
@@ -30,6 +32,7 @@ export function usePageData<T>(
   const isMountedRef = useRef(true);
   const fetcherRef = useRef(fetcher);
   const enabledRef = useRef(enabled);
+  const fetchIdRef = useRef(0);
 
   useEffect(() => {
     fetcherRef.current = fetcher;
@@ -44,21 +47,24 @@ export function usePageData<T>(
       return;
     }
 
+    const currentFetchId = ++fetchIdRef.current;
+
     try {
       if (isMountedRef.current) setLoading(true);
       setError(null);
       const result = await fetcherRef.current();
-      if (isMountedRef.current) {
+      // Only apply result if this is still the latest fetch AND component is mounted
+      if (isMountedRef.current && fetchIdRef.current === currentFetchId) {
         setData(result);
       }
     } catch (err) {
-      if (isMountedRef.current) {
+      if (isMountedRef.current && fetchIdRef.current === currentFetchId) {
         const errorObj = err instanceof Error ? err : new Error(String(err));
         setError(errorObj);
         console.error('[usePageData] Fetch error:', errorObj);
       }
     } finally {
-      if (isMountedRef.current) {
+      if (isMountedRef.current && fetchIdRef.current === currentFetchId) {
         setLoading(false);
       }
     }

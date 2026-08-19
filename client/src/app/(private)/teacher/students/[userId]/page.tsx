@@ -102,15 +102,17 @@ export default function TeacherStudentDetailPage() {
   const current = challengeData.find(c => c.challengeType === selectedChallenge);
   const datasets = current?.datasets || [];
 
-  // Build chart data points
-  const chartPoints = datasets.map((ds, i) => ({
-    version: ds.model?.version || i + 1,
-    score: ds.model?.testScore || 0,
-    date: new Date(ds.createdAt).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' }),
-    modelId: ds.model?.id,
-    sampleCount: ds.sampleCount,
-    weakestLabel: ds.model?.evaluation?.confusionMatrix?.weakestLabel,
-  }));
+  // Build chart data points — only include entries with a valid modelId
+  const chartPoints = datasets
+    .filter(ds => ds.model?.id)
+    .map((ds, i) => ({
+      version: ds.model?.version || i + 1,
+      score: ds.model?.testScore || 0,
+      date: new Date(ds.createdAt).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' }),
+      modelId: ds.model!.id,
+      sampleCount: ds.sampleCount,
+      weakestLabel: ds.model?.evaluation?.confusionMatrix?.weakestLabel,
+    }));
 
   // Simple SVG chart
   const chartWidth = 480;
@@ -230,7 +232,7 @@ export default function TeacherStudentDetailPage() {
                       </div>
 
                       {/* Action */}
-                      {ds.model?.id && (
+                      {ds.model?.id ? (
                         <Link
                           href={`/teacher/students/${userId}/models/${ds.model.id}`}
                           onClick={playClickSound}
@@ -238,6 +240,10 @@ export default function TeacherStudentDetailPage() {
                         >
                           <Eye className="w-3.5 h-3.5" /> Chi tiết
                         </Link>
+                      ) : (
+                        <span className="flex items-center gap-1 px-3 py-2 bg-slate-100 text-slate-400 font-bold text-xs rounded-xl border border-slate-200 shrink-0 cursor-not-allowed">
+                          <Eye className="w-3.5 h-3.5" /> Chi tiết
+                        </span>
                       )}
                     </div>
                   );

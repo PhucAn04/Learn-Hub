@@ -213,7 +213,7 @@ def compute_statistics(features_list, label):
 # ============================================================
 
 def generate_typescript(point_samples, peace_samples, stats, output_path):
-    """Xuat file golden-dataset.ts tu cac mau da chon."""
+    """Xuat (append) file golden-dataset.ts tu cac mau da chon."""
     
     def format_features(features):
         """Format mang features thanh chuoi TypeScript voi comment landmarks."""
@@ -240,55 +240,10 @@ def generate_typescript(point_samples, peace_samples, stats, output_path):
         
         return '\n'.join(lines)
     
-    now = datetime.now().strftime('%Y-%m-%d')
-    
     ts_lines = []
-    ts_lines.append('export interface GoldenTestSample {')
-    ts_lines.append('  features: number[];')
-    ts_lines.append('  expectedLabel: string;')
-    ts_lines.append('}')
-    ts_lines.append('')
-    ts_lines.append('/**')
-    ts_lines.append(' * Golden Test Dataset - Du lieu kiem thu chuan tu MediaPipe Hands thuc te')
-    ts_lines.append(' *')
-    ts_lines.append(' * NGUON DU LIEU:')
-    ts_lines.append(' *   Bo du lieu: "Hand Gesture Landmarks" (Kaggle)')
-    ts_lines.append(' *   Tac gia:     Youssef Elebiary')
-    ts_lines.append(' *   URL:         https://www.kaggle.com/datasets/youssefelebiary/hand-gesture-landmarks')
-    ts_lines.append(' *   Giay phep:   MIT License')
-    ts_lines.append(' *')
-    ts_lines.append(' * PHUONG PHAP TRICH XUAT:')
-    ts_lines.append(' *   - Toa do 21 diem moc xuong tay (Hand Landmarks) duoc trich xuat bang')
-    ts_lines.append(' *     mo hinh MediaPipe Hands (Google, 2020) tu anh ban tay thuc te.')
-    ts_lines.append(' *   - Bai bao tham chieu: Zhang et al. "MediaPipe Hands: On-device Real-time')
-    ts_lines.append(' *     Hand Tracking", arXiv:2006.10214')
-    ts_lines.append(' *')
-    ts_lines.append(' * CHUAN HOA:')
-    ts_lines.append(' *   Ap dung cung thuat toan normalizeHandKeypoints() cua he thong:')
-    ts_lines.append(' *   1. Tinh tien co tay (Landmark 0) ve goc toa do (0, 0)')
-    ts_lines.append(' *   2. Chia toa do cho khoang cach Euclid lon nhat tu co tay')
-    ts_lines.append(' *   3. Chi lay toa do 2D (x, y), vector 42 chieu')
-    ts_lines.append(' *')
-    ts_lines.append(' * CHON MAU:')
-    ts_lines.append(' *   5 mau dai dien / cu chi duoc chon bang thuat toan K-Medoids tu')
-    ts_lines.append(' *   tong so %s mau point va %s mau peace.' % (stats.get('total_point', '?'), stats.get('total_peace', '?')))
-    ts_lines.append(' *')
-    ts_lines.append(' * THONG KE:')
-    ts_lines.append(' *   - Tong mau goc (point): %s, Do lech chuan TB: %s' % (stats.get('total_point', '?'), stats.get('std_point', '?')))
-    ts_lines.append(' *   - Tong mau goc (peace): %s, Do lech chuan TB: %s' % (stats.get('total_peace', '?'), stats.get('std_peace', '?')))
-    ts_lines.append(' *')
-    ts_lines.append(' * TUONG THICH HE THONG:')
-    ts_lines.append(' *   Mo hinh KNN chi phan loai tung ban tay rieng le thanh "1 Ngon Tay" hoac')
-    ts_lines.append(' *   "2 Ngon Tay". Voi che do 2 ban tay (class 3 & class 4), moi tay duoc')
-    ts_lines.append(' *   phan loai doc lap bang cung bo nhan co so nay.')
-    ts_lines.append(' *')
-    ts_lines.append(' * Ngay tao: %s' % now)
-    ts_lines.append(' * Formatted as: [x0, y0, x1, y1, ..., x20, y20]')
-    ts_lines.append(' */')
-    ts_lines.append('export const GOLDEN_TEST_DATASET: GoldenTestSample[] = [')
     
     # Point samples
-    ts_lines.append("  // --- 1 NGON TAY (Point gesture - du lieu thuc te tu MediaPipe Hands) ---")
+    ts_lines.append("  // --- 1 NGON TAY (Bổ sung từ K-Medoids) ---")
     for features in point_samples:
         ts_lines.append('  {')
         ts_lines.append("    expectedLabel: '1 Ng\u00f3n Tay \u261d\ufe0f',")
@@ -300,7 +255,7 @@ def generate_typescript(point_samples, peace_samples, stats, output_path):
     ts_lines.append('')
     
     # Peace samples
-    ts_lines.append("  // --- 2 NGON TAY (Peace gesture - du lieu thuc te tu MediaPipe Hands) ---")
+    ts_lines.append("  // --- 2 NGON TAY (Bổ sung từ K-Medoids) ---")
     for idx, features in enumerate(peace_samples):
         ts_lines.append('  {')
         ts_lines.append("    expectedLabel: '2 Ng\u00f3n Tay \u270c\ufe0f',")
@@ -312,13 +267,32 @@ def generate_typescript(point_samples, peace_samples, stats, output_path):
         else:
             ts_lines.append('  }')
     
-    ts_lines.append('];')
-    ts_lines.append('')
+    append_content = '\n'.join(ts_lines)
     
-    content = '\n'.join(ts_lines)
-    
-    with open(output_path, 'w', encoding='utf-8') as f:
-        f.write(content)
+    # Read existing file and inject before '];'
+    if os.path.exists(output_path):
+        with open(output_path, 'r', encoding='utf-8') as f:
+            existing_content = f.read()
+        
+        # Add a trailing comma to the last existing item if needed
+        # We find the last closing brace before ];
+        insert_idx = existing_content.rfind('];')
+        if insert_idx != -1:
+            # Check if there is a comma before ]; (roughly)
+            # Actually just replacing '];' with ',\n' + append_content + '\n];'
+            # But the last element might not have a comma
+            pre_content = existing_content[:insert_idx].rstrip()
+            if not pre_content.endswith(','):
+                pre_content += ','
+            
+            new_content = pre_content + '\n' + append_content + '\n];\n'
+            
+            with open(output_path, 'w', encoding='utf-8') as f:
+                f.write(new_content)
+            return
+            
+    print("ERROR: Could not find existing golden-dataset.ts to append to!")
+    sys.exit(1)
 
 
 # ============================================================
@@ -392,9 +366,9 @@ def main():
     
     # Buoc 4: Chon mau dai dien bang K-Medoids
     print('')
-    print('[Buoc 4] Chon 5 mau dai dien bang K-Medoids...')
-    point_indices = select_representative_samples(point_features, n_samples=5)
-    peace_indices = select_representative_samples(peace_features, n_samples=5)
+    print('[Buoc 4] Chon 20 mau dai dien bang K-Medoids...')
+    point_indices = select_representative_samples(point_features, n_samples=20)
+    peace_indices = select_representative_samples(peace_features, n_samples=20)
     
     selected_point = [point_features[i] for i in point_indices]
     selected_peace = [peace_features[i] for i in peace_indices]
@@ -440,7 +414,7 @@ def main():
     print('Tom tat:')
     print('  - Nguon du lieu: Kaggle "Hand Gesture Landmarks" (Youssef Elebiary)')
     print('  - Tong mau goc: %d point + %d peace' % (point_stats['n_samples'], peace_stats['n_samples']))
-    print('  - Mau da chon: 5 point (1 ngon) + 5 peace (2 ngon) = 10 mau')
+    print('  - Mau da chon: 20 point (1 ngon) + 20 peace (2 ngon) = 40 mau')
     print('  - Thuat toan chon mau: K-Medoids')
     print('  - Chuan hoa: normalizeHandKeypoints() (wrist->origin, scale by max dist)')
     print('  - Output: %s' % output_abs)

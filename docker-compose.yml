@@ -35,6 +35,7 @@ services:
     volumes:
       - ./client:/app
       - /app/node_modules
+      - /app/.next
 
   server:
     build:

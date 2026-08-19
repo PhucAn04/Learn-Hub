@@ -14,5 +14,5 @@ COPY . .
 
 EXPOSE 3000
 
-# Clear stale Turbopack cache on start to prevent 404s after container restart
-CMD ["sh", "-c", "rm -rf .next && npm run dev"]
+# Clear stale cache and run with Webpack to prevent 404s after container restart
+CMD ["sh", "-c", "rm -rf .next/* 2>/dev/null || true; npx next dev --webpack"]

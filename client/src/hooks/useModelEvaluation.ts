@@ -114,34 +114,7 @@ export function useModelEvaluation(config: EvalConfig) {
         );
       }
 
-      // Bổ sung % validate chính xác từ model của Teacher (Giáo viên)
-      if (teacherNnPredict && studentImageAudit && studentImageAudit.length > 0) {
-        for (let i = 0; i < samples.length && i < studentImageAudit.length; i++) {
-          const sample = samples[i];
-          try {
-            const nnPred = await teacherNnPredict(sample.features);
-            const expectedLabel = studentImageAudit[i].expectedLabel;
-            
-            // Lấy softmax probability của nhãn bé gán (expected)
-            let nnScore = nnPred.confidence;
-            if (nnPred.confidences && nnPred.confidences[expectedLabel] !== undefined) {
-               nnScore = Math.round(nnPred.confidences[expectedLabel] * 100);
-            }
-            
-            // Trừ điểm ảnh mờ tối
-            if (sample.quality?.isBlurry) nnScore -= 30;
-            if (sample.quality?.isDark) nnScore -= 30;
-            nnScore = Math.max(0, Math.min(100, nnScore));
 
-            studentImageAudit[i].confidence = nnScore;
-            // Cập nhật lại dự đoán và isMatch bằng Teacher's NN (chuẩn hơn KNN)
-            const predictedLabel = config.classes.find(c => c.id === nnPred.label)?.label || nnPred.label;
-            studentImageAudit[i].predictedLabel = predictedLabel;
-            const expectedClassId = config.classes.find(c => c.label === expectedLabel)?.id || expectedLabel;
-            studentImageAudit[i].isMatch = (predictedLabel === expectedLabel || nnPred.label === expectedClassId);
-          } catch { /* fallback giữ KNN confidence */ }
-        }
-      }
 
       // 3b-2. Model Confidence Per Image (Khung 1: "Mô hình tự tin")
       // Chạy từng ảnh qua NN bé → softmax → "Mô hình tự tin: X%"

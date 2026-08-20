@@ -180,6 +180,7 @@ export interface ModelEvaluation {
       predictedLabel: string;
       isMatch: boolean;
       confidence: number;
+      distanceToTeacher?: number;
       evaluationSource: 'teacher' | 'golden' | 'self';
       thumbnail?: string;
     }[];

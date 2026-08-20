@@ -18,6 +18,7 @@ export interface StudentImageAuditItem {
   predictedLabel: string;
   isMatch: boolean;
   confidence: number;
+  distanceToTeacher?: number; // Added to help soften the confidence
   evaluationSource: 'teacher' | 'golden' | 'self';
   thumbnail?: string;
 }
@@ -112,10 +113,18 @@ function classifyKNNTeacher(
 function calculateImageAuditConfidence(
   knnConfidences: Record<string, number>,
   expectedLabel: string,
-  sample: StoredSample
+  sample: StoredSample,
+  avgDistance: number
 ): number {
   // Lấy độ tự tin của nhãn mong muốn (thay vì nhãn thắng)
   let score = knnConfidences[expectedLabel] || 0;
+  
+  // Làm mềm điểm số dựa trên khoảng cách tuyệt đối đến mẫu chuẩn
+  // Tránh việc KNN có 5/5 phiếu bầu đều ra 100% (cần linh hoạt 0-100)
+  if (score > 0 && avgDistance > 0) {
+    const distancePenalty = Math.min(45, avgDistance * 60);
+    score -= distancePenalty;
+  }
   
   // Trừ điểm nếu ảnh mờ/tối
   if (sample.quality?.isBlurry) {
@@ -150,7 +159,7 @@ export function evaluateStudentImagesWithTeacher(
     const predictedLabel = classes.find(c => c.id === predictedClassId)?.label || knn.label;
     const isMatch = predictedClassId === sampleClassId || predictedLabel === expectedLabel;
 
-    const auditConfidence = calculateImageAuditConfidence(knn.confidences, expectedLabel, sample);
+    const auditConfidence = calculateImageAuditConfidence(knn.confidences, expectedLabel, sample, knn.avgDistance);
 
     audit.push({
       id: sample.id || `sample-${index}`,
@@ -158,6 +167,7 @@ export function evaluateStudentImagesWithTeacher(
       predictedLabel,
       isMatch,
       confidence: auditConfidence,
+      distanceToTeacher: knn.avgDistance,
       evaluationSource: 'teacher',
       thumbnail: sample.thumbnail || sample.rawThumbnail,
     });
@@ -192,7 +202,7 @@ export function evaluateStudentImagesWithReference(
     const predictedLabel = classes.find(c => c.id === predictedClassId)?.label || knn.label;
     const isMatch = predictedClassId === sampleClassId || predictedLabel === expectedLabel;
 
-    const auditConfidence = calculateImageAuditConfidence(knn.confidences, expectedLabel, sample);
+    const auditConfidence = calculateImageAuditConfidence(knn.confidences, expectedLabel, sample, knn.avgDistance);
 
     audit.push({
       id: sample.id || `sample-${index}-ref`,
@@ -200,6 +210,7 @@ export function evaluateStudentImagesWithReference(
       predictedLabel,
       isMatch,
       confidence: auditConfidence,
+      distanceToTeacher: knn.avgDistance,
       evaluationSource: 'golden',
       thumbnail: sample.thumbnail || sample.rawThumbnail,
     });

@@ -72,14 +72,15 @@ export function useModelEvaluation(config: EvalConfig) {
       } catch { /* fallback */ }
 
       // 1. Golden Evaluation — đánh giá chất lượng Model AI của bé
-      // Dùng NN softmax để lấy "Mô hình tự tin: X%" chi tiết, fallback KNN
-      const goldenResult = evaluateAgainstGolden(samples, config.goldenDataset, k);
+      // Thay vì dùng 10 mẫu mặc định, ta dùng trọn bộ 68 mẫu (Golden Test của Teacher)
+      const evaluationDataset = TEACHER_REFERENCE_DATASET;
+      const goldenResult = evaluateAgainstGolden(samples, evaluationDataset, k);
 
       // Bổ sung NN softmax confidence cho Golden Test (thay vì vote count)
       if (nnPredict) {
         for (let i = 0; i < goldenResult.results.length; i++) {
           try {
-            const goldenSample = config.goldenDataset[i];
+            const goldenSample = evaluationDataset[i];
             if (goldenSample) {
               const nnPred = await nnPredict(goldenSample.features);
               // Ghi đè confidence bằng NN softmax (% thật, không phải vote count)

@@ -210,37 +210,45 @@ export async function uploadSamplesToCloudinary(
   const total = totalThumbnails + totalRawThumbnails;
   let uploaded = 0;
 
-  // Tải lên lần lượt từng ảnh (sequential) thay vì batching để tránh quá tải Network dẫn đến lỗi "Failed to fetch"
-  const result = [];
+  // Thuật toán Concurrency Queue Limit = 4: Vừa đảm bảo tốc độ tải siêu tốc (song song)
+  // vừa đảm bảo không bao giờ bị nghẽn Socket của trình duyệt gây lỗi "Failed to fetch".
+  const result = samples.map(s => ({ ...s }));
 
-  for (let i = 0; i < samples.length; i++) {
-    const sample = samples[i];
-    let newSample = { ...sample };
-    
+  const uploadTasks: { sampleIndex: number; type: 'thumbnail' | 'rawThumbnail'; data: string }[] = [];
+  result.forEach((sample, index) => {
     if (sample.thumbnail && sample.thumbnail.startsWith('data:')) {
-      try {
-        const url = await uploadBase64ToCloudinary(sample.thumbnail, folder);
-        newSample.thumbnail = url;
-        uploaded++;
-        if (onProgress) onProgress(uploaded, total);
-      } catch (err) {
-        console.warn(`[Cloudinary] Failed to upload thumbnail for sample ${i}:`, err);
-      }
+      uploadTasks.push({ sampleIndex: index, type: 'thumbnail', data: sample.thumbnail });
     }
-    
     if (sample.rawThumbnail && sample.rawThumbnail.startsWith('data:')) {
+      uploadTasks.push({ sampleIndex: index, type: 'rawThumbnail', data: sample.rawThumbnail });
+    }
+  });
+
+  if (uploadTasks.length === 0) return result;
+
+  const CONCURRENCY = 4;
+  let currentIndex = 0;
+
+  const worker = async () => {
+    while (currentIndex < uploadTasks.length) {
+      const taskIndex = currentIndex++;
+      const task = uploadTasks[taskIndex];
+      
       try {
-        const url = await uploadBase64ToCloudinary(sample.rawThumbnail, folder);
-        newSample.rawThumbnail = url;
+        const url = await uploadBase64ToCloudinary(task.data, folder);
+        result[task.sampleIndex][task.type] = url;
+        
         uploaded++;
         if (onProgress) onProgress(uploaded, total);
       } catch (err) {
-        console.warn(`[Cloudinary] Failed to upload rawThumbnail for sample ${i}:`, err);
+        console.warn(`[Cloudinary] Failed to upload ${task.type} for sample ${task.sampleIndex}:`, err);
       }
     }
+  };
 
-    result.push(newSample);
-  }
+  // Khởi động 4 luồng chạy song song vắt kiệt hàng đợi
+  const workers = Array.from({ length: Math.min(CONCURRENCY, uploadTasks.length) }, () => worker());
+  await Promise.all(workers);
 
   return result;
 }

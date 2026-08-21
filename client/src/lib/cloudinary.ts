@@ -210,42 +210,37 @@ export async function uploadSamplesToCloudinary(
   const total = totalThumbnails + totalRawThumbnails;
   let uploaded = 0;
 
-  // Process in parallel batches of 5 for speed
-  const BATCH_SIZE = 5;
-  const result = [...samples];
+  // Tải lên lần lượt từng ảnh (sequential) thay vì batching để tránh quá tải Network dẫn đến lỗi "Failed to fetch"
+  const result = [];
 
-  for (let i = 0; i < result.length; i += BATCH_SIZE) {
-    const batch = result.slice(i, i + BATCH_SIZE);
-    const promises = batch.map(async (sample, batchIdx) => {
-      const idx = i + batchIdx;
-      let newSample = { ...sample };
-      
-      if (sample.thumbnail && sample.thumbnail.startsWith('data:')) {
-        try {
-          const url = await uploadBase64ToCloudinary(sample.thumbnail, folder);
-          newSample.thumbnail = url;
-          uploaded++;
-        } catch (err) {
-          console.error(`[Cloudinary] Failed to upload sample ${idx}:`, err);
-        }
+  for (let i = 0; i < samples.length; i++) {
+    const sample = samples[i];
+    let newSample = { ...sample };
+    
+    if (sample.thumbnail && sample.thumbnail.startsWith('data:')) {
+      try {
+        const url = await uploadBase64ToCloudinary(sample.thumbnail, folder);
+        newSample.thumbnail = url;
+        uploaded++;
+        if (onProgress) onProgress(uploaded, total);
+      } catch (err) {
+        console.warn(`[Cloudinary] Failed to upload thumbnail for sample ${i}:`, err);
       }
-      
-      if (sample.rawThumbnail && sample.rawThumbnail.startsWith('data:')) {
-        try {
-          const url = await uploadBase64ToCloudinary(sample.rawThumbnail, folder);
-          newSample.rawThumbnail = url;
-          uploaded++;
-        } catch (err) {
-          console.error(`[Cloudinary] Failed to upload raw sample ${idx}:`, err);
-        }
+    }
+    
+    if (sample.rawThumbnail && sample.rawThumbnail.startsWith('data:')) {
+      try {
+        const url = await uploadBase64ToCloudinary(sample.rawThumbnail, folder);
+        newSample.rawThumbnail = url;
+        uploaded++;
+        if (onProgress) onProgress(uploaded, total);
+      } catch (err) {
+        console.warn(`[Cloudinary] Failed to upload rawThumbnail for sample ${i}:`, err);
       }
-      
-      result[idx] = newSample;
-      onProgress?.(uploaded, total);
-    });
-    await Promise.all(promises);
+    }
+
+    result.push(newSample);
   }
 
-  console.log(`[Cloudinary] Uploaded ${uploaded}/${total} images`);
   return result;
 }

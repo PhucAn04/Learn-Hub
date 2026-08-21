@@ -162,10 +162,15 @@ export default function TeacherTeachTwoHandsPage() {
     () => {
       const hands = handsRef.current;
       if (!hands || hands.length < 2) return null;
-      return [...(hands[0].keypoints as { x: number; y: number }[] ?? []), ...(hands[1].keypoints as { x: number; y: number }[] ?? [])];
+      const kps0 = hands[0].keypoints;
+      const kps1 = hands[1].keypoints;
+      return (kps0 && kps0.length > 0 && kps1 && kps1.length > 0)
+        ? [...(kps0 as { x: number; y: number }[]), ...(kps1 as { x: number; y: number }[])]
+        : null;
     },
     videoRef,
-    modelStatus === 'ready'
+    modelStatus === 'ready',
+    { threshold: 12 }
   );
 
   useEffect(() => {

@@ -76,9 +76,13 @@ export default function TeacherTeachGesturesPage() {
   });
 
   const { isStable, motionScore } = useStabilityDetector(
-    () => handsRef.current?.[0]?.keypoints as { x: number; y: number }[] ?? null,
+    () => {
+      const kps = handsRef.current?.[0]?.keypoints;
+      return kps && kps.length > 0 ? (kps as { x: number; y: number }[]) : null;
+    },
     videoRef,
-    modelStatus === 'ready'
+    modelStatus === 'ready',
+    { threshold: 12 }
   );
 
   useEffect(() => {

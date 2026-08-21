@@ -91,10 +91,12 @@ export default function TeacherTeachFacePage() {
     () => {
       const faces = allFacesRef.current;
       if (!faces || faces.length === 0) return null;
-      return faces[0] as { x: number; y: number }[];
+      const kps = getFaceKeypoints(faces[0]);
+      return kps && kps.length > 1 ? (kps as { x: number; y: number }[]) : null;
     },
     videoRef,
-    modelStatus === 'ready'
+    modelStatus === 'ready',
+    { threshold: 12 }
   );
 
   useEffect(() => {

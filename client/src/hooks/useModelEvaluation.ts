@@ -57,13 +57,27 @@ export function useModelEvaluation(config: EvalConfig) {
         }
       } catch { /* fallback: dùng KNN confidence */ }
 
+      const classIdToLabel = new Map(config.classes.map(c => [c.id, c.label]));
+
+      const getEvaluationDataset = () => {
+        if (config.challengeType === 'teach') {
+          return TEACHER_REFERENCE_DATASET.map(g => ({ ...g, expectedLabel: g.expectedLabel }));
+        }
+        return config.goldenDataset.map(g => ({
+          ...g,
+          expectedLabel: classIdToLabel.get(g.expectedLabel) || g.expectedLabel,
+        }));
+      };
+
+      const evaluationDataset = getEvaluationDataset();
+
       // 0b. Train một NN từ Teacher dataset để validate ảnh của bé cho Khung 2
       let teacherNnPredict: ((features: number[]) => Promise<{ label: string; confidence: number; confidences?: Record<string, number> }>) | null = null;
       try {
         const teacherEvalTrainer = new TfTrainer();
         const teacherTrainSamples = hasTeacher 
           ? config.teacherSamples!
-          : TEACHER_REFERENCE_DATASET.map(g => ({ features: g.features, label: g.expectedLabel } as StoredSample));
+          : evaluationDataset.map(g => ({ features: g.features, label: g.expectedLabel } as StoredSample));
         const uniqueTeacherLabels = new Set(teacherTrainSamples.map(s => s.label));
         if (uniqueTeacherLabels.size >= 2) {
           await teacherEvalTrainer.train(teacherTrainSamples, undefined, { epochs: 50 });
@@ -72,12 +86,11 @@ export function useModelEvaluation(config: EvalConfig) {
       } catch { /* fallback */ }
 
       // 1. Golden Evaluation — đánh giá chất lượng Model AI của bé
-      // Thay vì dùng 10 mẫu mặc định, ta dùng trọn bộ 68 mẫu (Golden Test của Teacher)
-      const evaluationDataset = TEACHER_REFERENCE_DATASET;
       const goldenResult = evaluateAgainstGolden(samples, evaluationDataset, k);
 
       // Bổ sung NN softmax confidence cho Golden Test (thay vì vote count)
       if (nnPredict) {
+        let nnCorrectCount = 0;
         for (let i = 0; i < goldenResult.results.length; i++) {
           try {
             const goldenSample = evaluationDataset[i];
@@ -85,8 +98,21 @@ export function useModelEvaluation(config: EvalConfig) {
               const nnPred = await nnPredict(goldenSample.features);
               // Ghi đè confidence bằng NN softmax (% thật, không phải vote count)
               goldenResult.results[i].confidence = nnPred.confidence;
+
+              if (config.challengeType !== 'teach') {
+                const predictedLabel = config.classes.find(c => c.id === nnPred.label)?.label || nnPred.label;
+                const expectedClassId = config.classes.find(c => c.label === goldenSample.expectedLabel)?.id || goldenSample.expectedLabel;
+                const isCorrectMatch = predictedLabel === goldenSample.expectedLabel || nnPred.label === expectedClassId;
+                goldenResult.results[i].isCorrect = isCorrectMatch;
+                if (isCorrectMatch) nnCorrectCount++;
+              }
             }
           } catch { /* fallback giữ KNN confidence */ }
+        }
+        
+        if (config.challengeType !== 'teach' && goldenResult.results.length > 0) {
+          goldenResult.accuracy = Math.round((nnCorrectCount / goldenResult.results.length) * 100);
+          goldenResult.correctCount = nnCorrectCount;
         }
       }
       // 2. Confusion Matrix
@@ -109,9 +135,9 @@ export function useModelEvaluation(config: EvalConfig) {
           samples, config.teacherSamples!, config.classes, teacherK
         );
       } else {
-        // Tầng 2: Đánh giá bằng Teacher Reference Dataset (Distance-weighted, K=5)
+        // Tầng 2: Đánh giá bằng Golden/Reference Dataset (Distance-weighted, K=5)
         studentImageAudit = evaluateStudentImagesWithReference(
-          samples, config.classes, teacherK
+          samples, config.classes, teacherK, evaluationDataset
         );
       }
 
@@ -119,15 +145,27 @@ export function useModelEvaluation(config: EvalConfig) {
 
       // 3b-2. Model Confidence Per Image (Khung 1: "Mô hình tự tin")
       // Chạy từng ảnh qua NN bé → softmax → "Mô hình tự tin: X%"
+      // 3b-2. Model Confidence Per Image (Khung: Mô Hình AI Đánh Giá Từng Ảnh)
       let modelConfidencePerImage: NonNullable<ModelEvaluation['sampleEvidence']>['modelConfidencePerImage'] = [];
       if (nnPredict) {
-        let evalImages: StoredSample[] = [];
-
         if (hasTeacher) {
-          evalImages = config.teacherSamples!;
+          // Có teacher thì dùng bộ mẫu của GV đưa qua model của bé
+          for (const img of config.teacherSamples!) {
+            try {
+              const nnPred = await nnPredict(img.features);
+              const expectedLabel = img.label || '?';
+              const predictedLabel = config.classes.find(c => c.id === nnPred.label)?.label || nnPred.label;
+              const isCorrect = predictedLabel === expectedLabel || nnPred.label === expectedLabel;
+              modelConfidencePerImage.push({
+                expectedLabel, predictedLabel, isCorrect,
+                confidence: nnPred.confidence,
+                thumbnail: img.thumbnail || img.rawThumbnail,
+              });
+            } catch { /* skip */ }
+          }
         } else {
-          // Validate model của bé bằng 68 mẫu Kaggle trước
-          const refSamples = TEACHER_REFERENCE_DATASET.map((g, i) => ({
+          // Validate model của bé bằng Golden Dataset trước
+          const refSamples = evaluationDataset.map((g, i) => ({
             features: g.features,
             label: g.expectedLabel,
             thumbnail: undefined,
@@ -135,45 +173,43 @@ export function useModelEvaluation(config: EvalConfig) {
           } as StoredSample));
 
           let correctCount = 0;
+          const goldenConfResults: typeof modelConfidencePerImage = [];
           for (const ref of refSamples) {
             try {
               const pred = await nnPredict(ref.features);
               const predictedLabel = config.classes.find(c => c.id === pred.label)?.label || pred.label;
               const expectedClassId = config.classes.find(c => c.label === ref.label)?.id || ref.label;
-              if (predictedLabel === ref.label || pred.label === expectedClassId) {
-                correctCount++;
-              }
+              const isCorrect = predictedLabel === ref.label || pred.label === expectedClassId;
+              if (isCorrect) correctCount++;
+              
+              goldenConfResults.push({
+                expectedLabel: ref.label, predictedLabel, isCorrect,
+                confidence: pred.confidence,
+                thumbnail: undefined,
+              });
             } catch { /* skip */ }
           }
 
-          const accuracy = correctCount / refSamples.length;
-          const PASS_THRESHOLD = 0.6; // Đạt 60% trên bộ chuẩn Kaggle được coi là pass
+          const accuracy = refSamples.length > 0 ? correctCount / refSamples.length : 0;
+          const PASS_THRESHOLD = 0.6; // Đạt 60% trên bộ chuẩn
 
-          if (accuracy >= PASS_THRESHOLD) {
-            // Nếu pass, lấy chính bộ ảnh của bé để tự check chéo nội bộ
-            evalImages = samples;
-          } else {
-            // Nếu fail, lấy 68 mẫu Kaggle để hiển thị (cho GV thấy model bé fail ở đâu)
-            evalImages = refSamples;
+          // Luôn luôn check cross lại bộ ảnh của bé (không bao giờ hiển thị ảnh Golden lên UI)
+          // Dùng chính model của bé (nnPredict) để đánh giá lại ảnh của bé, đúng với mô tả trên UI "Mô hình AI mà bé đã huấn luyện"
+          const evalPredict = nnPredict;
+          for (const img of samples) {
+            try {
+              const pred = await evalPredict(img.features);
+              const expectedLabel = img.label || '?';
+              const predictedLabel = config.classes.find(c => c.id === pred.label)?.label || pred.label;
+              const isCorrect = predictedLabel === expectedLabel || pred.label === expectedLabel;
+
+              modelConfidencePerImage.push({
+                expectedLabel, predictedLabel, isCorrect,
+                confidence: pred.confidence,
+                thumbnail: img.thumbnail || img.rawThumbnail,
+              });
+            } catch { /* skip */ }
           }
-        }
-
-        for (const img of evalImages) {
-          try {
-            const nnPred = await nnPredict(img.features);
-            const expectedLabel = img.label || (img as { expectedLabel?: string }).expectedLabel || '?';
-            // Map NN predicted class ID → display label
-            const predictedLabel = config.classes.find(c => c.id === nnPred.label)?.label || nnPred.label;
-            const isCorrect = predictedLabel === expectedLabel || nnPred.label === expectedLabel;
-
-            modelConfidencePerImage.push({
-              expectedLabel,
-              predictedLabel,
-              isCorrect,
-              confidence: nnPred.confidence,
-              thumbnail: (img as StoredSample).thumbnail || (img as StoredSample).rawThumbnail,
-            });
-          } catch { /* skip */ }
         }
       }
 
@@ -193,7 +229,8 @@ export function useModelEvaluation(config: EvalConfig) {
           const refs = samples.filter((_, i) => i !== index);
           if (refs.length === 0) return;
           
-          const robustK = Math.max(k, Math.ceil(refs.length * 0.5));
+          const avgSamplesPerClass = Math.max(1, Math.floor(refs.length / Math.max(config.classes.length, 2)));
+          const robustK = Math.max(k, Math.min(Math.ceil(refs.length * 0.5), Math.ceil(avgSamplesPerClass * 1.5)));
           const robustThreshold = Math.ceil(robustK * 0.5);
           
           const knn = classifyKNNDetailed(sample.features, refs, robustK);
@@ -217,9 +254,18 @@ export function useModelEvaluation(config: EvalConfig) {
       const mislabelPenalty = samples.length > 0 
         ? (robustMislabeledCount / samples.length) 
         : 0;
-      const adjustedGoldenAccuracy = Math.round(
-        goldenResult.accuracy * (1 - mislabelPenalty)
-      );
+        
+      let adjustedGoldenAccuracy = 100;
+      if (config.challengeType === 'teach') {
+        adjustedGoldenAccuracy = Math.round(
+          goldenResult.accuracy * (1 - mislabelPenalty)
+        );
+      } else {
+        // Đối với teach-gestures và teach-face, Golden Dataset (Kaggle) khác biệt lớn so với webcam
+        // dẫn đến điểm goldenResult.accuracy luôn thấp (~50%) dù ảnh bé chụp chuẩn.
+        // Điểm đánh giá (sao) sẽ phụ thuộc hoàn toàn vào độ sạch của data bé chụp (mislabelPenalty).
+        adjustedGoldenAccuracy = Math.max(0, 100 - Math.round(mislabelPenalty * 100));
+      }
 
       // 4. Dataset Health stats
       const classSummary: Record<string, number> = {};

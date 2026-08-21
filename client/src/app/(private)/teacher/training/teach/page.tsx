@@ -160,9 +160,13 @@ export default function TeacherTeachPage() {
   });
 
   const { isStable } = useStabilityDetector(
-    () => handsRef.current?.[0]?.keypoints as { x: number; y: number }[] ?? null,
+    () => {
+      const kps = handsRef.current?.[0]?.keypoints;
+      return kps && kps.length > 0 ? (kps as { x: number; y: number }[]) : null;
+    },
     videoRef,
-    modelStatus === 'ready'
+    modelStatus === 'ready',
+    { threshold: 12 }
   );
 
   useEffect(() => {

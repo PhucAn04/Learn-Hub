@@ -183,12 +183,14 @@ export function evaluateStudentImagesWithTeacher(
 export function evaluateStudentImagesWithReference(
   studentSamples: StoredSample[],
   classes: { id: string; label: string }[],
-  k: number = 3
+  k: number = 3,
+  goldenDataset?: { features: number[]; expectedLabel: string }[]
 ): StudentImageAuditItem[] {
   const audit: StudentImageAuditItem[] = [];
 
-  // Chuyen TEACHER_REFERENCE_DATASET thanh dinh dang tuong thich
-  const refSamples = TEACHER_REFERENCE_DATASET.map(ref => ({
+  // Dùng golden dataset tương ứng với challenge type, fallback về TEACHER_REFERENCE_DATASET
+  const dataset = goldenDataset || TEACHER_REFERENCE_DATASET;
+  const refSamples = dataset.map(ref => ({
     label: ref.expectedLabel,
     features: ref.features,
   }));

@@ -109,12 +109,14 @@ export default function AIFeedbackModal({
         }
 
         // ── Robust cross-check: cho chấm điểm công bằng (Golden Dataset logic) ──
-        // Dùng adaptive K lớn (≥50% references) để phá cluster ảnh sai nhãn.
-        // Khi không có teacher template, cluster 5 ảnh sai "bảo vệ nhau" với K=3,
-        // nhưng với K=10 (50% of 19), 10 ảnh đúng sẽ outvote 4 ảnh sai → phát hiện!
+        // Dùng adaptive K lớn để phá cluster ảnh sai nhãn.
+        // Giới hạn robustK theo số classes: với 6 classes × 10 mẫu, dùng K quá lớn
+        // sẽ khiến KHÔNG class nào đạt threshold → tất cả bị đánh sai.
+        // Công thức: K ≈ (samples_per_class * 1.5) để class đúng vẫn có thể thắng.
+        const avgSamplesPerClass = Math.max(1, Math.floor(referenceSamples.length / Math.max(classes.length, 2)));
         const robustK = hasTeacherTemplate
           ? localK
-          : Math.max(localK, Math.ceil(referenceSamples.length * 0.5));
+          : Math.max(localK, Math.min(Math.ceil(referenceSamples.length * 0.5), Math.ceil(avgSamplesPerClass * 1.5)));
         const robustThreshold = hasTeacherTemplate
           ? safeThreshold
           : Math.ceil(robustK * 0.5);

@@ -282,9 +282,19 @@ export default function TeachPanel({
   const modelStatus = isHandMode ? handModelStatus : faceModelStatus;
 
   const { isStable, motionScore } = useStabilityDetector(
-    () => handsRef.current?.[0]?.keypoints as { x: number; y: number }[] ?? null,
+    () => {
+      if (isFaceMode) {
+        const face = allFacesRef.current?.[0];
+        const kps = face ? getFaceKeypoints(face) : null;
+        return kps && kps.length > 1 ? (kps as { x: number; y: number }[]) : null;
+      } else {
+        const kps = handsRef.current?.[0]?.keypoints;
+        return kps && kps.length > 0 ? (kps as { x: number; y: number }[]) : null;
+      }
+    },
     videoRef,
-    modelStatus === 'ready'
+    modelStatus === 'ready',
+    { threshold: 12 } // Tăng nhẹ threshold để tránh báo rung sai
   );
 
   // ── Thumbnail helper ────────────────

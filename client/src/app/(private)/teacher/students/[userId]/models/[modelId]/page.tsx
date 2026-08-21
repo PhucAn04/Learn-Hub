@@ -526,3 +526,5 @@ export default function TeacherModelDetailPage() {
     </div>
   );
 }
+
+

@@ -329,19 +329,40 @@ export function useModelEvaluation(config: EvalConfig) {
       if (config.teacherSamples && config.teacherSamples.length > 0) {
         // Simple cross-check: for each teacher sample, classify against student samples
         let conflicts = 0;
-        const teacherSampleLabels = config.teacherSamples;
-        teacherSampleLabels.forEach(ts => {
+        
+        // Filter out Teacher styles that the student never captured (OOD)
+        const validTeacherSamples = config.teacherSamples.filter(ts => {
+          const expectedLabel = config.classes.find(c => c.id === ts.sourceId)?.label || ts.label;
+          const studentSamplesOfClass = samples.filter(s => {
+            const sLabel = config.classes.find(c => c.id === s.sourceId)?.label || s.label;
+            return sLabel === expectedLabel;
+          });
+          
+          if (studentSamplesOfClass.length > 0) {
+            const knn = classifyKNN(ts.features, studentSamplesOfClass, 1);
+            if (knn.minDistance > 0.65) return false;
+          }
+          return true;
+        });
+
+        validTeacherSamples.forEach(ts => {
           if (ts.features && ts.features.length > 0) {
             const prediction = classifyKNNDetailed(ts.features, samples, k);
-            if (prediction.label !== ts.label) conflicts++;
+            const expectedLabel = config.classes.find(c => c.id === ts.sourceId)?.label || ts.label;
+            const predictedLabel = config.classes.find(c => c.id === prediction.label)?.label || prediction.label;
+            
+            if (predictedLabel !== expectedLabel && prediction.label !== expectedLabel) {
+              conflicts++;
+            }
           }
         });
+        
         crossCheck = {
           hasTeacherTemplate: true,
-          totalSamples: teacherSampleLabels.length,
+          totalSamples: validTeacherSamples.length,
           conflictCount: conflicts,
-          agreementRate: teacherSampleLabels.length > 0
-            ? Math.round(((teacherSampleLabels.length - conflicts) / teacherSampleLabels.length) * 100)
+          agreementRate: validTeacherSamples.length > 0
+            ? Math.round(((validTeacherSamples.length - conflicts) / validTeacherSamples.length) * 100)
             : 0,
         };
       }

@@ -11,11 +11,12 @@
 
 import { useCallback, useState } from 'react';
 import type { ModelEvaluation } from '@/types/models';
-import { StoredSample, evaluateAgainstGolden, analyzeDataBalance, classifyKNNDetailed } from '@/lib/knn-classifier';
+import { StoredSample, evaluateAgainstGolden, analyzeDataBalance, classifyKNNDetailed, classifyKNN } from '@/lib/knn-classifier';
 import { buildConfusionMatrix } from '@/lib/confusion-matrix';
 import { evaluateStudentDatasetPhase } from '@/lib/teacher-validator';
 import { evaluateStudentImagesWithTeacher, evaluateStudentImagesWithReference } from '@/lib/knn-teacher-classifier';
 import { TEACHER_REFERENCE_DATASET } from '@/lib/teacher-reference-dataset';
+import { DynamicDatasetSample, evaluateAgainstDynamic } from '@/lib/teacher-dynamic-dataset';
 import { TfTrainer } from '@/lib/tf-trainer';
 import { api } from '@/lib/api';
 
@@ -23,6 +24,7 @@ interface EvalConfig {
   challengeType: string;
   classes: { id: string; label: string }[];
   goldenDataset: { features: number[]; expectedLabel: string }[];
+  dynamicDataset?: DynamicDatasetSample[];
   teacherSamples?: StoredSample[];
   k?: number;
 }
@@ -152,8 +154,26 @@ export function useModelEvaluation(config: EvalConfig) {
           // Có teacher thì dùng bộ mẫu của GV đưa qua model của bé
           for (const img of config.teacherSamples!) {
             try {
-              const nnPred = await nnPredict(img.features);
               const expectedLabel = img.label || '?';
+              
+              // Filter out Teacher styles that the student never captured (OOD)
+              // Bằng cách tìm khoảng cách KNN nhỏ nhất từ ảnh GV đến các ảnh cùng nhãn của bé
+              const studentSamplesOfClass = samples.filter(s => {
+                const sLabel = config.classes.find(c => c.id === s.sourceId)?.label || s.label;
+                return sLabel === expectedLabel;
+              });
+              
+              if (studentSamplesOfClass.length > 0) {
+                // Import classifyKNN if not available or just use distance logic
+                // classifyKNN is imported at the top of the file!
+                const knn = classifyKNN(img.features, studentSamplesOfClass, 1);
+                if (knn.minDistance > 0.65) {
+                  // Ảnh của Giáo viên khác quá xa (khác kiểu dáng) so với những gì bé dạy cho AI -> Bỏ qua
+                  continue; 
+                }
+              }
+
+              const nnPred = await nnPredict(img.features);
               const predictedLabel = config.classes.find(c => c.id === nnPred.label)?.label || nnPred.label;
               const isCorrect = predictedLabel === expectedLabel || nnPred.label === expectedLabel;
               modelConfidencePerImage.push({
@@ -267,6 +287,17 @@ export function useModelEvaluation(config: EvalConfig) {
         adjustedGoldenAccuracy = Math.max(0, 100 - Math.round(mislabelPenalty * 100));
       }
 
+      // Dynamic dataset evaluation (for custom labels 3/4/5 ngón)
+      let dynamicAccuracy: number | undefined;
+      let dynamicCorrect: number | undefined;
+      let dynamicTotal: number | undefined;
+      if (config.dynamicDataset && config.dynamicDataset.length > 0) {
+        const dynamicResult = evaluateAgainstDynamic(samples, config.dynamicDataset, 3);
+        dynamicAccuracy = dynamicResult.accuracy;
+        dynamicCorrect = dynamicResult.correctCount;
+        dynamicTotal = dynamicResult.totalCount;
+      }
+
       // 4. Dataset Health stats
       const classSummary: Record<string, number> = {};
       samples.forEach(s => { classSummary[s.label] = (classSummary[s.label] || 0) + 1; });
@@ -343,6 +374,9 @@ export function useModelEvaluation(config: EvalConfig) {
         goldenAccuracy: adjustedGoldenAccuracy,
         goldenCorrectCount: goldenResult.correctCount,
         goldenTotalCount: goldenResult.totalCount,
+        dynamicAccuracy,
+        dynamicCorrectCount: dynamicCorrect,
+        dynamicTotalCount: dynamicTotal,
         confusionMatrix: {
           labels: confusionMatrix.labels,
           matrix: confusionMatrix.matrix,

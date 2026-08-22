@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useMemo } from 'react';
 import { Sparkles, Brain, ArrowLeft, Trash2, Camera, Award, HelpCircle, X } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -19,10 +19,25 @@ import { TfTrainer } from '@/lib/tf-trainer';
 import { uploadSamplesToCloudinary, uploadModelToCloudinary, isCloudinaryConfigured } from '@/lib/cloudinary';
 import { assessQuality, calculateROI } from '@/lib/image-quality';
 import { useStabilityDetector } from '@/hooks/useStabilityDetector';
-// Predefined classes for teaching
-const CLASSES = [
+
+// Predefined BASE classes (cố định, không xóa được)
+const BASE_CLASSES = [
   { id: 'class_1', label: '1 Ngón Tay ☝️', voicePrompt: 'Hãy dạy bạn A I nhận biết một ngón tay nhé!' },
   { id: 'class_2', label: '2 Ngón Tay ✌️', voicePrompt: 'Hãy dạy bạn A I nhận biết hai ngón tay nào!' },
+];
+
+// Danh sách nhãn preset có thể xóa/thêm lại
+// ID bắt đầu từ class_5 để tránh xung đột với teach-two-hands (class_3, class_4)
+const DYNAMIC_PRESETS = [
+  { label: '3 Ngón Tay 🤟', emoji: '🤟' },
+  { label: '4 Ngón Tay 🖖', emoji: '🖖' },
+  { label: '5 Ngón Tay 🖐️', emoji: '🖐️' },
+];
+
+const INITIAL_DYNAMIC_CLASSES = [
+  { id: 'class_5', label: '3 Ngón Tay 🤟', emoji: '🤟' },
+  { id: 'class_6', label: '4 Ngón Tay 🖖', emoji: '🖖' },
+  { id: 'class_7', label: '5 Ngón Tay 🖐️', emoji: '🖐️' },
 ];
 
 // Mapping từ class ID sang golden dataset expectedLabel
@@ -95,21 +110,84 @@ function countExtendedFingers(keypoints: HandKeypoint[]): number {
 }
 
 /**
+ * Kiểm tra ngón cái có đang xòe ra không.
+ * Dùng riêng cho trường hợp phân biệt 4 ngón vs 5 ngón.
+ * (Logic này bị comment trong countExtendedFingers vì không ổn định cho đếm tổng,
+ *  nhưng đủ tốt để phân biệt "bàn tay xòe hết" vs "gập ngón cái lại")
+ */
+function isThumbExtended(keypoints: HandKeypoint[]): boolean {
+  if (!keypoints || keypoints.length < 21) return false;
+  const wrist = keypoints[0];
+  const thumbTip = keypoints[4];
+  const thumbIP = keypoints[3];
+  const thumbMCP = keypoints[2];
+  const thumbDistTip = Math.abs(thumbTip.x - wrist.x);
+  const thumbDistIP = Math.abs(thumbIP.x - wrist.x);
+  const thumbDistMCP = Math.abs(thumbMCP.x - wrist.x);
+  // Ngón cái xòe khi TIP xa hơn IP và IP xa hơn MCP
+  return thumbDistTip > thumbDistIP && thumbDistIP > thumbDistMCP * 1.05;
+}
+
+/**
  * Xác định số ngón tay mong đợi cho mỗi class (tính trên từng bàn tay)
  *  - class_1: 1 ngón (index finger)
  *  - class_2: 2 ngón (index + middle)
  *  - class_3: 1 ngón mỗi tay
  *  - class_4: 2 ngón mỗi tay
  */
-function getExpectedFingerCount(classId: string): number {
+function getExpectedFingerCount(classId: string, label?: string): number {
   if (classId === 'class_1' || classId === 'class_3') return 1;
   if (classId === 'class_2' || classId === 'class_4') return 2;
-  return -1; // unknown
+  // Nhãn động — parse từ label text
+  if (label) {
+    if (label.includes('3 Ngón Tay')) return 3;
+    if (label.includes('4 Ngón Tay')) return 4;
+    // 5 Ngón Tay: countExtendedFingers() bỏ ngón cái (max 4), positive check sẽ dùng >= 4
+    if (label.includes('5 Ngón Tay')) return 5;
+  }
+  return -1; // unknown → skip heuristic
 }
 
 export default function TeacherTeachPage() {
   const router = useRouter();
   const [samples, setSamples] = useState<StoredSample[]>([]);
+
+  // Dynamic classes management
+  const [dynamicClasses, setDynamicClasses] = useState<
+    { id: string; label: string; emoji: string }[]
+  >(INITIAL_DYNAMIC_CLASSES);
+  const [nextClassIdCounter, setNextClassIdCounter] = useState(8);
+  // ↑ 8 vì class_1..class_7 đã dùng (1-2 cố định, 3-4 teach-two-hands, 5-7 preset)
+
+  // Tổng hợp tất cả classes = cố định + động
+  const allClasses = useMemo(() => [
+    ...BASE_CLASSES,
+    ...dynamicClasses.map(dc => ({ ...dc, voicePrompt: `Hãy dạy bạn A I nhận biết ${dc.label} nhé!` }))
+  ], [dynamicClasses]);
+
+  // Danh sách nhãn đã bị xóa (để hiện nút "Thêm lại")
+  const removedPresets = useMemo(() => {
+    const activeLabels = dynamicClasses.map(c => c.label);
+    return DYNAMIC_PRESETS.filter(p => !activeLabels.includes(p.label));
+  }, [dynamicClasses]);
+
+  // Xóa nhãn: xóa class + XÓA TOÀN BỘ samples
+  const removeDynamicClass = (classId: string) => {
+    setDynamicClasses(prev => prev.filter(c => c.id !== classId));
+    setSamples(prev => prev.filter(s => s.sourceId !== classId));
+    setIsTrained(false);
+    // Nếu đang active class bị xóa, chuyển về class_1
+    setActiveClass(prev => prev === classId ? 'class_1' : prev);
+  };
+
+  // Thêm lại nhãn đã xóa (tạo class mới, ID tăng)
+  const addDynamicClass = (label: string, emoji: string) => {
+    if (dynamicClasses.some(c => c.label === label)) return;
+    const newId = `class_${nextClassIdCounter}`;
+    setDynamicClasses(prev => [...prev, { id: newId, label, emoji }]);
+    setNextClassIdCounter(prev => prev + 1);
+  };
+
   const [activeClass, setActiveClass] = useState<string>('class_1');
   const [isCapturing, setIsCapturing] = useState(false);
   const [activeDataTab, setActiveDataTab] = useState<'camera' | 'upload' | 'video'>('camera');
@@ -205,7 +283,7 @@ export default function TeacherTeachPage() {
     const hands = handsRef.current;
     if (!hands || hands.length === 0) return;
     
-    const activeClassLabel = CLASSES.find(c => c.id === activeClass)?.label || 'Không tên';
+    const activeClassLabel = allClasses.find(c => c.id === activeClass)?.label || 'Không tên';
     const knnLabel = activeClassLabel;
 
     const rawThumbnail = getVideoThumb();
@@ -215,7 +293,7 @@ export default function TeacherTeachPage() {
     const goldenCurrentClass = GOLDEN_TEST_DATASET.filter(g => g.expectedLabel === goldenLabel);
     const goldenOtherClasses = GOLDEN_TEST_DATASET.filter(g => g.expectedLabel !== goldenLabel);
 
-    const expectedFingers = getExpectedFingerCount(activeClass);
+    const expectedFingers = getExpectedFingerCount(activeClass, activeClassLabel);
 
     const vW = videoRef.current ? videoRef.current.videoWidth || 640 : 640;
     const vH = videoRef.current ? videoRef.current.videoHeight || 480 : 480;
@@ -258,37 +336,117 @@ export default function TeacherTeachPage() {
               : `Ảnh bị mờ. Vui lòng giữ tay thật yên lặng khi chụp!`;
           }
 
-          // Validation 1: Finger counting heuristic
-          // Kiểm tra trực tiếp số ngón tay duỗi ra so với nhãn mong đợi
-          if (isValid && expectedFingers > 0) {
-            const detectedFingers = countExtendedFingers(hands[handIndex].keypoints);
-            if (detectedFingers >= 0) {
-              // Bỏ qua ngón cái khi đếm, nên bây giờ có thể so sánh chính xác số ngón
-              if (detectedFingers !== expectedFingers) {
+          // Check if this is a dynamic class (not in golden dataset)
+          const isDynamicClass = !CLASS_TO_GOLDEN_LABEL[activeClass];
+
+          if (isDynamicClass) {
+            // === NHÃN ĐỘNG: Negative Golden Check + Finger heuristic ===
+            
+            // Bước 1: NEGATIVE CHECK — ảnh KHÔNG ĐƯỢC quá giống Golden (1/2 ngón)
+            // Dùng khoảng cách (distance) thay vì confidence vì Golden chỉ có 2 class
+            // → confidence luôn >= 67% cho MỌI input, không phân biệt được 3 ngón vs 1 ngón
+            if (isValid && GOLDEN_TEST_DATASET.length > 0) {
+              // Tính khoảng cách gần nhất tới từng sample trong Golden Dataset
+              let minDistToGolden = Infinity;
+              let closestGoldenLabel = '';
+              GOLDEN_TEST_DATASET.forEach(g => {
+                let d = 0;
+                for (let i = 0; i < Math.min(features.length, g.features.length); i++) {
+                  const diff = g.features[i] - features[i];
+                  d += diff * diff;
+                }
+                const dist = Math.sqrt(d);
+                if (dist < minDistToGolden) {
+                  minDistToGolden = dist;
+                  closestGoldenLabel = g.expectedLabel;
+                }
+              });
+
+              // Cũng check với flipped features (tay trái/phải)
+              const flippedFeatures = features.map((v, i) => i % 2 === 0 ? -v : v);
+              let minDistFlipped = Infinity;
+              let closestFlippedLabel = '';
+              GOLDEN_TEST_DATASET.forEach(g => {
+                let d = 0;
+                for (let i = 0; i < Math.min(flippedFeatures.length, g.features.length); i++) {
+                  const diff = g.features[i] - flippedFeatures[i];
+                  d += diff * diff;
+                }
+                const dist = Math.sqrt(d);
+                if (dist < minDistFlipped) {
+                  minDistFlipped = dist;
+                  closestFlippedLabel = g.expectedLabel;
+                }
+              });
+
+              const bestDist = Math.min(minDistToGolden, minDistFlipped);
+              const bestLabel = minDistToGolden <= minDistFlipped ? closestGoldenLabel : closestFlippedLabel;
+
+              // Ngưỡng: nếu khoảng cách < 0.35 → quá giống 1/2 ngón → REJECT
+              // (giá trị 0.35 dựa trên: features đã normalize 0-1, typical distance giữa 1 ngón và 2 ngón ~ 0.3-0.5)
+              if (bestDist < 0.35) {
                 isValid = false;
                 rejectedAny = true;
-                rejectionMsg = `Bạn đang giơ ${detectedFingers} ngón tay chính, nhưng nhãn "${activeClassLabel}" cần ${expectedFingers} ngón! 🖐️`;
+                rejectionMsg = `Cử chỉ này trông giống "${bestLabel}" quá! Hãy giơ đủ ${activeClassLabel} nhé 🖐️`;
               }
             }
-          }
 
-          // Validation 2: So sánh khoảng cách với golden dataset bằng KNN chuẩn
-          // Chỉ chạy nếu validation 1 pass
-          if (isValid && GOLDEN_TEST_DATASET.length > 0) {
-            const mappedGolden = GOLDEN_TEST_DATASET.map(g => ({
-              label: g.expectedLabel,
-              features: g.features
-            }));
-            
-            const result = classifyKNN(features, mappedGolden, 3);
-            const flippedFeatures = features.map((v, i) => i % 2 === 0 ? -v : v);
-            const flippedResult = classifyKNN(flippedFeatures, mappedGolden, 3);
-            
-            if (result.label !== goldenLabel && flippedResult.label !== goldenLabel) {
-              isValid = false;
-              rejectedAny = true;
-              const finalResult = result.confidence >= flippedResult.confidence ? result : flippedResult;
-              rejectionMsg = `Cử chỉ này trông giống "${finalResult.label}" hơn là "${activeClassLabel}"! Bạn thử lại nhé? 🤔`;
+            // Bước 2: POSITIVE CHECK — skeleton đếm đúng số ngón
+            if (isValid && expectedFingers > 0) {
+              const detectedFingers = countExtendedFingers(hands[handIndex].keypoints);
+              if (detectedFingers >= 0) {
+                let isFingerCountOk: boolean;
+                
+                if (expectedFingers === 5) {
+                  // 5 Ngón: cần 4 ngón (không thumb) + ngón cái xòe
+                  isFingerCountOk = detectedFingers >= 4 && isThumbExtended(hands[handIndex].keypoints);
+                } else if (expectedFingers === 4) {
+                  // 4 Ngón: cần đúng 4 ngón (không thumb) VÀ ngón cái KHÔNG xòe
+                  // Nếu cả 4 ngón + ngón cái đều xòe → đó là 5 ngón, reject
+                  isFingerCountOk = detectedFingers === 4 && !isThumbExtended(hands[handIndex].keypoints);
+                } else {
+                  // 3 Ngón hoặc ít hơn: exact match
+                  isFingerCountOk = detectedFingers === expectedFingers;
+                }
+                
+                if (!isFingerCountOk) {
+                  isValid = false;
+                  rejectedAny = true;
+                  rejectionMsg = `Bạn đang giơ không đúng số ngón cho nhãn "${activeClassLabel}"! Hãy giơ đúng ${expectedFingers} ngón nhé 🖐️`;
+                }
+              }
+            }
+          } else {
+            // === NHÃN CỐ ĐỊNH: Logic gốc ===
+            // Validation 1: Finger counting heuristic
+            if (isValid && expectedFingers > 0) {
+              const detectedFingers = countExtendedFingers(hands[handIndex].keypoints);
+              if (detectedFingers >= 0) {
+                if (detectedFingers !== expectedFingers) {
+                  isValid = false;
+                  rejectedAny = true;
+                  rejectionMsg = `Bạn đang giơ ${detectedFingers} ngón tay chính, nhưng nhãn "${activeClassLabel}" cần ${expectedFingers} ngón! 🖐️`;
+                }
+              }
+            }
+
+            // Validation 2: So sánh khoảng cách với golden dataset bằng KNN chuẩn
+            if (isValid && GOLDEN_TEST_DATASET.length > 0) {
+              const mappedGolden = GOLDEN_TEST_DATASET.map(g => ({
+                label: g.expectedLabel,
+                features: g.features
+              }));
+              
+              const result = classifyKNN(features, mappedGolden, 3);
+              const flippedFeatures = features.map((v, i) => i % 2 === 0 ? -v : v);
+              const flippedResult = classifyKNN(flippedFeatures, mappedGolden, 3);
+              
+              if (result.label !== goldenLabel && flippedResult.label !== goldenLabel) {
+                isValid = false;
+                rejectedAny = true;
+                const finalResult = result.confidence >= flippedResult.confidence ? result : flippedResult;
+                rejectionMsg = `Cử chỉ này trông giống "${finalResult.label}" hơn là "${activeClassLabel}"! Bạn thử lại nhé? 🤔`;
+              }
             }
           }
 
@@ -344,7 +502,7 @@ export default function TeacherTeachPage() {
   // Clear samples for a class
   const clearClassSamples = (classId: string) => {
     playClickSound();
-    const classLabel = CLASSES.find(c => c.id === classId)?.label || classId;
+    const classLabel = allClasses.find(c => c.id === classId)?.label || classId;
     setSamples(prev => prev.filter(s => s.sourceId ? s.sourceId !== classId : s.label !== classLabel));
     setIsTrained(false);
     speakEnglish(`All samples cleared`);
@@ -363,8 +521,8 @@ export default function TeacherTeachPage() {
   // Run real model training
   const handleTrain = async () => {
     const validSamples = samples.filter(s => s.isValid !== false);
-    const c1 = validSamples.filter(s => s.sourceId === 'class_1' || (s.label === CLASSES[0].label && !s.sourceId)).length;
-    const c2 = validSamples.filter(s => s.sourceId === 'class_2' || (s.label === CLASSES[1].label && !s.sourceId)).length;
+    const c1 = validSamples.filter(s => s.sourceId === 'class_1' || (s.label === BASE_CLASSES[0].label && !s.sourceId)).length;
+    const c2 = validSamples.filter(s => s.sourceId === 'class_2' || (s.label === BASE_CLASSES[1].label && !s.sourceId)).length;
     if (c1 < 10 || c2 < 10) {
       speakEnglish('Need more samples to learn');
       return;
@@ -520,13 +678,15 @@ export default function TeacherTeachPage() {
     playClickSound();
     
     // Evaluate accuracy against Golden Dataset
-    const targetClasses = [CLASSES[0].label, CLASSES[1].label];
+    const targetClasses = [BASE_CLASSES[0].label, BASE_CLASSES[1].label];
 
     const testCases = GOLDEN_TEST_DATASET.filter(g => targetClasses.includes(g.expectedLabel));
 
+    // CHỈ dùng samples nhãn cơ bản khi chạy Golden test (tránh nhiễu bởi 3/4/5 ngón)
+    const baseSamplesForGolden = samples.filter(s => ['class_1', 'class_2'].includes(s.sourceId || ''));
     let correctCount = 0;
     testCases.forEach(testCase => {
-      const result = classifyKNN(testCase.features, samples, 3);
+      const result = classifyKNN(testCase.features, baseSamplesForGolden, 3);
       if (result.label === testCase.expectedLabel) {
         correctCount++;
       }
@@ -538,7 +698,8 @@ export default function TeacherTeachPage() {
     const MIN_SAMPLES_PER_CLASS = 10;
     let totalPenalty = 0;
 
-    const sampleCounts: Record<string, number> = { class_1: 0, class_2: 0, class_3: 0, class_4: 0 };
+    const sampleCounts: Record<string, number> = {};
+    allClasses.forEach(c => { sampleCounts[c.id] = 0; });
     samples.forEach(s => {
       if (s.sourceId && s.sourceId in sampleCounts) {
         sampleCounts[s.sourceId]++;
@@ -556,6 +717,31 @@ export default function TeacherTeachPage() {
     });
 
     calculatedAccuracy = Math.max(0, Math.round(calculatedAccuracy - totalPenalty));
+
+    // Đánh giá nhãn động: self-validation (leave-one-out KNN)
+    const dynamicClassIds = dynamicClasses.map(c => c.id);
+    const dynamicSamples = samples.filter(s => dynamicClassIds.includes(s.sourceId || ''));
+    
+    if (dynamicSamples.length > 0) {
+      let selfCorrect = 0;
+      dynamicSamples.forEach((sample, i) => {
+        const others = dynamicSamples.filter((_, j) => j !== i);
+        if (others.length > 0) {
+          const result = classifyKNN(sample.features, others, 3);
+          if (result.label === sample.label) selfCorrect++;
+        }
+      });
+      const dynamicScore = Math.round((selfCorrect / dynamicSamples.length) * 100);
+      
+      // Tổng hợp: trung bình có trọng số
+      const baseSamples = samples.filter(s => ['class_1', 'class_2'].includes(s.sourceId || ''));
+      const totalSamples = baseSamples.length + dynamicSamples.length;
+      if (totalSamples > 0) {
+        calculatedAccuracy = Math.round(
+          (calculatedAccuracy * baseSamples.length + dynamicScore * dynamicSamples.length) / totalSamples
+        );
+      }
+    }
     
     setPenaltyWarning(hasPenalty);
     setSubmitScore(calculatedAccuracy);
@@ -584,7 +770,7 @@ export default function TeacherTeachPage() {
       }
 
       // Step 2: Save to new Dataset API
-      const response = await api.createDataset('teach', processedSamples, submitScore, reflectionAnswer, true, teacherNotes, true);
+      const response = await api.createDataset('teach', processedSamples, submitScore, reflectionAnswer, true, teacherNotes, true, undefined, dynamicClasses);
       
       // Step 3: Export TensorFlow.js Neural Network model JSON & BIN weights and upload to Cloudinary
       if (trainerRef.current && trainerRef.current.isTrained()) {
@@ -652,7 +838,7 @@ export default function TeacherTeachPage() {
                 <span className="text-xs font-black text-emerald-600 tracking-wider uppercase">Bước 1: 1 Bàn tay ✋</span>
               </div>
               <div className="space-y-3 mb-4">
-                {CLASSES.slice(0, 2).map(cls => {
+                {allClasses.slice(0, 2).map(cls => {
                   const validSamples = samples.filter(s => s.isValid !== false);
                   const rawCount = validSamples.filter(s => s.sourceId === cls.id || (s.label === cls.label && !s.sourceId)).length;
                   const classSampleCount = rawCount;
@@ -697,7 +883,74 @@ export default function TeacherTeachPage() {
                 })}
               </div>
 
+              {/* Stage 2: Dynamic classes (3/4/5 Ngón Tay) */}
+              <div className="mb-2 mt-4">
+                <span className="text-xs font-black text-purple-600 tracking-wider uppercase">Bước 2: Nhãn mở rộng 🖐️</span>
+              </div>
+              <div className="space-y-3 mb-4">
+                {dynamicClasses.map(cls => {
+                  const validSamples = samples.filter(s => s.isValid !== false);
+                  const classSampleCount = validSamples.filter(s => s.sourceId === cls.id).length;
+                  const isSelected = activeClass === cls.id;
+                  const hasEnough = classSampleCount >= 10;
+                  
+                  return (
+                    <div
+                      key={cls.id}
+                      onClick={() => {
+                        playClickSound();
+                        setActiveClass(cls.id);
+                      }}
+                      className={`cursor-pointer rounded-2xl p-4 border-2 transition-all flex items-center justify-between ${
+                        isSelected
+                          ? 'border-purple-500 bg-purple-50/80 shadow-md ring-2 ring-purple-200'
+                          : 'border-gray-200 bg-gray-50 hover:bg-gray-100'
+                      }`}
+                    >
+                      <div>
+                        <div className="font-extrabold text-purple-900">{cls.label}</div>
+                        <div className="text-xs text-gray-500 font-semibold mt-1 flex items-center gap-1.5">
+                          <span>Đã chụp:</span>
+                          <span className="text-purple-600 font-black">{classSampleCount} ảnh</span>
+                          <span className={`inline-block px-1.5 py-0.5 rounded-full text-[9px] font-black ${
+                            hasEnough ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700 animate-pulse'
+                          }`}>
+                            {hasEnough ? '✅ Đủ mẫu (10+)' : `⚠️ Thiếu ${10 - classSampleCount} ảnh`}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="flex gap-2">
+                        {classSampleCount > 0 && (
+                          <button onClick={(e) => { e.stopPropagation(); clearClassSamples(cls.id); }} className="p-2 hover:bg-red-100 rounded-lg text-red-500" title="Xóa ảnh">
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        )}
+                        <button
+                          onClick={(e) => { e.stopPropagation(); removeDynamicClass(cls.id); }}
+                          className="p-2 hover:bg-red-100 rounded-lg text-red-400" title="Xóa nhãn"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
 
+                {/* Nút thêm lại nhãn đã xóa */}
+                {removedPresets.length > 0 && (
+                  <div className="flex flex-wrap gap-2 mt-2">
+                    {removedPresets.map(preset => (
+                      <button
+                        key={preset.label}
+                        onClick={() => { playClickSound(); addDynamicClass(preset.label, preset.emoji); }}
+                        className="px-3 py-1.5 bg-purple-50 hover:bg-purple-100 text-purple-700 text-xs font-bold rounded-xl border border-purple-200 flex items-center gap-1 transition-colors"
+                      >
+                        <span>+ {preset.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
 
               {/* Capture Button */}
               {activeDataTab === 'camera' && (
@@ -742,9 +995,11 @@ export default function TeacherTeachPage() {
                   const validSamples = samples.filter(s => s.isValid !== false);
                   return validSamples.filter(s => s.sourceId === id || (s.label === label && !s.sourceId)).length;
                 };
-                const c1 = getCount(CLASSES[0].id, CLASSES[0].label);
-                const c2 = getCount(CLASSES[1].id, CLASSES[1].label);
-                const isReady = c1 >= 10 && c2 >= 10;
+                const allClassesReady = allClasses.every(cls => {
+                  const count = getCount(cls.id, cls.label);
+                  return count >= 10;
+                });
+                const isReady = allClassesReady;
 
                 if (!isReady) {
                   return (
@@ -752,8 +1007,10 @@ export default function TeacherTeachPage() {
                       <span className="text-red-800 text-sm font-extrabold block">⚠️ Yêu cầu dữ liệu:</span>
                       <span>Bạn cần chụp ít nhất 10 ảnh cho mỗi nhóm để AI có thể học tốt nhé:</span>
                       <ul className="list-disc pl-4 space-y-1">
-                        {c1 < 10 && <li>Nhóm "{CLASSES[0].label}": thiếu {10 - c1} ảnh mẫu.</li>}
-                        {c2 < 10 && <li>Nhóm "{CLASSES[1].label}": thiếu {10 - c2} ảnh mẫu.</li>}
+                        {allClasses.map(cls => {
+                          const count = getCount(cls.id, cls.label);
+                          return count < 10 ? <li key={cls.id}>Nhóm "{cls.label}": thiếu {10 - count} ảnh mẫu.</li> : null;
+                        })}
                       </ul>
                     </div>
                   );
@@ -849,7 +1106,7 @@ export default function TeacherTeachPage() {
                 mode="hand-1"
                 videoRef={videoRef}
                 activeClassId={activeClass}
-                activeClassLabel={CLASSES.find(c => c.id === activeClass)?.label || activeClass}
+                activeClassLabel={allClasses.find(c => c.id === activeClass)?.label || activeClass}
                 activeTab={activeDataTab}
                 onTabChange={setActiveDataTab}
                 onSamplesCollected={(newSamples) => {

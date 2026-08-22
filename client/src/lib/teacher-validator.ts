@@ -115,14 +115,15 @@ export function crossCheckLiveFeatures(
 ): CrossCheckResult {
   const studentResult = classifyKNN(liveFeatures, studentSamples, kValue);
 
-  // Finger count heuristic for hand challenges (Detect fist / 0 fingers or 3+ fingers)
+  // Finger count heuristic for hand challenges (Detect fist / 0 fingers)
   let isFingerOOD = false;
   if (rawKeypoints && rawKeypoints.length >= 21) {
     const extFingers = countExtendedFingers(rawKeypoints);
-    if (extFingers === 0 || extFingers >= 3) {
-      isFingerOOD = true;
+    if (extFingers === 0) {
+      isFingerOOD = true; // Nắm đấm luôn là OOD vì không có nhãn nào là 0 ngón
     }
   }
+
 
   if (!teacherSamples || teacherSamples.length === 0) {
     // No teacher template available, perform standard student check

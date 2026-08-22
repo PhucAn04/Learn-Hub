@@ -112,6 +112,9 @@ export interface ModelEvaluation {
   goldenAccuracy: number;
   goldenCorrectCount: number;
   goldenTotalCount: number;
+  dynamicAccuracy?: number;
+  dynamicCorrectCount?: number;
+  dynamicTotalCount?: number;
   confusionMatrix: {
     labels: string[];
     matrix: number[][];

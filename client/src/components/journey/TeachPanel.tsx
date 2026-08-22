@@ -82,7 +82,9 @@ function countExtendedFingers(keypoints: HandKeypoint[]): number {
   
   const dist2D = (p1: HandKeypoint, p2: HandKeypoint) => Math.hypot(p1.x - p2.x, p1.y - p2.y);
 
-  // Thumb: compare TIP(4) vs IP(3) using 2D distance
+  // Bỏ qua ngón cái (thumb) vì việc phát hiện ngón cái cụp/xòe rất thiếu ổn định
+  // Tạm comment logic đếm ngón cái
+  /*
   const thumbTip = keypoints[4];
   const thumbIP = keypoints[3];
   const thumbMCP = keypoints[2];
@@ -94,6 +96,7 @@ function countExtendedFingers(keypoints: HandKeypoint[]): number {
   if (thumbDistTip > thumbDistIP && thumbDistIP > thumbDistMCP * 1.1) {
     count++;
   }
+  */
 
   // Index through pinky
   const fingerIndices = [
@@ -112,6 +115,26 @@ function countExtendedFingers(keypoints: HandKeypoint[]): number {
   }
 
   return count;
+}
+
+/**
+ * Kiểm tra ngón cái có đang xòe ra không.
+ * Dùng riêng cho trường hợp phân biệt 4 ngón vs 5 ngón.
+ */
+function isThumbExtended(keypoints: HandKeypoint[]): boolean {
+  if (!keypoints || keypoints.length < 21) return false;
+  const wrist = keypoints[0];
+  const thumbTip = keypoints[4];
+  const thumbIP = keypoints[3];
+  const thumbMCP = keypoints[2];
+  
+  const dist2D = (p1: HandKeypoint, p2: HandKeypoint) => Math.hypot(p1.x - p2.x, p1.y - p2.y);
+  const thumbDistTip = dist2D(thumbTip, wrist);
+  const thumbDistIP = dist2D(thumbIP, wrist);
+  const thumbDistMCP = dist2D(thumbMCP, wrist);
+  
+  // Ngón cái xòe khi TIP xa hơn IP và IP xa hơn MCP
+  return thumbDistTip > thumbDistIP && thumbDistIP > thumbDistMCP * 1.05;
 }
 
 // ──────────────────────────────────────────────
@@ -193,10 +216,17 @@ function validateFaceExpression(
 function getExpectedFingerCount(
   classId: string,
   mode: TeachPanelProps['mode'],
+  label?: string,
 ): number {
   if (mode !== 'hand-1' && mode !== 'hand-2') return -1;
   if (classId === 'class_1' || classId === 'class_3') return 1;
   if (classId === 'class_2' || classId === 'class_4') return 2;
+  // Nhãn động — parse từ label text
+  if (label) {
+    if (label.includes('3 Ngón Tay')) return 3;
+    if (label.includes('4 Ngón Tay')) return 4;
+    if (label.includes('5 Ngón Tay')) return 5; // positive check sẽ dùng >= 4 (thumb disabled)
+  }
   return -1;
 }
 
@@ -464,7 +494,7 @@ export default function TeachPanel({
       }
 
       const { thumbnail, rawThumbnail, canvas, rawCanvas } = getVideoThumbAndCanvas(hands, undefined);
-      const expectedFingers = getExpectedFingerCount(activeClass, mode);
+      const expectedFingers = getExpectedFingerCount(activeClass, mode, activeClassLabel);
 
       // Pick golden dataset based on mode
       let goldenDataset: GoldenTestSample[] = [];
@@ -523,51 +553,131 @@ export default function TeachPanel({
               : 'Ảnh hơi tối! Bé tìm chỗ sáng hơn xíu nha 🌑';
             questionableReason = warningMsg;
           } else {
-            // Validation 2: Golden dataset distance
-            if (
-              goldenCurrentClass.length > 0 &&
-              goldenOtherClasses.length > 0
-            ) {
-              const minDistToCorrect = goldenCurrentClass.reduce((min, g) => {
-                let d = 0;
-                for (let i = 0; i < Math.min(features.length, g.features.length); i++) {
-                  const diff = g.features[i] - features[i];
-                  d += diff * diff;
-                }
-                return Math.min(min, Math.sqrt(d));
-              }, Infinity);
+            const isDynamicClass = !CLASS_TO_GOLDEN_LABEL[activeClass];
 
-              let minDistToWrong = Infinity;
-              let closestWrongLabel = '';
-              goldenOtherClasses.forEach((g) => {
-                let d = 0;
-                for (
-                  let i = 0;
-                  i < Math.min(features.length, g.features.length);
-                  i++
-                ) {
-                  const diff = g.features[i] - features[i];
-                  d += diff * diff;
+            if (isDynamicClass) {
+              // === NHÃN ĐỘNG: Negative Golden Check ===
+              // Dùng khoảng cách (distance) thay vì confidence vì Golden chỉ có 2 class
+              // → confidence luôn >= 67% cho MỌI input, không phân biệt được
+              if (goldenDataset.length > 0) {
+                let minDistToGolden = Infinity;
+                let closestGoldenLabel = '';
+                goldenDataset.forEach(g => {
+                  let d = 0;
+                  for (let i = 0; i < Math.min(features.length, g.features.length); i++) {
+                    const diff = g.features[i] - features[i];
+                    d += diff * diff;
+                  }
+                  const dist = Math.sqrt(d);
+                  if (dist < minDistToGolden) {
+                    minDistToGolden = dist;
+                    closestGoldenLabel = g.expectedLabel;
+                  }
+                });
+
+                const flippedFeatures = features.map((v: number, i: number) => i % 2 === 0 ? -v : v);
+                let minDistFlipped = Infinity;
+                let closestFlippedLabel = '';
+                goldenDataset.forEach(g => {
+                  let d = 0;
+                  for (let i = 0; i < Math.min(flippedFeatures.length, g.features.length); i++) {
+                    const diff = g.features[i] - flippedFeatures[i];
+                    d += diff * diff;
+                  }
+                  const dist = Math.sqrt(d);
+                  if (dist < minDistFlipped) {
+                    minDistFlipped = dist;
+                    closestFlippedLabel = g.expectedLabel;
+                  }
+                });
+
+                const bestDist = Math.min(minDistToGolden, minDistFlipped);
+                const bestLabel = minDistToGolden <= minDistFlipped ? closestGoldenLabel : closestFlippedLabel;
+
+                if (bestDist < 0.35) {
+                  heuristicValid = false;
+                  isQuestionable = true;
+                  hasWarning = true;
+                  warningMsg = `Cử chỉ này trông giống "${bestLabel}" quá! Hãy giơ đủ số ngón đúng nhé 🖐️`;
+                  questionableReason = warningMsg;
                 }
-                const dist = Math.sqrt(d);
-                if (dist < minDistToWrong) {
-                  minDistToWrong = dist;
-                  if (mode === 'gesture') {
-                    const cls = classes.find((c) => c.id === g.expectedLabel);
-                    closestWrongLabel = cls?.label || g.expectedLabel;
+              }
+
+              // Positive check: skeleton đếm ngón
+              if (heuristicValid && expectedFingers > 0) {
+                const detectedFingers = countExtendedFingers(keypoints);
+                if (detectedFingers >= 0) {
+                  let isFingerCountOk: boolean;
+                  
+                  if (expectedFingers === 5) {
+                    // 5 Ngón: cần 4 ngón (không thumb) + ngón cái xòe
+                    isFingerCountOk = detectedFingers >= 4 && isThumbExtended(keypoints);
+                  } else if (expectedFingers === 4) {
+                    // 4 Ngón: cần đúng 4 ngón (không thumb) VÀ ngón cái KHÔNG xòe
+                    // Nếu cả 4 ngón + ngón cái đều xòe → đó là 5 ngón, reject
+                    isFingerCountOk = detectedFingers === 4 && !isThumbExtended(keypoints);
                   } else {
-                    closestWrongLabel = g.expectedLabel;
+                    // 3 Ngón hoặc ít hơn: exact match
+                    isFingerCountOk = detectedFingers === expectedFingers;
+                  }
+                  
+                  if (!isFingerCountOk) {
+                    heuristicValid = false;
+                    isQuestionable = true;
+                    hasWarning = true;
+                    warningMsg = `Bạn đang giơ không đúng số ngón! Cần giơ đúng ${expectedFingers} ngón 🖐️`;
+                    questionableReason = warningMsg;
                   }
                 }
-              });
+              }
+            } else {
+              // === NHÃN CỐ ĐỊNH: Logic gốc ===
+              // Validation 2: Golden dataset distance
+              if (
+                goldenCurrentClass.length > 0 &&
+                goldenOtherClasses.length > 0
+              ) {
+                const minDistToCorrect = goldenCurrentClass.reduce((min, g) => {
+                  let d = 0;
+                  for (let i = 0; i < Math.min(features.length, g.features.length); i++) {
+                    const diff = g.features[i] - features[i];
+                    d += diff * diff;
+                  }
+                  return Math.min(min, Math.sqrt(d));
+                }, Infinity);
 
-              const distThreshold = mode === 'gesture' ? 0.7 : 0.9;
-              if (minDistToWrong < minDistToCorrect * distThreshold) {
-                heuristicValid = false;
-                isQuestionable = true;
-                hasWarning = true;
-                warningMsg = `Cử chỉ này trông giống "${closestWrongLabel}" hơn! Bé thử lại nhé? 🤔`;
-                questionableReason = warningMsg;
+                let minDistToWrong = Infinity;
+                let closestWrongLabel = '';
+                goldenOtherClasses.forEach((g) => {
+                  let d = 0;
+                  for (
+                    let i = 0;
+                    i < Math.min(features.length, g.features.length);
+                    i++
+                  ) {
+                    const diff = g.features[i] - features[i];
+                    d += diff * diff;
+                  }
+                  const dist = Math.sqrt(d);
+                  if (dist < minDistToWrong) {
+                    minDistToWrong = dist;
+                    if (mode === 'gesture') {
+                      const cls = classes.find((c) => c.id === g.expectedLabel);
+                      closestWrongLabel = cls?.label || g.expectedLabel;
+                    } else {
+                      closestWrongLabel = g.expectedLabel;
+                    }
+                  }
+                });
+
+                const distThreshold = mode === 'gesture' ? 0.7 : 0.9;
+                if (minDistToWrong < minDistToCorrect * distThreshold) {
+                  heuristicValid = false;
+                  isQuestionable = true;
+                  hasWarning = true;
+                  warningMsg = `Cử chỉ này trông giống "${closestWrongLabel}" hơn! Bé thử lại nhé? 🤔`;
+                  questionableReason = warningMsg;
+                }
               }
             }
           }

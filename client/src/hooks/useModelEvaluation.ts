@@ -148,7 +148,7 @@ export function useModelEvaluation(config: EvalConfig) {
       // 3b-2. Model Confidence Per Image (Khung 1: "Mô hình tự tin")
       // Chạy từng ảnh qua NN bé → softmax → "Mô hình tự tin: X%"
       // 3b-2. Model Confidence Per Image (Khung: Mô Hình AI Đánh Giá Từng Ảnh)
-      let modelConfidencePerImage: NonNullable<ModelEvaluation['sampleEvidence']>['modelConfidencePerImage'] = [];
+      const modelConfidencePerImage: NonNullable<ModelEvaluation['sampleEvidence']>['modelConfidencePerImage'] = [];
       if (nnPredict) {
         if (hasTeacher) {
           // Có teacher thì dùng bộ mẫu của GV đưa qua model của bé

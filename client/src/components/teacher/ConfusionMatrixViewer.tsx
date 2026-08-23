@@ -38,8 +38,6 @@ export default function ConfusionMatrixViewer({ evaluation, onZoomImage }: Confu
   const cm = evaluation.confusionMatrix;
   const evidence = evaluation.sampleEvidence;
 
-  if (!cm) return null;
-
   const groupedDetails = React.useMemo(() => {
     return evidence?.goldenTestDetails?.reduce((acc, td) => {
       if (!acc[td.expectedLabel]) acc[td.expectedLabel] = [];
@@ -47,6 +45,8 @@ export default function ConfusionMatrixViewer({ evaluation, onZoomImage }: Confu
       return acc;
     }, {} as Record<string, NonNullable<typeof evidence.goldenTestDetails>>) || {};
   }, [evidence?.goldenTestDetails]);
+
+  if (!cm) return null;
 
   return (
     <div className="bg-white rounded-3xl border border-slate-200 shadow-sm p-6">

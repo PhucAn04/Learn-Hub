@@ -194,6 +194,10 @@ export interface ModelEvaluation {
       isCorrect: boolean;
       confidence: number;
       thumbnail?: string;
+      /** true khi ảnh GV thuộc kiểu dáng mà bé chưa chụp (OOD) */
+      isUnlearnedStyle?: boolean;
+      /** Khoảng cách KNN nhỏ nhất từ ảnh GV đến tập ảnh cùng nhãn của bé */
+      distanceToStudent?: number;
     }[];
   };
   evaluatedAt: string;

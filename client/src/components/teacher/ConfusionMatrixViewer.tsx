@@ -113,7 +113,14 @@ export default function ConfusionMatrixViewer({ evaluation, onZoomImage }: Confu
       </div>
 
       {/* Mô Hình Tự Tin — từng ảnh GV chạy qua model bé */}
-      {evidence?.modelConfidencePerImage && evidence.modelConfidencePerImage.length > 0 && (
+      {evidence?.modelConfidencePerImage && evidence.modelConfidencePerImage.length > 0 && (() => {
+        const learnedItems = evidence.modelConfidencePerImage.filter(td => !td.isUnlearnedStyle);
+        const unlearnedItems = evidence.modelConfidencePerImage.filter(td => td.isUnlearnedStyle);
+        const learnedCorrect = learnedItems.filter(td => td.isCorrect).length;
+        const learnedTotal = learnedItems.length;
+        const unlearnedTotal = unlearnedItems.length;
+
+        return (
         <div className="mt-8">
           <SectionHeader icon={<span className="text-base">🧠</span>}>
             Mô Hình AI Đánh Giá Từng Ảnh
@@ -121,47 +128,122 @@ export default function ConfusionMatrixViewer({ evaluation, onZoomImage }: Confu
           <p className="text-xs text-slate-500 mb-3 -mt-2 px-1">
             Mỗi ảnh của Giáo viên được đưa qua mô hình AI mà bé đã huấn luyện. &quot;Mô hình tự tin&quot; cho biết AI của bé chắc chắn bao nhiêu %.
           </p>
-          <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-              {evidence.modelConfidencePerImage.map((td, i) => (
-                <div key={i} className={`p-3 rounded-xl text-xs flex items-start gap-2.5 shadow-sm ${
-                  td.isCorrect ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'
-                }`}>
-                  {td.thumbnail ? (
-                    <div 
-                      className="w-12 h-12 rounded-lg overflow-hidden shrink-0 border border-slate-200 bg-slate-200 relative group cursor-pointer"
-                      onClick={() => onZoomImage && onZoomImage(td.thumbnail!, `AI đoán: "${td.predictedLabel}" | Tự tin: ${Math.round(td.confidence)}%`)}
-                    >
-                      <img src={td.thumbnail} alt={td.expectedLabel} className="w-full h-full object-cover group-hover:opacity-50 transition-opacity" />
-                      <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                        <Eye className="w-5 h-5 text-slate-700" />
+
+          {/* Thống kê tổng quan */}
+          <div className="flex flex-wrap gap-2 mb-4 text-xs font-semibold">
+            <span className="bg-slate-100 px-2.5 py-1 rounded-lg">Tổng: {evidence.modelConfidencePerImage.length} ảnh</span>
+            {learnedTotal > 0 && (
+              <span className="bg-green-50 text-green-700 px-2.5 py-1 rounded-lg">
+                ✅ Đã học: {learnedCorrect}/{learnedTotal} đúng
+              </span>
+            )}
+            {unlearnedTotal > 0 && (
+              <span className="bg-amber-50 text-amber-700 px-2.5 py-1 rounded-lg">
+                🆕 Kiểu mới chưa học: {unlearnedTotal} ảnh
+              </span>
+            )}
+          </div>
+
+          {/* ── NHÓM 1: Ảnh mà bé ĐÃ HỌC kiểu dáng này ── */}
+          {learnedTotal > 0 && (
+            <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200">
+              <h4 className="text-[11px] font-extrabold text-slate-500 uppercase tracking-wider mb-3">
+                📋 Kiểu dáng bé đã học — Đánh giá chất lượng model ({learnedCorrect}/{learnedTotal} đúng)
+              </h4>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                {learnedItems.map((td, i) => (
+                  <div key={`learned-${i}`} className={`p-3 rounded-xl text-xs flex items-start gap-2.5 shadow-sm ${
+                    td.isCorrect ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'
+                  }`}>
+                    {td.thumbnail ? (
+                      <div 
+                        className="w-12 h-12 rounded-lg overflow-hidden shrink-0 border border-slate-200 bg-slate-200 relative group cursor-pointer"
+                        onClick={() => onZoomImage && onZoomImage(td.thumbnail!, `AI đoán: "${td.predictedLabel}" | Tự tin: ${Math.round(td.confidence)}%`)}
+                      >
+                        <img src={td.thumbnail} alt={td.expectedLabel} className="w-full h-full object-cover group-hover:opacity-50 transition-opacity" />
+                        <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                          <Eye className="w-5 h-5 text-slate-700" />
+                        </div>
+                      </div>
+                    ) : (
+                      <span className="text-lg leading-none mt-0.5">{td.isCorrect ? '✅' : '❌'}</span>
+                    )}
+                    <div className="min-w-0 flex-1 space-y-1">
+                      <div className="flex justify-between items-center">
+                        <span className="font-bold text-slate-700 truncate">
+                          {td.isCorrect ? '✅' : '❌'} Ảnh
+                        </span>
+                        <span className={`font-semibold text-[10px] ${
+                          td.confidence >= 80 ? 'text-green-600' : td.confidence >= 50 ? 'text-amber-600' : 'text-red-600'
+                        }`}>Mô hình tự tin: {Math.round(td.confidence)}%</span>
+                      </div>
+                      <div className="text-slate-600 truncate">
+                        Đáp án: <span className="font-semibold">{td.expectedLabel}</span>
+                      </div>
+                      <div className={`${td.isCorrect ? 'text-green-700' : 'text-red-600'} truncate`}>
+                        AI đoán: <span className="font-bold">{td.predictedLabel}</span>
                       </div>
                     </div>
-                  ) : (
-                    <span className="text-lg leading-none mt-0.5">{td.isCorrect ? '✅' : '❌'}</span>
-                  )}
-                  <div className="min-w-0 flex-1 space-y-1">
-                    <div className="flex justify-between items-center">
-                      <span className="font-bold text-slate-700 truncate">
-                        {td.isCorrect ? '✅' : '❌'} Ảnh {i + 1}
-                      </span>
-                      <span className={`font-semibold text-[10px] ${
-                        td.confidence >= 80 ? 'text-green-600' : td.confidence >= 50 ? 'text-amber-600' : 'text-red-600'
-                      }`}>Mô hình tự tin: {Math.round(td.confidence)}%</span>
-                    </div>
-                    <div className="text-slate-600 truncate">
-                      Đáp án: <span className="font-semibold">{td.expectedLabel}</span>
-                    </div>
-                    <div className={`${td.isCorrect ? 'text-green-700' : 'text-red-600'} truncate`}>
-                      AI đoán: <span className="font-bold">{td.predictedLabel}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* ── NHÓM 2: Ảnh mà bé CHƯA HỌC kiểu dáng này ── */}
+          {unlearnedTotal > 0 && (
+            <div className="bg-amber-50/50 p-4 rounded-2xl border border-amber-200 mt-4">
+              <h4 className="text-[11px] font-extrabold text-amber-700 uppercase tracking-wider mb-2">
+                🆕 Kiểu dáng GV có nhưng bé chưa học — {unlearnedTotal} ảnh
+              </h4>
+              <p className="text-[11px] text-amber-800 font-medium mb-3 leading-relaxed">
+                Những ảnh dưới đây thuộc <strong>kiểu tay/cử chỉ mà Giáo viên đã chụp</strong> nhưng <strong>bé chưa bao giờ chụp kiểu này</strong> khi dạy AI.
+                Do đó, AI của bé đoán sai là điều bình thường — không phải lỗi của bé.
+                Nếu muốn AI nhận diện tốt hơn, bé cần chụp thêm kiểu dáng này.
+              </p>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                {unlearnedItems.map((td, i) => (
+                  <div key={`unlearned-${i}`} className="p-3 rounded-xl text-xs flex items-start gap-2.5 shadow-sm bg-amber-50 border border-amber-300">
+                    {td.thumbnail ? (
+                      <div 
+                        className="w-12 h-12 rounded-lg overflow-hidden shrink-0 border border-amber-300 bg-slate-200 relative group cursor-pointer"
+                        onClick={() => onZoomImage && onZoomImage(td.thumbnail!, `🆕 Kiểu dáng mới — Nhãn GV: "${td.expectedLabel}" | Bé chưa học kiểu này`)}
+                      >
+                        <img src={td.thumbnail} alt={td.expectedLabel} className="w-full h-full object-cover group-hover:opacity-50 transition-opacity" />
+                        <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                          <Eye className="w-5 h-5 text-amber-700" />
+                        </div>
+                      </div>
+                    ) : (
+                      <span className="text-lg leading-none mt-0.5">🆕</span>
+                    )}
+                    <div className="min-w-0 flex-1 space-y-1">
+                      <div className="flex justify-between items-center">
+                        <span className="font-bold text-amber-800 truncate">
+                          🆕 Kiểu mới
+                        </span>
+                        <span className="font-semibold text-[10px] text-red-500">
+                          Mô hình tự tin: {Math.round(td.confidence)}%
+                        </span>
+                      </div>
+                      <div className="text-amber-900 truncate">
+                        Nhãn GV: <span className="font-semibold">{td.expectedLabel}</span>
+                      </div>
+                      <div className="text-[10px] text-amber-500 font-medium italic">
+                        AI chưa được học kiểu dáng này nên tự tin rất kém
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                ))}
+              </div>
+              <div className="mt-3 p-3 bg-amber-100 rounded-xl text-xs font-semibold text-amber-800">
+                💡 <strong>Gợi ý:</strong> Bé có thể chụp thêm ảnh theo các kiểu dáng này để AI học thêm và nhận diện chính xác hơn ở lần nộp bài sau.
+              </div>
             </div>
-          </div>
+          )}
         </div>
-      )}
+        );
+      })()}
 
       {/* Fallback: Golden Test Detail (khi không có modelConfidencePerImage) */}
       {(!evidence?.modelConfidencePerImage || evidence.modelConfidencePerImage.length === 0) &&

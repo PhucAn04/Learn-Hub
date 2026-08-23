@@ -156,30 +156,47 @@ export function useModelEvaluation(config: EvalConfig) {
             try {
               const expectedLabel = img.label || '?';
               
-              // Filter out Teacher styles that the student never captured (OOD)
+              // Detect Teacher styles that the student never captured (OOD)
               // Bằng cách tìm khoảng cách KNN nhỏ nhất từ ảnh GV đến các ảnh cùng nhãn của bé
+              let isUnlearnedStyle = false;
+              let distanceToStudent = 0;
               const studentSamplesOfClass = samples.filter(s => {
                 const sLabel = config.classes.find(c => c.id === s.sourceId)?.label || s.label;
                 return sLabel === expectedLabel;
               });
               
               if (studentSamplesOfClass.length > 0) {
-                // Import classifyKNN if not available or just use distance logic
-                // classifyKNN is imported at the top of the file!
                 const knn = classifyKNN(img.features, studentSamplesOfClass, 1);
+                distanceToStudent = knn.minDistance;
                 if (knn.minDistance > 0.65) {
-                  // Ảnh của Giáo viên khác quá xa (khác kiểu dáng) so với những gì bé dạy cho AI -> Bỏ qua
-                  continue; 
+                  isUnlearnedStyle = true;
                 }
               }
 
               const nnPred = await nnPredict(img.features);
               const predictedLabel = config.classes.find(c => c.id === nnPred.label)?.label || nnPred.label;
               const isCorrect = predictedLabel === expectedLabel || nnPred.label === expectedLabel;
+              
+              // Cho unlearned style: lấy confidence cho NHÃN ĐÚNG (expectedLabel)
+              // thay vì confidence cho nhãn model đoán (predictedLabel)
+              // → Vì model chưa học kiểu này, confidence cho nhãn đúng sẽ rất thấp (~10-30%)
+              let displayConfidence = nnPred.confidence;
+              if (isUnlearnedStyle && nnPred.confidences) {
+                // Tìm class ID tương ứng với expectedLabel
+                const expectedClassId = config.classes.find(c => c.label === expectedLabel)?.id;
+                const rawScore = expectedClassId 
+                  ? (nnPred.confidences[expectedClassId] ?? nnPred.confidences[expectedLabel] ?? 0)
+                  : (nnPred.confidences[expectedLabel] ?? 0);
+                displayConfidence = Math.round(rawScore * 100);
+              }
+
               modelConfidencePerImage.push({
-                expectedLabel, predictedLabel, isCorrect,
-                confidence: nnPred.confidence,
+                expectedLabel, predictedLabel,
+                isCorrect: isUnlearnedStyle ? false : isCorrect,
+                confidence: displayConfidence,
                 thumbnail: img.thumbnail || img.rawThumbnail,
+                isUnlearnedStyle,
+                distanceToStudent,
               });
             } catch { /* skip */ }
           }

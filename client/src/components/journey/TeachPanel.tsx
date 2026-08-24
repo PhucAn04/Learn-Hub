@@ -679,6 +679,18 @@ export default function TeachPanel({
                   questionableReason = warningMsg;
                 }
               }
+
+              // Positive check: skeleton đếm ngón (cho cả nhãn cố định)
+              if (heuristicValid && expectedFingers > 0) {
+                const detectedFingers = countExtendedFingers(keypoints);
+                if (detectedFingers >= 0 && detectedFingers !== expectedFingers) {
+                  heuristicValid = false;
+                  isQuestionable = true;
+                  hasWarning = true;
+                  warningMsg = `Bạn đang giơ không đúng số ngón! Cần giơ đúng ${expectedFingers} ngón 🖐️`;
+                  questionableReason = warningMsg;
+                }
+              }
             }
           }
 

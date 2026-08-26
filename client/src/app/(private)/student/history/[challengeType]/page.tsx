@@ -3,9 +3,10 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, RefreshCw, Calendar, TrendingUp, Eye, MessageSquare, ChevronDown, ChevronUp, X, AlertTriangle, ChevronLeft as ChevronLeftIcon, ChevronRight as ChevronRightIcon } from 'lucide-react';
+import { ArrowLeft, RefreshCw, Calendar, TrendingUp, Eye, EyeOff, MessageSquare, ChevronDown, ChevronUp, X, AlertTriangle, ChevronLeft as ChevronLeftIcon, ChevronRight as ChevronRightIcon } from 'lucide-react';
 import { api } from '@/lib/api';
 import { playClickSound } from '@/lib/audio';
+import { StoredSample } from '@/lib/knn-classifier';
 
 const CHALLENGE_LABELS: Record<string, string> = {
   'teach': 'Dạy AI nhận diện ngón tay ✋',
@@ -18,14 +19,14 @@ interface DatasetRecord {
   id: string;
   challengeType: string;
   sampleCount: number;
-  classSummary: Record<string, number>;
-  dataFileUrl: string;
+  classSummary?: Record<string, number>;
+  dataFileUrl?: string;
   createdAt: string;
   model?: {
     id: string;
     testScore: number;
-    teacherFeedback: string | null;
-  };
+    teacherFeedback?: string;
+  } | null;
 }
 
 export default function StudentHistoryPage() {
@@ -34,7 +35,7 @@ export default function StudentHistoryPage() {
   const [datasets, setDatasets] = useState<DatasetRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [expandedSamples, setExpandedSamples] = useState<any[] | null>(null);
+  const [expandedSamples, setExpandedSamples] = useState<StoredSample[] | null>(null);
   const [loadingFile, setLoadingFile] = useState(false);
   const [previewIndex, setPreviewIndex] = useState<number | null>(null);
   const [showSkeleton, setShowSkeleton] = useState(true);
@@ -68,7 +69,7 @@ export default function StudentHistoryPage() {
       setLoadingFile(true);
       setExpandedId(datasetId);
       const fileData = await api.getDatasetFile(datasetId);
-      setExpandedSamples(fileData.samples || fileData);
+      setExpandedSamples(fileData.samples || []);
     } catch (err) {
       console.error('Failed to load dataset file', err);
       setExpandedSamples([]);
@@ -257,7 +258,7 @@ export default function StudentHistoryPage() {
                             <span className="text-xs font-extrabold text-indigo-700">Ảnh mẫu đã thu ({expandedSamples.length})</span>
                           </div>
                           <div className="grid grid-cols-5 sm:grid-cols-6 md:grid-cols-8 gap-2">
-                            {expandedSamples.map((sample: any, idx: number) => (
+                            {expandedSamples.map((sample: StoredSample, idx: number) => (
                               <div 
                                 key={idx} 
                                 onClick={() => setPreviewIndex(idx)}
@@ -297,7 +298,7 @@ export default function StudentHistoryPage() {
       {previewIndex !== null && expandedSamples && expandedSamples[previewIndex] && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setPreviewIndex(null)}>
           <div 
-            className="bg-white rounded-3xl max-w-md w-full p-6 border-4 border-indigo-400 shadow-2xl relative"
+            className="bg-white rounded-3xl max-w-lg w-full p-6 border-4 border-indigo-400 shadow-2xl relative"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Close button */}
@@ -319,7 +320,7 @@ export default function StudentHistoryPage() {
                 className="absolute top-16 right-4 p-2 bg-white hover:bg-gray-100 rounded-full text-indigo-600 shadow-md border border-indigo-200 transition-colors z-10 flex items-center gap-2"
                 title={showSkeleton ? "Ẩn nét vẽ AI" : "Hiện nét vẽ AI"}
               >
-                {showSkeleton ? <Eye className="w-5 h-5 text-indigo-600" /> : <Eye className="w-5 h-5 text-gray-400" />}
+                {showSkeleton ? <Eye className="w-5 h-5 text-indigo-600" /> : <EyeOff className="w-5 h-5 text-gray-400" />}
               </button>
             )}
 
@@ -329,10 +330,10 @@ export default function StudentHistoryPage() {
                 <img 
                   src={(showSkeleton || !expandedSamples[previewIndex].rawThumbnail) ? expandedSamples[previewIndex].thumbnail : expandedSamples[previewIndex].rawThumbnail} 
                   alt="Preview" 
-                  className="w-full aspect-square object-cover" 
+                  className="w-full aspect-[4/3] object-cover" 
                 />
               ) : (
-                <div className="w-full aspect-square flex items-center justify-center text-gray-500">Không có ảnh</div>
+                <div className="w-full aspect-[4/3] flex items-center justify-center text-gray-500">Không có ảnh</div>
               )}
 
               {expandedSamples[previewIndex].isValid === false && (

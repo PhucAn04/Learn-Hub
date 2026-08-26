@@ -3,6 +3,8 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Progress } from './entities/progress.entity';
 
+import { LeaderboardEntry } from '../../shared/types';
+
 @Injectable()
 export class ProgressService {
   constructor(
@@ -10,7 +12,11 @@ export class ProgressService {
     private readonly progressRepository: Repository<Progress>,
   ) {}
 
-  async saveProgress(userId: string, challengeType: string, score: number): Promise<Progress> {
+  async saveProgress(
+    userId: string,
+    challengeType: string,
+    score: number,
+  ): Promise<Progress> {
     const progress = this.progressRepository.create({
       userId,
       challengeType,
@@ -19,7 +25,7 @@ export class ProgressService {
     return this.progressRepository.save(progress);
   }
 
-  async getLeaderboard(challengeType: string): Promise<any[]> {
+  async getLeaderboard(challengeType: string): Promise<LeaderboardEntry[]> {
     const rawData = await this.progressRepository
       .createQueryBuilder('progress')
       .innerJoin('progress.user', 'user')
@@ -36,11 +42,12 @@ export class ProgressService {
       .limit(10)
       .getRawMany();
 
-    return rawData.map(item => ({
+    return rawData.map((item) => ({
       userId: item.userid,
       username: item.username,
       avatar: item.avatar,
-      score: parseInt(item.highscore, 10),
+      score: parseInt(item.highscore, 10) || 0,
+      highScore: parseInt(item.highscore, 10) || 0,
       completedAt: item.lastcompletedat,
     }));
   }
@@ -63,7 +70,7 @@ export class ProgressService {
       face: 0,
     };
 
-    rawData.forEach(item => {
+    rawData.forEach((item) => {
       stats[item.challengetype] = parseInt(item.highscore, 10);
     });
 

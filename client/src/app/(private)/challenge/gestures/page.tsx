@@ -11,6 +11,9 @@ import CameraView from '@/components/CameraView';
 import MatchProgressBar from '@/components/MatchProgressBar';
 import { GestureType } from '@/types/ml5';
 import { api } from '@/lib/api';
+import { TfTrainer } from '@/lib/tf-trainer';
+import { normalizeHandKeypoints, StoredSample } from '@/lib/knn-classifier';
+import { LeaderboardEntry } from '@/types/models';
 
 const GESTURES = [
   {
@@ -46,7 +49,7 @@ export default function GesturesChallenge() {
   const [score, setScore] = useState(0);
   const [effectEmoji, setEffectEmoji] = useState<string | null>(null);
   const [handsSeen, setHandsSeen] = useState(0);
-  const [leaderboard, setLeaderboard] = useState<any[]>([]);
+  const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
 
   // Custom hook for camera stream management
   const { videoRef, canvasRef, cameraActive, cameraError, retryCamera } = useCamera({
@@ -67,7 +70,35 @@ export default function GesturesChallenge() {
     speakEnglish(GESTURES[nextIdx].voice);
   };
 
+  // Load custom Neural Network model from user's "teach-gestures" dataset
+  const trainerRef = useRef<TfTrainer | null>(null);
+  const [isLoadingModel, setIsLoadingModel] = useState(true);
+
   useEffect(() => {
+    const fetchMyModel = async () => {
+      try {
+        const datasets = await api.getMyDatasets('teach-gestures');
+        if (datasets && datasets.length > 0) {
+          const fileRes = await api.getDatasetFile(datasets[0].id);
+          let loadedSamples: StoredSample[] = [];
+          if (fileRes && fileRes.data && Array.isArray(fileRes.data)) {
+            loadedSamples = fileRes.data;
+          } else if (fileRes && Array.isArray(fileRes.samples)) {
+            loadedSamples = fileRes.samples;
+          }
+          
+          if (loadedSamples.length > 0) {
+            trainerRef.current = new TfTrainer();
+            await trainerRef.current.train(loadedSamples);
+          }
+        }
+      } catch (err) {
+        console.error('Failed to fetch teach-gestures model', err);
+      } finally {
+        setIsLoadingModel(false);
+      }
+    };
+    fetchMyModel();
   }, []);
 
   // Fetch leaderboard on mount and score change
@@ -116,8 +147,22 @@ export default function GesturesChallenge() {
                 jointRadius: 5,
               });
 
-              // Recognize Gesture
-              const gesture = recognizeGesture(kps);
+              // Recognize Gesture (Heuristic fallback)
+              let gesture = recognizeGesture(kps);
+
+              // Override with Neural Network if available
+              if (trainerRef.current) {
+                 const features = normalizeHandKeypoints(kps);
+                 const pred = trainerRef.current.predictSync(features);
+                 if (pred && pred.label) {
+                   if (pred.label === 'class_1') gesture = 'like';
+                   else if (pred.label === 'class_2') gesture = 'fist';
+                   else if (pred.label === 'class_3') gesture = 'peace';
+                   else if (pred.label === 'class_4') gesture = 'open';
+                   else gesture = 'unknown'; // ignore class_5 and class_6 for this game
+                 }
+              }
+
               setDetectedGesture(gesture);
 
               // Draw overlay emoji floating near index tip (landmark 8) or thumb tip (4)
@@ -260,9 +305,9 @@ export default function GesturesChallenge() {
             <CameraView
               videoRef={videoRef}
               canvasRef={canvasRef}
-              modelStatus={modelStatus}
+              modelStatus={isLoadingModel ? 'loading' : modelStatus}
               cameraError={cameraError}
-              loadingText="ĐANG TẢI BỘ NHẬN DIỆN TAY..."
+              loadingText={isLoadingModel ? "ĐANG TẢI AI MÀ BÉ VỪA DẠY..." : "ĐANG TẢI BỘ NHẬN DIỆN TAY..."}
               hudText={hudText}
               theme="pink"
               onRetry={retryCamera}

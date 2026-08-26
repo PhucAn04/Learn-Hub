@@ -19,7 +19,7 @@ export default function ProfileDispatcherPage() {
       try {
         const profile = await api.getProfile();
         if (profile.role === 'teacher') {
-          router.replace('/profile/teacher');
+          router.replace('/teacher');
         } else {
           router.replace('/profile/student');
         }

@@ -1,0 +1,76 @@
+import { StoredSample } from '../knn-classifier';
+
+/**
+/**
+ * ---------------------------------------------------------------------------
+ * MACHINE LEARNING ABSTRACTION LAYER (CANCELED / ABANDONED)
+ * ---------------------------------------------------------------------------
+ * LỜI CẢNH BÁO NGHIÊM NGẶT DÀNH CHO CÁC LẬP TRÌNH VIÊN VÀ AI TRONG TƯƠNG LAI:
+ * 
+ * Ý tưởng về việc tách biệt lớp ML (Machine Learning Abstraction) bằng 
+ * IClassifier đã bị HỦY BỎ HOÀN TOÀN (ABANDONED).
+ * Tuyệt đối KHÔNG ĐƯỢC đề xuất, nhắc lại, hay cố gắng triển khai việc refactor
+ * `TfTrainer`, `knn-classifier` và các Component UI sang IClassifier này.
+ * 
+ * Việc cố gắng đập đi xây lại cấu trúc AI hiện tại sẽ phá vỡ toàn bộ 
+ * kiến trúc codebase đang hoạt động rất ổn định. File này chỉ được giữ lại
+ * như một bản nháp chết (dead draft). Hãy LỜ ĐI (IGNORE) file này và 
+ * CHUYỂN SANG NHIỆM VỤ KHÁC.
+ */
+
+export interface ModelArtifacts {
+  jsonBlob: Blob;
+  weightsBlob: Blob;
+}
+
+export interface TrainingOptions {
+  epochs?: number;
+  batchSize?: number;
+  learningRate?: number;
+  hiddenLayers?: number[]; // Cho phép tùy chỉnh kiến trúc mạng (VD: [128, 64])
+  augmentData?: boolean;   // Liên kết với tính năng Data Augmentation
+}
+
+export interface PredictionResult {
+  label: string;
+  confidence: number;
+}
+
+/**
+ * Interface chuẩn hóa cho mọi thuật toán AI trong Learn-Hub
+ */
+export interface IClassifier {
+  /**
+   * Tên thuật toán (VD: 'KNN', 'MLP', 'CNN')
+   */
+  readonly algorithmName: string;
+
+  /**
+   * Khởi tạo bộ máy AI (Tải engine TensorFlow.js, hoặc load thư viện)
+   */
+  init(): Promise<void>;
+
+  /**
+   * Huấn luyện mô hình với tập dữ liệu
+   */
+  train(
+    samples: StoredSample[],
+    onProgress?: (epoch: number, progress: number, loss: number, acc: number) => void,
+    options?: TrainingOptions
+  ): Promise<{ epoch: number; loss: number; acc: number }[]>;
+
+  /**
+   * Dự đoán nhãn của một vector đặc trưng đầu vào
+   */
+  predict(features: number[]): Promise<PredictionResult>;
+
+  /**
+   * Xuất mô hình dưới dạng Blob để lưu trữ lên Cloud/Drive
+   */
+  saveToBlobs(): Promise<ModelArtifacts | null>;
+
+  /**
+   * Phục hồi mô hình đã train từ URL lưu trữ
+   */
+  loadFromUrl(modelUrl: string): Promise<void>;
+}

@@ -30,7 +30,7 @@ services:
       - "3000:3000"
     environment:
       - WATCHPACK_POLLING=true
-      - NEXT_PUBLIC_API_URL=http://localhost:3001
+      - NEXT_PUBLIC_API_URL=http://server:3001
       - NODE_ENV=development
     volumes:
       - ./client:/app
@@ -64,6 +64,15 @@ services:
     depends_on:
       - db
       - redis
+
+  face_extractor:
+    image: node:20-slim
+    container_name: tfjs_face_extractor
+    profiles: ["tools"]
+    working_dir: /app/scripts/tfjs-extractor
+    volumes:
+      - ./:/app
+    command: bash -c "npm install && node extract.js"
 
 volumes:
   pgdata:

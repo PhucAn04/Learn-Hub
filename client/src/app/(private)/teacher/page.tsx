@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { ArrowLeft, RefreshCw, Users, FileCheck, Target, CheckCircle2, XCircle } from 'lucide-react';
+import { usePageData } from '@/hooks/usePageData';
+import { ArrowLeft, RefreshCw, Users, FileCheck, Target, CheckCircle2, XCircle, Eye } from 'lucide-react';
 import Link from 'next/link';
 import { api } from '@/lib/api';
 import { playClickSound } from '@/lib/audio';
@@ -11,14 +11,15 @@ interface DatasetRecord {
   userId: string;
   challengeType: string;
   createdAt: string;
-  user: { id: string; username: string; avatar: string; email: string };
+  user?: { id: string; username: string; avatar?: string; email: string };
   model?: {
     testScore: number;
+    algorithm?: string;
   };
 }
 
 interface StudentProgress {
-  user: { id: string; username: string; avatar: string; email: string };
+  user: { id: string; username: string; avatar?: string; email: string };
   teach: { completed: boolean; bestScore: number };
   teachFace: { completed: boolean; bestScore: number };
   teachGestures: { completed: boolean; bestScore: number };
@@ -26,91 +27,79 @@ interface StudentProgress {
 }
 
 export default function TeacherDashboard() {
-  const [loading, setLoading] = useState(true);
-  const [students, setStudents] = useState<StudentProgress[]>([]);
-  const [stats, setStats] = useState({
-    totalStudents: 0,
-    totalDatasets: 0,
-    averageAccuracy: 0
-  });
+  const { data, loading, refetch: fetchDashboardData } = usePageData(async () => {
+    const userProfile = await api.getProfile().catch(() => null);
 
-  const fetchDashboardData = async () => {
-    try {
-      setLoading(true);
-      // Fetch all four challenges
-      const [teachRes, faceRes, gesturesRes, twoHandsRes] = await Promise.all([
-        api.getDatasetsByChallenge('teach').catch(() => [] as DatasetRecord[]),
-        api.getDatasetsByChallenge('teach-face').catch(() => [] as DatasetRecord[]),
-        api.getDatasetsByChallenge('teach-gestures').catch(() => [] as DatasetRecord[]),
-        api.getDatasetsByChallenge('teach-two-hands').catch(() => [] as DatasetRecord[])
-      ]);
+    // Fetch all four challenges
+    const [teachRes, faceRes, gesturesRes, twoHandsRes] = await Promise.all([
+      api.getDatasetsByChallenge('teach').catch(() => [] as DatasetRecord[]),
+      api.getDatasetsByChallenge('teach-face').catch(() => [] as DatasetRecord[]),
+      api.getDatasetsByChallenge('teach-gestures').catch(() => [] as DatasetRecord[]),
+      api.getDatasetsByChallenge('teach-two-hands').catch(() => [] as DatasetRecord[])
+    ]);
 
-      const allDatasets = [...teachRes, ...faceRes, ...gesturesRes, ...twoHandsRes];
+    const allDatasets = [...teachRes, ...faceRes, ...gesturesRes, ...twoHandsRes];
+    const studentMap = new Map<string, StudentProgress>();
+    
+    let sumAccuracy = 0;
+    let countAccuracy = 0;
+
+    allDatasets.forEach(ds => {
+      if (!ds.user) return;
+      if (!studentMap.has(ds.userId)) {
+        studentMap.set(ds.userId, {
+          user: ds.user,
+          teach: { completed: false, bestScore: 0 },
+          teachFace: { completed: false, bestScore: 0 },
+          teachGestures: { completed: false, bestScore: 0 },
+          teachTwoHands: { completed: false, bestScore: 0 },
+        });
+      }
       
-      const studentMap = new Map<string, StudentProgress>();
+      const st = studentMap.get(ds.userId)!;
+      const score = ds.model?.testScore || 0;
       
-      let sumAccuracy = 0;
-      let countAccuracy = 0;
+      if (score > 0) {
+        sumAccuracy += score;
+        countAccuracy++;
+      }
 
-      allDatasets.forEach(ds => {
-        if (!ds.user) return;
-        if (!studentMap.has(ds.userId)) {
-          studentMap.set(ds.userId, {
-            user: ds.user,
-            teach: { completed: false, bestScore: 0 },
-            teachFace: { completed: false, bestScore: 0 },
-            teachGestures: { completed: false, bestScore: 0 },
-            teachTwoHands: { completed: false, bestScore: 0 },
-          });
-        }
-        
-        const st = studentMap.get(ds.userId)!;
-        const score = ds.model?.testScore || 0;
-        
-        if (score > 0) {
-          sumAccuracy += score;
-          countAccuracy++;
-        }
+      if (ds.challengeType === 'teach') {
+        st.teach.completed = true;
+        if (score > st.teach.bestScore) st.teach.bestScore = score;
+      } else if (ds.challengeType === 'teach-face') {
+        st.teachFace.completed = true;
+        if (score > st.teachFace.bestScore) st.teachFace.bestScore = score;
+      } else if (ds.challengeType === 'teach-gestures') {
+        st.teachGestures.completed = true;
+        if (score > st.teachGestures.bestScore) st.teachGestures.bestScore = score;
+      } else if (ds.challengeType === 'teach-two-hands') {
+        st.teachTwoHands.completed = true;
+        if (score > st.teachTwoHands.bestScore) st.teachTwoHands.bestScore = score;
+      }
+    });
 
-        if (ds.challengeType === 'teach') {
-          st.teach.completed = true;
-          if (score > st.teach.bestScore) st.teach.bestScore = score;
-        } else if (ds.challengeType === 'teach-face') {
-          st.teachFace.completed = true;
-          if (score > st.teachFace.bestScore) st.teachFace.bestScore = score;
-        } else if (ds.challengeType === 'teach-gestures') {
-          st.teachGestures.completed = true;
-          if (score > st.teachGestures.bestScore) st.teachGestures.bestScore = score;
-        } else if (ds.challengeType === 'teach-two-hands') {
-          st.teachTwoHands.completed = true;
-          if (score > st.teachTwoHands.bestScore) st.teachTwoHands.bestScore = score;
-        }
-      });
+    // Sort students by average score descending
+    const sortedStudents = Array.from(studentMap.values()).sort((a, b) => {
+      const avgA = (a.teach.bestScore + a.teachFace.bestScore + a.teachGestures.bestScore + a.teachTwoHands.bestScore) / 4;
+      const avgB = (b.teach.bestScore + b.teachFace.bestScore + b.teachGestures.bestScore + b.teachTwoHands.bestScore) / 4;
+      return avgB - avgA;
+    });
 
-      // Sort students by average score descending
-      const sortedStudents = Array.from(studentMap.values()).sort((a, b) => {
-        const avgA = (a.teach.bestScore + a.teachFace.bestScore + a.teachGestures.bestScore + a.teachTwoHands.bestScore) / 4;
-        const avgB = (b.teach.bestScore + b.teachFace.bestScore + b.teachGestures.bestScore + b.teachTwoHands.bestScore) / 4;
-        return avgB - avgA;
-      });
-
-      setStudents(sortedStudents);
-      setStats({
+    return {
+      profile: userProfile,
+      students: sortedStudents,
+      stats: {
         totalStudents: studentMap.size,
         totalDatasets: allDatasets.length,
         averageAccuracy: countAccuracy > 0 ? Math.round(sumAccuracy / countAccuracy) : 0
-      });
-
-    } catch (err) {
-      console.error('Failed to load dashboard data', err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchDashboardData();
+      }
+    };
   }, []);
+
+  const profile = data?.profile || null;
+  const students = data?.students || [];
+  const stats = data?.stats || { totalStudents: 0, totalDatasets: 0, averageAccuracy: 0 };
 
   const handleRefresh = () => {
     playClickSound();
@@ -171,6 +160,54 @@ export default function TeacherDashboard() {
 
       <div className="max-w-7xl mx-auto px-4 mt-8">
         
+        {/* Profile Card */}
+        {profile && (
+          <div className="mb-8 bg-white rounded-3xl border border-indigo-100 shadow-sm p-6 flex items-center gap-6">
+            <div className="w-20 h-20 bg-indigo-100 rounded-full flex items-center justify-center text-4xl shadow-inner border-4 border-white">
+              {profile.avatar || '👩‍🏫'}
+            </div>
+            <div>
+              <h2 className="text-2xl font-black text-slate-800">{profile.username}</h2>
+              <p className="text-slate-500 font-semibold">{profile.email}</p>
+              <div className="mt-2 inline-flex items-center gap-1.5 px-3 py-1 bg-indigo-50 text-indigo-700 text-xs font-bold rounded-full">
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                Tài khoản Giáo viên
+              </div>
+            </div>
+          </div>
+        )}
+        
+        {/* Teacher Actions */}
+        <div className="mb-8 flex flex-col md:flex-row gap-4">
+          <Link
+            href="/teacher/training"
+            onClick={playClickSound}
+            className="flex-1 bg-gradient-to-r from-indigo-500 to-blue-600 text-white p-6 rounded-3xl shadow-md hover:shadow-lg transition-all flex items-center gap-4 group hover:-translate-y-1"
+          >
+            <div className="w-14 h-14 bg-white/20 rounded-2xl flex items-center justify-center backdrop-blur-sm group-hover:scale-110 transition-transform">
+              <span className="text-3xl">🧠</span>
+            </div>
+            <div>
+              <h3 className="text-xl font-black mb-1">Huấn Luyện AI (Dành cho GV)</h3>
+              <p className="text-indigo-100 text-sm font-medium">Tạo các mô hình AI chuẩn để làm mẫu cho học sinh.</p>
+            </div>
+          </Link>
+
+          <Link
+            href="/teacher/templates"
+            onClick={playClickSound}
+            className="flex-1 bg-gradient-to-r from-emerald-500 to-teal-600 text-white p-6 rounded-3xl shadow-md hover:shadow-lg transition-all flex items-center gap-4 group hover:-translate-y-1"
+          >
+            <div className="w-14 h-14 bg-white/20 rounded-2xl flex items-center justify-center backdrop-blur-sm group-hover:scale-110 transition-transform">
+              <span className="text-3xl">📋</span>
+            </div>
+            <div>
+              <h3 className="text-xl font-black mb-1">Quản Lý Mẫu (Templates)</h3>
+              <p className="text-emerald-100 text-sm font-medium">Xem, quản lý và xuất bản các mô hình mẫu.</p>
+            </div>
+          </Link>
+        </div>
+
         {/* Dataset Management Quick Links */}
         <div className="mb-8 bg-white rounded-3xl border border-slate-200 shadow-sm p-5">
           <h3 className="text-sm font-extrabold text-slate-500 uppercase tracking-wider mb-4 flex items-center gap-1.5">
@@ -274,19 +311,20 @@ export default function TeacherDashboard() {
                   <th className="px-6 py-4 text-center border-l border-slate-100">😀 Cảm xúc</th>
                   <th className="px-6 py-4 text-center border-l border-slate-100">🤟 Cử chỉ</th>
                   <th className="px-6 py-4 text-center border-l border-slate-100 bg-indigo-50/30 text-indigo-600">Trung bình</th>
+                  <th className="px-6 py-4 text-center border-l border-slate-100">Chi tiết</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {loading ? (
                   <tr>
-                    <td colSpan={6} className="px-6 py-12 text-center">
+                    <td colSpan={7} className="px-6 py-12 text-center">
                       <div className="inline-block animate-spin w-6 h-6 border-4 border-indigo-600 border-t-transparent rounded-full mb-2"></div>
                       <p className="text-sm font-semibold text-slate-500">Đang tổng hợp dữ liệu...</p>
                     </td>
                   </tr>
                 ) : students.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="px-6 py-12 text-center text-slate-500 font-semibold italic">
+                    <td colSpan={7} className="px-6 py-12 text-center text-slate-500 font-semibold italic">
                       Chưa có học sinh nào nộp bài.
                     </td>
                   </tr>
@@ -336,6 +374,15 @@ export default function TeacherDashboard() {
                               {avgScore}%
                             </span>
                           )}
+                        </td>
+                        <td className="px-6 py-4 text-center border-l border-slate-100">
+                          <Link
+                            href={`/teacher/students/${st.user?.id || 'unknown'}`}
+                            onClick={playClickSound}
+                            className="inline-flex items-center gap-1 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-xs rounded-xl border border-indigo-200 transition-colors"
+                          >
+                            <Eye className="w-3.5 h-3.5" /> Xem
+                          </Link>
                         </td>
                       </tr>
                     );

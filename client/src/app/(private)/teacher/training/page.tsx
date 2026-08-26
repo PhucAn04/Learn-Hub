@@ -1,6 +1,6 @@
 'use client';
 
-import { ArrowLeft, Brain, Sparkles, Move, Presentation, ThumbsUp, HeartPulse } from 'lucide-react';
+import { ArrowLeft, Brain, Sparkles, Move, Presentation, ThumbsUp, HeartPulse, FlaskConical } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 
@@ -109,6 +109,41 @@ export default function TeacherTrainingDashboard() {
                 </div>
               </Link>
             ))}
+          </div>
+        </div>
+
+        {/* Tạo nhãn Tự Do */}
+        <div>
+          <h2 className="text-2xl font-bold text-slate-800 mb-6 flex items-center gap-2">
+            <FlaskConical className="w-8 h-8 text-teal-500" /> Tạo Nhãn Tự Do
+          </h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <Link href="/teacher/training/teach-free">
+              <div className="p-8 rounded-3xl border-4 bg-teal-50 border-teal-200 hover:border-teal-400 transition-all duration-300 cursor-pointer flex items-center gap-6">
+                <div className="w-20 h-20 bg-white rounded-full flex items-center justify-center shadow-sm text-4xl shrink-0">
+                  🧪
+                </div>
+                <div>
+                  <h2 className="text-2xl font-bold text-slate-800 mb-2">Phân Loại Ảnh Tự Do</h2>
+                  <p className="text-slate-600 font-medium">
+                    Tạo nhãn tùy ý và huấn luyện AI phân biệt bằng ảnh thực.
+                  </p>
+                </div>
+              </div>
+            </Link>
+            <Link href="/teacher/training/teach-action">
+              <div className="p-8 rounded-3xl border-4 bg-violet-50 border-violet-200 hover:border-violet-400 transition-all duration-300 cursor-pointer flex items-center gap-6">
+                <div className="w-20 h-20 bg-white rounded-full flex items-center justify-center shadow-sm text-4xl shrink-0">
+                  🎭
+                </div>
+                <div>
+                  <h2 className="text-2xl font-bold text-slate-800 mb-2">Gán Nhãn Bằng Hành Động</h2>
+                  <p className="text-slate-600 font-medium">
+                    Tạo nhiều nhãn, dùng cử chỉ tay để gán — AI học liên kết hành động với nhãn.
+                  </p>
+                </div>
+              </div>
+            </Link>
           </div>
         </div>
       </div>

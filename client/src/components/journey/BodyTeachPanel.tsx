@@ -579,6 +579,22 @@ export default function BodyTeachPanel({
               setSamples(prev => [...prev, ...newSamples]); 
               setIsModelOutdated(true);
             }}
+            onValidateSample={({ features, label }) => {
+              // KNN cross-validation: only validate when we have enough reference samples
+              const validRefSamples = samples.filter(s => s.isValid !== false);
+              if (validRefSamples.length < 6) {
+                return { isValid: true }; // Not enough data to validate
+              }
+              const result = classifyKNN(features, validRefSamples, Math.min(3, validRefSamples.length));
+              if (result && result.label !== label) {
+                return {
+                  isValid: false,
+                  isQuestionable: true,
+                  questionableReason: `Tư thế này trông giống "${result.label}" hơn! Hãy kiểm tra lại nhé 🤔`,
+                };
+              }
+              return { isValid: true };
+            }}
           >
             <CameraView
               videoRef={videoRef}

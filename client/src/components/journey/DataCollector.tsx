@@ -14,6 +14,12 @@ import { drawHandSkeleton } from '@/lib/hand-drawing';
 import { drawFaceSkeleton, getFaceKeypoints } from '@/lib/face-drawing';
 import { drawBodySkeleton } from '@/lib/body-drawing';
 
+export interface ValidateSampleResult {
+  isValid: boolean;
+  isQuestionable?: boolean;
+  questionableReason?: string;
+}
+
 interface DataCollectorProps {
   mode: 'hand-1' | 'hand-2' | 'gesture' | 'emotion' | 'body-pose';
   activeClassId: string;
@@ -21,6 +27,17 @@ interface DataCollectorProps {
   activeTab: 'camera' | 'upload' | 'video';
   onTabChange: (tab: 'camera' | 'upload' | 'video') => void;
   onSamplesCollected: (samples: StoredSample[]) => void;
+  /** Optional callback for label validation on upload/video samples.
+   *  Parent can inject mode-specific logic (finger counting, golden KNN, expression detection).
+   *  Called per sample after feature extraction and quality assessment. */
+  onValidateSample?: (params: {
+    features: number[];
+    label: string;
+    classId: string;
+    canvas: HTMLCanvasElement;
+    quality: ReturnType<typeof assessQuality>;
+    detectionResults: unknown;
+  }) => ValidateSampleResult;
   videoRef?: React.RefObject<HTMLVideoElement | null>;
   children: React.ReactNode;
 }
@@ -32,6 +49,7 @@ export default function DataCollector({
   activeTab,
   onTabChange,
   onSamplesCollected,
+  onValidateSample,
   videoRef,
   children
 }: DataCollectorProps) {
@@ -108,6 +126,8 @@ export default function DataCollector({
   ) => {
     const newSamples: StoredSample[] = [];
     let failCount = 0;
+    let qualityWarningCount = 0;
+    let labelWarningCount = 0;
 
     for (const img of processedImages) {
       const rawThumb = img.thumbnailBase64;
@@ -176,9 +196,42 @@ export default function DataCollector({
       }
 
       if (features && isValid) {
-        // Assess image quality (brightness, blur) — tag only, never block
-        const isVideo = activeTab === 'video';
+        // Assess image quality (brightness, blur)
         const quality = assessQuality(img.canvas, roi);
+        
+        // Quality validation: mark blurry/dark images as invalid
+        let sampleIsValid = !(quality.isDark || quality.isBlurry);
+        let isQuestionable = quality.isDark || quality.isBlurry;
+        let questionableReason = '';
+        
+        if (quality.isBlurry) {
+          questionableReason = 'Ảnh hơi mờ! Bé cố gắng chụp rõ nét hơn nhé 🔍';
+          qualityWarningCount++;
+        } else if (quality.isDark) {
+          questionableReason = 'Ảnh hơi tối! Bé tìm chỗ sáng hơn xíu nha 🌑';
+          qualityWarningCount++;
+        }
+
+        // Label validation via parent callback (finger counting, golden KNN, expression detection, etc.)
+        if (sampleIsValid && onValidateSample) {
+          const labelResult = onValidateSample({
+            features,
+            label: activeClassLabel,
+            classId: activeClassId,
+            canvas: img.canvas,
+            quality,
+            detectionResults: results,
+          });
+          if (!labelResult.isValid) {
+            sampleIsValid = false;
+            labelWarningCount++;
+          }
+          if (labelResult.isQuestionable) {
+            isQuestionable = true;
+            questionableReason = labelResult.questionableReason || questionableReason;
+          }
+        }
+
         newSamples.push({
           id: `sample_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
           label: activeClassLabel,
@@ -186,7 +239,9 @@ export default function DataCollector({
           features,
           thumbnail: img.thumbnailBase64,
           rawThumbnail: rawThumb,
-          isValid: true,
+          isValid: sampleIsValid,
+          isQuestionable,
+          questionableReason: questionableReason || undefined,
           quality,
         });
       } else {
@@ -196,6 +251,18 @@ export default function DataCollector({
 
     if (newSamples.length > 0) {
       onSamplesCollected(newSamples);
+    }
+    
+    // Show quality warnings
+    if (qualityWarningCount > 0) {
+      const unit = activeTab === 'video' ? 'khung hình' : 'bức ảnh';
+      alert(`⚠️ ${qualityWarningCount} ${unit} bị mờ hoặc tối — đã đánh dấu viền đỏ và sẽ không tham gia huấn luyện. Hãy chụp/tải ảnh rõ nét hơn nhé!`);
+    }
+    
+    // Show label warnings
+    if (labelWarningCount > 0) {
+      const unit = activeTab === 'video' ? 'khung hình' : 'bức ảnh';
+      alert(`🚨 ${labelWarningCount} ${unit} có cử chỉ/biểu cảm không khớp với nhãn đã chọn — đã đánh dấu viền đỏ. Hãy kiểm tra lại nhé!`);
     }
     
     if (failCount > 0) {

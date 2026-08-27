@@ -750,6 +750,31 @@ export default function TeacherTeachGesturesPage() {
                 onSamplesCollected={(newSamples) => {
                   setSamples(prev => [...prev, ...newSamples]);
                 }}
+                onValidateSample={({ features, classId }) => {
+                  // Golden gestures dataset KNN validation for uploaded/video frames
+                  if (GOLDEN_GESTURES_DATASET.length === 0) return { isValid: true };
+                  
+                  const mappedGolden = GOLDEN_GESTURES_DATASET.map(g => ({
+                    label: g.expectedLabel,
+                    features: g.features,
+                  }));
+                  
+                  const result = classifyKNN(features, mappedGolden, 3);
+                  const flippedFeatures = features.map((v, i) => i % 2 === 0 ? -v : v);
+                  const flippedResult = classifyKNN(flippedFeatures, mappedGolden, 3);
+                  
+                  if (result.label !== classId && flippedResult.label !== classId) {
+                    const finalResult = result.confidence >= flippedResult.confidence ? result : flippedResult;
+                    const cls = CLASSES.find(c => c.id === finalResult.label);
+                    const closestWrongLabel = cls?.label || finalResult.label;
+                    return {
+                      isValid: false,
+                      isQuestionable: true,
+                      questionableReason: `Cử chỉ này trông giống "${closestWrongLabel}" hơn! Hãy thử lại nhé? 🤔`,
+                    };
+                  }
+                  return { isValid: true };
+                }}
               >
                 <CameraView
                   videoRef={videoRef}

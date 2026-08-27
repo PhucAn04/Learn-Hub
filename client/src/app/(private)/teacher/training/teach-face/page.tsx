@@ -852,6 +852,24 @@ export default function TeacherTeachFacePage() {
                 onSamplesCollected={(newSamples) => {
                   setSamples(prev => [...prev, ...newSamples]);
                 }}
+                onValidateSample={({ classId, detectionResults }) => {
+                  // Expression validation for uploaded/video face frames
+                  const faces = detectionResults as FaceMeshResult[];
+                  if (faces && faces.length > 0) {
+                    const kps = getFaceKeypoints(faces[0]);
+                    if (kps && kps.length >= 468) {
+                      const result = validateExpression(kps, classId);
+                      if (!result.isValid) {
+                        return {
+                          isValid: false,
+                          isQuestionable: true,
+                          questionableReason: result.suggestion,
+                        };
+                      }
+                    }
+                  }
+                  return { isValid: true };
+                }}
               >
                 <CameraView
                   videoRef={videoRef}

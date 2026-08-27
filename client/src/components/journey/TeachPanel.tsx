@@ -1528,6 +1528,146 @@ export default function TeachPanel({
               setSamples((prev) => [...prev, ...newSamples]);
               setIsModelOutdated(true);
             }}
+            onValidateSample={({ features, classId, detectionResults }) => {
+              const activeClassLabel = classes.find((c) => c.id === classId)?.label || classId;
+
+              if (isFaceMode) {
+                // ── FACE: expression detection via face keypoints ──
+                const faces = detectionResults as FaceMeshResult[];
+                if (faces && faces.length > 0) {
+                  const kps = getFaceKeypoints(faces[0]);
+                  if (kps && kps.length >= 468) {
+                    const validation = validateFaceExpression(kps, classId);
+                    if (!validation.isValid) {
+                      return {
+                        isValid: false,
+                        isQuestionable: true,
+                        questionableReason: validation.suggestion,
+                      };
+                    }
+                  }
+                }
+                return { isValid: true };
+              }
+
+              // ── HAND MODES: golden dataset + finger counting ──
+              const hands = detectionResults as HandResult[];
+              if (!hands || hands.length === 0 || !hands[0].keypoints || hands[0].keypoints.length < 21) {
+                return { isValid: true };
+              }
+              const keypoints = hands[0].keypoints;
+
+              // Pick golden dataset
+              let goldenDataset: GoldenTestSample[] = [];
+              if (mode === 'hand-1' || mode === 'hand-2') {
+                goldenDataset = GOLDEN_TEST_DATASET;
+              } else if (mode === 'gesture') {
+                goldenDataset = GOLDEN_GESTURES_DATASET;
+              }
+
+              const goldenLabel = mode === 'gesture'
+                ? classId
+                : CLASS_TO_GOLDEN_LABEL[classId] || '';
+              const goldenCurrentClass = goldenDataset.filter((g) => g.expectedLabel === goldenLabel);
+              const goldenOtherClasses = goldenDataset.filter((g) => g.expectedLabel !== goldenLabel);
+              const isDynamicClass = !CLASS_TO_GOLDEN_LABEL[classId];
+
+              if (isDynamicClass && goldenDataset.length > 0) {
+                // Negative golden check for dynamic classes
+                let minDistToGolden = Infinity;
+                let closestGoldenLabel = '';
+                goldenDataset.forEach(g => {
+                  let d = 0;
+                  for (let i = 0; i < Math.min(features.length, g.features.length); i++) {
+                    const diff = g.features[i] - features[i];
+                    d += diff * diff;
+                  }
+                  const dist = Math.sqrt(d);
+                  if (dist < minDistToGolden) { minDistToGolden = dist; closestGoldenLabel = g.expectedLabel; }
+                });
+                const flippedFeatures = features.map((v: number, i: number) => i % 2 === 0 ? -v : v);
+                let minDistFlipped = Infinity;
+                let closestFlippedLabel = '';
+                goldenDataset.forEach(g => {
+                  let d = 0;
+                  for (let i = 0; i < Math.min(flippedFeatures.length, g.features.length); i++) {
+                    const diff = g.features[i] - flippedFeatures[i];
+                    d += diff * diff;
+                  }
+                  const dist = Math.sqrt(d);
+                  if (dist < minDistFlipped) { minDistFlipped = dist; closestFlippedLabel = g.expectedLabel; }
+                });
+                const bestDist = Math.min(minDistToGolden, minDistFlipped);
+                const bestLabel = minDistToGolden <= minDistFlipped ? closestGoldenLabel : closestFlippedLabel;
+                if (bestDist < 0.35) {
+                  return {
+                    isValid: false,
+                    isQuestionable: true,
+                    questionableReason: `Cử chỉ này trông giống "${bestLabel}" quá! Hãy giơ đúng nhé 🖐️`,
+                  };
+                }
+              } else if (goldenCurrentClass.length > 0 && goldenOtherClasses.length > 0) {
+                // Fixed class: golden dataset distance check
+                const minDistToCorrect = goldenCurrentClass.reduce((min, g) => {
+                  let d = 0;
+                  for (let i = 0; i < Math.min(features.length, g.features.length); i++) {
+                    const diff = g.features[i] - features[i]; d += diff * diff;
+                  }
+                  return Math.min(min, Math.sqrt(d));
+                }, Infinity);
+                let minDistToWrong = Infinity;
+                let closestWrongLabel = '';
+                goldenOtherClasses.forEach((g) => {
+                  let d = 0;
+                  for (let i = 0; i < Math.min(features.length, g.features.length); i++) {
+                    const diff = g.features[i] - features[i]; d += diff * diff;
+                  }
+                  const dist = Math.sqrt(d);
+                  if (dist < minDistToWrong) {
+                    minDistToWrong = dist;
+                    if (mode === 'gesture') {
+                      const cls = classes.find((c) => c.id === g.expectedLabel);
+                      closestWrongLabel = cls?.label || g.expectedLabel;
+                    } else {
+                      closestWrongLabel = g.expectedLabel;
+                    }
+                  }
+                });
+                const distThreshold = mode === 'gesture' ? 0.7 : 0.9;
+                if (minDistToWrong < minDistToCorrect * distThreshold) {
+                  return {
+                    isValid: false,
+                    isQuestionable: true,
+                    questionableReason: `Cử chỉ này trông giống "${closestWrongLabel}" hơn! Hãy thử lại nhé? 🤔`,
+                  };
+                }
+              }
+
+              // Finger counting check
+              const expectedFingers = getExpectedFingerCount(classId, mode, activeClassLabel);
+              if (expectedFingers > 0) {
+                const detectedFingers = countExtendedFingers(keypoints);
+                if (detectedFingers >= 0) {
+                  let isFingerCountOk: boolean;
+                  if (expectedFingers === 5) {
+                    isFingerCountOk = detectedFingers >= 4 && isThumbExtended(keypoints);
+                  } else if (expectedFingers === 4) {
+                    isFingerCountOk = detectedFingers === 4 && !isThumbExtended(keypoints);
+                  } else {
+                    isFingerCountOk = detectedFingers === expectedFingers;
+                  }
+                  if (!isFingerCountOk) {
+                    return {
+                      isValid: false,
+                      isQuestionable: true,
+                      questionableReason: `Đang giơ không đúng số ngón! Cần giơ đúng ${expectedFingers} ngón 🖐️`,
+                    };
+                  }
+                }
+              }
+
+              return { isValid: true };
+            }}
             videoRef={videoRef}
           >
             <CameraView

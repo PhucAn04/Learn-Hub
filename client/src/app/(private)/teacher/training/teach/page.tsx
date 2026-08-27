@@ -1112,6 +1112,107 @@ export default function TeacherTeachPage() {
                 onSamplesCollected={(newSamples) => {
                   setSamples(prev => [...prev, ...newSamples]);
                 }}
+                onValidateSample={({ features, classId, detectionResults }) => {
+                  // Golden dataset KNN + finger counting for uploaded/video frames
+                  const hands = detectionResults as HandResult[];
+                  if (!hands || hands.length === 0 || !hands[0].keypoints || hands[0].keypoints.length < 21) {
+                    return { isValid: true };
+                  }
+                  const keypoints = hands[0].keypoints;
+                  const activeClassLabel = allClasses.find(c => c.id === classId)?.label || classId;
+                  const isDynamicClass = !CLASS_TO_GOLDEN_LABEL[classId];
+                  
+                  if (isDynamicClass && GOLDEN_TEST_DATASET.length > 0) {
+                    // Negative golden check for dynamic classes (3/4/5 ngón)
+                    let minDistToGolden = Infinity;
+                    let closestGoldenLabel = '';
+                    GOLDEN_TEST_DATASET.forEach(g => {
+                      let d = 0;
+                      for (let i = 0; i < Math.min(features.length, g.features.length); i++) {
+                        const diff = g.features[i] - features[i]; d += diff * diff;
+                      }
+                      const dist = Math.sqrt(d);
+                      if (dist < minDistToGolden) { minDistToGolden = dist; closestGoldenLabel = g.expectedLabel; }
+                    });
+                    const flippedFeatures = features.map((v: number, i: number) => i % 2 === 0 ? -v : v);
+                    let minDistFlipped = Infinity;
+                    let closestFlippedLabel = '';
+                    GOLDEN_TEST_DATASET.forEach(g => {
+                      let d = 0;
+                      for (let i = 0; i < Math.min(flippedFeatures.length, g.features.length); i++) {
+                        const diff = g.features[i] - flippedFeatures[i]; d += diff * diff;
+                      }
+                      const dist = Math.sqrt(d);
+                      if (dist < minDistFlipped) { minDistFlipped = dist; closestFlippedLabel = g.expectedLabel; }
+                    });
+                    const bestDist = Math.min(minDistToGolden, minDistFlipped);
+                    const bestLabel = minDistToGolden <= minDistFlipped ? closestGoldenLabel : closestFlippedLabel;
+                    if (bestDist < 0.35) {
+                      return {
+                        isValid: false,
+                        isQuestionable: true,
+                        questionableReason: `Cử chỉ này trông giống "${bestLabel}" quá! Hãy giơ đúng nhé 🖐️`,
+                      };
+                    }
+                  } else {
+                    // Fixed class: golden dataset distance check
+                    const goldenLabel = CLASS_TO_GOLDEN_LABEL[classId] || '';
+                    const goldenCurrentClass = GOLDEN_TEST_DATASET.filter(g => g.expectedLabel === goldenLabel);
+                    const goldenOtherClasses = GOLDEN_TEST_DATASET.filter(g => g.expectedLabel !== goldenLabel);
+                    
+                    if (goldenCurrentClass.length > 0 && goldenOtherClasses.length > 0) {
+                      const minDistToCorrect = goldenCurrentClass.reduce((min, g) => {
+                        let d = 0;
+                        for (let i = 0; i < Math.min(features.length, g.features.length); i++) {
+                          const diff = g.features[i] - features[i]; d += diff * diff;
+                        }
+                        return Math.min(min, Math.sqrt(d));
+                      }, Infinity);
+                      let minDistToWrong = Infinity;
+                      let closestWrongLabel = '';
+                      goldenOtherClasses.forEach((g) => {
+                        let d = 0;
+                        for (let i = 0; i < Math.min(features.length, g.features.length); i++) {
+                          const diff = g.features[i] - features[i]; d += diff * diff;
+                        }
+                        const dist = Math.sqrt(d);
+                        if (dist < minDistToWrong) { minDistToWrong = dist; closestWrongLabel = g.expectedLabel; }
+                      });
+                      if (minDistToWrong < minDistToCorrect * 0.9) {
+                        return {
+                          isValid: false,
+                          isQuestionable: true,
+                          questionableReason: `Cử chỉ này trông giống "${closestWrongLabel}" hơn! Hãy thử lại nhé? 🤔`,
+                        };
+                      }
+                    }
+                  }
+                  
+                  // Finger counting check
+                  const expectedFingers = getExpectedFingerCount(classId, activeClassLabel);
+                  if (expectedFingers > 0) {
+                    const detectedFingers = countExtendedFingers(keypoints);
+                    if (detectedFingers >= 0) {
+                      let isFingerCountOk: boolean;
+                      if (expectedFingers === 5) {
+                        isFingerCountOk = detectedFingers >= 4 && isThumbExtended(keypoints);
+                      } else if (expectedFingers === 4) {
+                        isFingerCountOk = detectedFingers === 4 && !isThumbExtended(keypoints);
+                      } else {
+                        isFingerCountOk = detectedFingers === expectedFingers;
+                      }
+                      if (!isFingerCountOk) {
+                        return {
+                          isValid: false,
+                          isQuestionable: true,
+                          questionableReason: `Đang giơ không đúng số ngón! Cần giơ đúng ${expectedFingers} ngón 🖐️`,
+                        };
+                      }
+                    }
+                  }
+                  
+                  return { isValid: true };
+                }}
               >
                 <CameraView
                   videoRef={videoRef}

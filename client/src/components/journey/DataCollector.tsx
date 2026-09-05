@@ -67,52 +67,8 @@ export default function DataCollector({
 
   const [countdown, setCountdown] = useState<number | null>(null);
   const { isRecording, recordingDuration, startRecording, stopRecording, recordedBlob } = useMediaRecorder(videoRef || { current: null }, 10);
-  
-  const [lastProcessedBlob, setLastProcessedBlob] = useState<Blob | null>(null);
 
-  useEffect(() => {
-    if (recordedBlob && recordedBlob !== lastProcessedBlob) {
-      setLastProcessedBlob(recordedBlob);
-      const processBlob = async () => {
-        try {
-          const frames = await extractFrames(recordedBlob, 2, 20); // 10s max = 20 frames
-          await processDetectedFrames(frames);
-        } catch (err) {
-          console.error(err);
-          alert('Có lỗi xảy ra khi xử lý video quay được.');
-        }
-      };
-      processBlob();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [recordedBlob, lastProcessedBlob, extractFrames]);
-
-  useEffect(() => {
-    if (countdown === null) return;
-    if (countdown === 0) {
-      setCountdown(null);
-      startRecording();
-      return;
-    }
-    const timer = setTimeout(() => {
-      setCountdown(prev => (prev !== null ? prev - 1 : null));
-    }, 1000);
-    return () => clearTimeout(timer);
-  }, [countdown, startRecording]);
-
-  const handleStartRecording = () => {
-    setCountdown(5);
-  };
-
-  const handleStopRecording = async () => {
-    try {
-      await stopRecording();
-      // Việc trích xuất frame sẽ được useEffect ở trên tự động thực hiện khi recordedBlob thay đổi
-    } catch (err) {
-      console.error(err);
-      alert('Có lỗi xảy ra khi dừng quay video.');
-    }
-  };
+  const lastProcessedBlobRef = useRef<Blob | null>(null);
 
   // Pre-load offline model when switching to upload or video tab
   useEffect(() => {
@@ -269,6 +225,53 @@ export default function DataCollector({
       const target = detectorMode === 'hand' ? 'bàn tay' : detectorMode === 'face' ? 'khuôn mặt' : 'cơ thể';
       const unit = activeTab === 'video' ? 'khung hình' : 'bức ảnh';
       alert(`AI không tìm thấy ${target} trong ${failCount} ${unit}. Các ${unit} này đã bị bỏ qua.`);
+    }
+  };
+
+  useEffect(() => {
+    if (recordedBlob && recordedBlob !== lastProcessedBlobRef.current) {
+      lastProcessedBlobRef.current = recordedBlob;
+      const processBlob = async () => {
+        try {
+          const frames = await extractFrames(recordedBlob, 2, 20); // 10s max = 20 frames
+          await processDetectedFrames(frames);
+        } catch (err) {
+          console.error(err);
+          alert('Có lỗi xảy ra khi xử lý video quay được.');
+        }
+      };
+      processBlob();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [recordedBlob, extractFrames]);
+
+  useEffect(() => {
+    if (countdown === null) return;
+    if (countdown === 0) {
+      // Use setTimeout(0) to defer setState out of effect body, avoiding cascading renders
+      setTimeout(() => {
+        setCountdown(null);
+        startRecording();
+      }, 0);
+      return;
+    }
+    const timer = setTimeout(() => {
+      setCountdown(prev => (prev !== null ? prev - 1 : null));
+    }, 1000);
+    return () => clearTimeout(timer);
+  }, [countdown, startRecording]);
+
+  const handleStartRecording = () => {
+    setCountdown(5);
+  };
+
+  const handleStopRecording = async () => {
+    try {
+      await stopRecording();
+      // Việc trích xuất frame sẽ được useEffect ở trên tự động thực hiện khi recordedBlob thay đổi
+    } catch (err) {
+      console.error(err);
+      alert('Có lỗi xảy ra khi dừng quay video.');
     }
   };
 

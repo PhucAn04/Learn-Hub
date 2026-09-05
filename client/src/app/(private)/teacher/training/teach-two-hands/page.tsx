@@ -354,7 +354,7 @@ export default function TeacherTeachTwoHandsPage() {
       if (trainerRef.current) {
         await trainerRef.current.train(validSamples, (epoch, progress, loss, acc) => {
           setTrainingProgress(progress);
-        });
+        }, { isTeacherModel: true });
         
         setIsTraining(false);
         setIsTrained(true);

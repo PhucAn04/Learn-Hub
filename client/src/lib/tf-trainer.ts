@@ -19,22 +19,46 @@ export class TfTrainer {
   async train(
     samples: StoredSample[],
     onProgress?: (epoch: number, progress: number, loss: number, acc: number) => void,
-    options?: { epochs?: number; batchSize?: number; learningRate?: number }
+    options?: { epochs?: number; batchSize?: number; learningRate?: number; isTeacherModel?: boolean }
   ): Promise<{ epoch: number; loss: number; acc: number }[]> {
     await this.init();
     if (!this.tf) throw new Error('TensorFlow.js failed to load');
     if (samples.length === 0) throw new Error('Không có dữ liệu huấn luyện');
 
+    let finalSamples = samples;
+    const inputShape = samples[0].features.length; // vd: 42 (2 tay), 936 (mặt)
+    const isFace = inputShape === 936;
+
+    // Tự động áp dụng Data Augmentation cho Teacher Model hoặc bài thực hành Face
+    // - Teacher Model: Cần tổng quát hóa cao để Cross-Check chấm điểm chính xác
+    // - Face: Dữ liệu 936 chiều rất dễ Overfitting
+    // - Dữ liệu ít (<20 mẫu): Tăng số bản sao (copies) để bù đắp
+    if (options?.isTeacherModel || isFace) {
+      let copies = 0;
+      if (isFace) {
+        copies = samples.length < 20 ? 4 : 2;
+      } else if (options?.isTeacherModel) {
+        copies = samples.length < 20 ? 3 : 1;
+      }
+
+      if (copies > 0) {
+        const { augmentLandmarks } = await import('./data-augmentation');
+        finalSamples = augmentLandmarks(samples, { 
+          copies, 
+          jitterRange: isFace ? 0.005 : 0.01, // Face cần jitter nhỏ hơn
+          scaleRange: 0.05 
+        });
+      }
+    }
+
     const epochs = options?.epochs ?? 50;
     const learningRate = options?.learningRate ?? 0.005;
-    const batchSize = Math.min(options?.batchSize ?? 32, samples.length);
+    const batchSize = Math.min(options?.batchSize ?? 32, finalSamples.length);
 
     // 1. Xác định các nhãn (classes) duy nhất
-    this.classNames = Array.from(new Set(samples.map(s => s.label))).sort();
+    this.classNames = Array.from(new Set(finalSamples.map(s => s.label))).sort();
     const numClasses = this.classNames.length;
     if (numClasses < 2) throw new Error('Cần ít nhất 2 nhãn để huấn luyện AI');
-
-    const inputShape = samples[0].features.length; // vd: 42 (2 tay), 936 (mặt)
 
     // 2. Khởi tạo mô hình (Sequential MLP)
     this.model = this.tf.sequential();
@@ -50,10 +74,10 @@ export class TfTrainer {
     });
 
     // 3. Chuẩn bị dữ liệu Tensor
-    const xs = this.tf.tensor2d(samples.map(s => s.features));
+    const xs = this.tf.tensor2d(finalSamples.map(s => s.features));
     
     // One-hot encoding cho Labels
-    const labels = samples.map(s => this.classNames.indexOf(s.label));
+    const labels = finalSamples.map(s => this.classNames.indexOf(s.label));
     const ys = this.tf.oneHot(this.tf.tensor1d(labels, 'int32'), numClasses);
 
     // 4. Bắt đầu Train & lưu log

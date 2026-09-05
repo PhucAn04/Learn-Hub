@@ -810,7 +810,7 @@ export default function TeachPanel({
           : samples;
         await trainerRef.current.train(trainingSamples, (epoch, progress) => {
           setTrainingProgress(progress);
-        });
+        }, { isTeacherModel: true });
         // progress reaches 100 here, which will trigger the useEffect below
       }
     } catch (err) {

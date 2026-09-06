@@ -1056,7 +1056,17 @@ export default function TeachPanel({
                   isOODOrConflict = true;
                   setAnomalyMessage(crossCheck.message || '⚠️ Cử chỉ này chưa có trong thư viện ảnh của bé!');
                   currentPredLabel = 'Dữ liệu chưa được học... 🤔';
-                  setTeacherHintImages([]);
+                  
+                  if (crossCheck.isConflict && crossCheck.teacherNearestSampleIds) {
+                    const hints = teacherSamples
+                      .filter(s => s.id && crossCheck.teacherNearestSampleIds!.includes(s.id))
+                      .map(s => s.thumbnail || s.rawThumbnail || '')
+                      .filter(url => url !== '')
+                      .slice(0, 3);
+                    setTeacherHintImages(hints);
+                  } else {
+                    setTeacherHintImages([]);
+                  }
                 } else if (crossCheck.isMissingData) {
                   // isMissingData is just a hint, NOT a true anomaly
                   // Keep energy bars and KNN chart active

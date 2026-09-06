@@ -75,10 +75,10 @@ export default function AIConfidenceEnergyBars({ classes, confidences, isAnomaly
           <span>⚡</span> Cột Năng Lượng AI
         </h4>
         
-        {isMissingData && (
+        {(isMissingData || (isAnomaly && teacherHintImages && teacherHintImages.length > 0)) && (
           <div className="mb-3 px-3 py-3 bg-yellow-50 border-2 border-yellow-400 rounded-xl shadow-sm flex flex-col gap-3">
             <div className="text-yellow-800 text-xs font-bold text-center animate-pulse">
-              ✨ Góc độ khá chuẩn, nhưng Thư viện của Bé chưa có! Bé thử tự khám phá thêm xem sao nhé!
+              {anomalyMessage || (isMissingData ? '✨ Góc độ khá chuẩn, nhưng Thư viện của Bé chưa có! Bé thử tự khám phá thêm xem sao nhé!' : 'Bé có muốn xem Gợi ý từ giáo viên để chụp đúng lại không?')}
             </div>
             {teacherHintImages && teacherHintImages.length > 0 && (
               <div className="flex flex-col items-center">
@@ -153,7 +153,7 @@ export default function AIConfidenceEnergyBars({ classes, confidences, isAnomaly
         })}
       </div>
 
-      {isAnomaly && !isMissingData && (
+      {isAnomaly && !isMissingData && (!teacherHintImages || teacherHintImages.length === 0) && (
         <p className="mt-3 text-xs font-semibold text-rose-600 text-center leading-relaxed bg-rose-50 border border-rose-200 rounded-xl p-2 animate-pulse">
           {anomalyMessage || '⚠️ Khác thường, dữ liệu này chưa có trong thư viện ảnh của bé!'}
         </p>

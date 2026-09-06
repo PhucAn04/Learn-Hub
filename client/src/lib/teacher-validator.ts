@@ -149,14 +149,23 @@ export function crossCheckLiveFeatures(
   let isOOD = false;
   let isConflict = false;
   let message = '';
+  
+  // Normalize labels to ignore emoji differences (e.g. "Thích (Thumbs Up) 👍" vs "Thích (Thumbs Up)")
+  const labelsMatch = studentResult.label === teacherResult.label || 
+                      studentResult.label.startsWith(teacherResult.label) || 
+                      teacherResult.label.startsWith(studentResult.label);
 
   if (isFingerOOD) {
     isOOD = true;
     message = 'Dữ liệu chưa được học! Hình như bé đang thực hiện cử chỉ lạ (ngoài thư viện ảnh của bé)?';
   } else if (isTeacherValidPose) {
     // Teacher knows this pose. Let's check if the student knows it.
-    // If student's model is uncertain (high distance) OR guesses the wrong label confidently.
-    if (studentResult.minDistance > distanceOodThreshold || (studentResult.label !== teacherResult.label && studentResult.maxCount >= threshold)) {
+    if (!labelsMatch && studentResult.maxCount >= threshold) {
+      // Student confidently guessed the wrong label!
+      isConflict = true;
+      message = `Khoan đã! Cô thấy đây là "${teacherResult.label}". AI của bé đoán nhầm là "${studentResult.label}"! Bé có muốn xem Gợi ý từ giáo viên để chụp đúng lại không?`;
+    } else if (studentResult.minDistance > distanceOodThreshold) {
+      // Student doesn't know this pose, but the teacher does.
       isMissingData = true;
       message = 'Cử chỉ này khá chuẩn, nhưng AI của bé chưa được học góc độ này. Bé hãy chụp thêm ảnh để AI học nhé!';
     } else {
@@ -164,11 +173,12 @@ export function crossCheckLiveFeatures(
       isMissingData = false;
     }
   } else {
-    // Teacher DOES NOT know this pose.
-    if (teacherResult.minDistance > distanceOodThreshold || studentResult.minDistance > distanceOodThreshold) {
+    // Teacher DOES NOT know this pose confidently.
+    if (studentResult.minDistance > distanceOodThreshold) {
+      // Both don't know it, or at least the student doesn't know it.
       isOOD = true;
       message = 'Dữ liệu chưa được học! Hình như bé đang thực hiện cử chỉ lạ (ngoài thư viện ảnh của bé)?';
-    } else if (teacherResult.maxCount >= threshold && studentResult.maxCount >= threshold && teacherResult.label !== studentResult.label) {
+    } else if (teacherResult.maxCount >= threshold && studentResult.maxCount >= threshold && !labelsMatch) {
       isConflict = true;
       message = `Khoan đã! Cô thấy đây là "${teacherResult.label}". AI của bé đoán nhầm là "${studentResult.label}"!`;
     }

@@ -536,7 +536,7 @@ export default function TeacherTeachPage() {
       if (trainerRef.current) {
         await trainerRef.current.train(validSamples, (epoch, progress, loss, acc) => {
           setTrainingProgress(progress);
-        }, { isTeacherModel: true });
+        });
         
         setIsTraining(false);
         setIsTrained(true);
@@ -1009,7 +1009,7 @@ export default function TeacherTeachPage() {
                       <ul className="list-disc pl-4 space-y-1">
                         {allClasses.map(cls => {
                           const count = getCount(cls.id, cls.label);
-                          return count < 10 ? <li key={cls.id}>Nhóm &quot;{cls.label}&quot;: thiếu {10 - count} ảnh mẫu.</li> : null;
+                          return count < 10 ? <li key={cls.id}>Nhóm "{cls.label}": thiếu {10 - count} ảnh mẫu.</li> : null;
                         })}
                       </ul>
                     </div>
@@ -1018,7 +1018,7 @@ export default function TeacherTeachPage() {
 
                 return (
                   <div className="bg-green-50 border-2 border-green-200 text-green-700 rounded-2xl p-4 text-xs font-bold mb-6 shadow-inner">
-                    <span>🎉 Tuyệt vời! Bạn đã thu thập đủ dữ liệu rồi. Hãy nhấn nút <b>&quot;HUẤN LUYỆN AI 🧠🚀&quot;</b> bên dưới nhé!</span>
+                    <span>🎉 Tuyệt vời! Bạn đã thu thập đủ dữ liệu rồi. Hãy nhấn nút <b>"HUẤN LUYỆN AI 🧠🚀"</b> bên dưới nhé!</span>
                   </div>
                 );
               })()}
@@ -1244,7 +1244,7 @@ export default function TeacherTeachPage() {
                 </div>
               ) : (
                 <div className="text-center py-4 text-purple-200 font-bold">
-                  Bạn hãy chụp mẫu tay bên trái rồi bấm <span className="text-yellow-300">&quot;Huấn luyện AI&quot;</span> để xem kết quả dự đoán trực tiếp ở đây nhé! 🤖✨
+                  Bạn hãy chụp mẫu tay bên trái rồi bấm <span className="text-yellow-300">"Huấn luyện AI"</span> để xem kết quả dự đoán trực tiếp ở đây nhé! 🤖✨
                 </div>
               )}
             </div>

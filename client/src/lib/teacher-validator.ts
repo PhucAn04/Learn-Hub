@@ -224,7 +224,7 @@ export async function validateStudentSamplesWithTeacherModel(
   if (!trainer || typeof trainer.isTrained !== 'function' || !trainer.isTrained()) {
     const { TfTrainer } = await import('./tf-trainer');
     trainer = new TfTrainer();
-    await trainer.train(teacherSamples, undefined, { epochs: 25, isTeacherModel: true });
+    await trainer.train(teacherSamples, undefined, { epochs: 25 });
   }
 
   let correctCount = 0;

@@ -553,7 +553,7 @@ export default function TeachPanel({
               : 'Ảnh hơi tối! Bé tìm chỗ sáng hơn xíu nha 🌑';
             questionableReason = warningMsg;
           } else {
-            const isDynamicClass = !CLASS_TO_GOLDEN_LABEL[activeClass];
+            const isDynamicClass = goldenCurrentClass.length === 0;
 
             if (isDynamicClass) {
               // === NHÃN ĐỘNG: Negative Golden Check ===
@@ -842,7 +842,13 @@ export default function TeachPanel({
           
           let predictedLabel = 'Chưa rõ ràng';
           if (bestVotes >= actualThreshold) {
-            predictedLabel = result.label;
+            const rawLabel = result.label;
+            const matchById = classes.find(c => c.id === rawLabel);
+            const matchByLabel = classes.find(c => c.label === rawLabel);
+            const matchByPrefix = !matchById && !matchByLabel
+              ? classes.find(c => rawLabel.startsWith(c.label) || c.label.startsWith(rawLabel))
+              : null;
+            predictedLabel = matchById?.label || matchByLabel?.label || matchByPrefix?.label || rawLabel;
           }
           
           const studentClassId = sample.sourceId;
@@ -893,7 +899,13 @@ export default function TeachPanel({
             const bestVotes = (result.counts as Record<string, number>)[result.label] || 0;
             let predictedLabel = 'Chưa rõ ràng';
             if (bestVotes >= actualThreshold) {
-              predictedLabel = result.label;
+              const rawLabel = result.label;
+              const matchById = classes.find(c => c.id === rawLabel);
+              const matchByLabel = classes.find(c => c.label === rawLabel);
+              const matchByPrefix = !matchById && !matchByLabel
+                ? classes.find(c => rawLabel.startsWith(c.label) || c.label.startsWith(rawLabel))
+                : null;
+              predictedLabel = matchById?.label || matchByLabel?.label || matchByPrefix?.label || rawLabel;
             }
             
             const studentClassId = sample.sourceId;
@@ -1034,34 +1046,34 @@ export default function TeachPanel({
               let isMissingDataLocal = false;
 
               if (datasetQuality?.isDatasetPerfect && teacherSamples.length > 0) {
-                const crossCheck = crossCheckLiveFeatures(features, samples, teacherSamples, kValue, threshold, 0.65, kps);
+                const crossCheck = crossCheckLiveFeatures(features, samples, teacherSamples, kValue, threshold, 0.65, kps, undefined, mode === 'gesture');
                 isMissingDataLocal = crossCheck.isMissingData || false;
                 setIsMissingData(isMissingDataLocal);
                 
-                if (crossCheck.isAnomaly || crossCheck.isOOD || crossCheck.isConflict || crossCheck.isMissingData) {
+                if (crossCheck.isOOD || crossCheck.isConflict) {
                   isAnom = true;
                   setIsAnomaly(true);
+                  isOODOrConflict = true;
                   setAnomalyMessage(crossCheck.message || '⚠️ Cử chỉ này chưa có trong thư viện ảnh của bé!');
-                  
-                  if (crossCheck.isOOD || crossCheck.isConflict) {
-                    isOODOrConflict = true;
-                    currentPredLabel = 'Dữ liệu chưa được học... 🤔';
+                  currentPredLabel = 'Dữ liệu chưa được học... 🤔';
+                  setTeacherHintImages([]);
+                } else if (crossCheck.isMissingData) {
+                  // isMissingData is just a hint, NOT a true anomaly
+                  // Keep energy bars and KNN chart active
+                  setIsAnomaly(false);
+                  setAnomalyMessage(crossCheck.message);
+                  if (crossCheck.teacherLabel) {
+                    currentPredLabel = classes.find(c => c.id === crossCheck.teacherLabel || c.label === crossCheck.teacherLabel)?.label || crossCheck.teacherLabel || currentPredLabel;
+                  }
+                  if (crossCheck.teacherNearestSampleIds) {
+                    const hints = teacherSamples
+                      .filter(s => s.id && crossCheck.teacherNearestSampleIds!.includes(s.id))
+                      .map(s => s.thumbnail || s.rawThumbnail || '')
+                      .filter(url => url !== '')
+                      .slice(0, 3);
+                    setTeacherHintImages(hints);
+                  } else {
                     setTeacherHintImages([]);
-                  } else if (crossCheck.isMissingData) {
-                    // It's missing data, not completely OOD. Keep the Teacher's predicted label if any.
-                    if (crossCheck.teacherLabel) {
-                      currentPredLabel = classes.find(c => c.id === crossCheck.teacherLabel || c.label === crossCheck.teacherLabel)?.label || crossCheck.teacherLabel || currentPredLabel;
-                    }
-                    if (crossCheck.teacherNearestSampleIds) {
-                      const hints = teacherSamples
-                        .filter(s => s.id && crossCheck.teacherNearestSampleIds!.includes(s.id))
-                        .map(s => s.thumbnail || s.rawThumbnail || '')
-                        .filter(url => url !== '')
-                        .slice(0, 3);
-                      setTeacherHintImages(hints);
-                    } else {
-                      setTeacherHintImages([]);
-                    }
                   }
                 } else {
                   setIsAnomaly(resultKNN.minDistance > 0.65);
@@ -1085,17 +1097,12 @@ export default function TeachPanel({
 
               setPredictedLabel(currentPredLabel);
 
-              if (isOODOrConflict || isMissingDataLocal) {
+              if (isOODOrConflict) {
                 setKNearestIds([]);
                 setVoteCounts({});
-                
-                // For missing data, we still want to show the Teacher's predicted confidences if available, 
-                // but since the student doesn't have it, we just set it to null so the energy bar component 
-                // can show it at 0% to encourage collection via isAnomaly flag.
-                if (isOODOrConflict) {
-                  setNnConfidences(null);
-                }
+                setNnConfidences(null);
               } else {
+                // For isMissingData or normal: still show KNN chart and confidences
                 if (resultNN && resultNN.confidences) {
                   setNnConfidences(resultNN.confidences);
                 }

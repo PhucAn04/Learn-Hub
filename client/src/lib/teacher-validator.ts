@@ -111,7 +111,8 @@ export function crossCheckLiveFeatures(
   threshold: number = 2,
   distanceOodThreshold: number = 0.65,
   rawKeypoints?: HandKeypoint[],
-  teacherTrainer?: TfTrainer
+  teacherTrainer?: TfTrainer,
+  allowZeroFingers: boolean = false
 ): CrossCheckResult {
   const studentResult = classifyKNN(liveFeatures, studentSamples, kValue);
 
@@ -119,8 +120,8 @@ export function crossCheckLiveFeatures(
   let isFingerOOD = false;
   if (rawKeypoints && rawKeypoints.length >= 21) {
     const extFingers = countExtendedFingers(rawKeypoints);
-    if (extFingers === 0) {
-      isFingerOOD = true; // Nắm đấm luôn là OOD vì không có nhãn nào là 0 ngón
+    if (extFingers === 0 && !allowZeroFingers) {
+      isFingerOOD = true; // Nắm đấm là OOD chỉ khi mode không cho phép (vd: bài đếm ngón tay)
     }
   }
 

@@ -1038,7 +1038,11 @@ export default function TeachPanel({
                 currentPredLabel = classes.find(c => c.id === resultNN.label || c.label === resultNN.label)?.label || resultNN.label || 'Chưa rõ ràng... 🤔';
               }
 
-              const teacherSamples: StoredSample[] = (teacherTemplate as TeacherTemplate)?.dataset?.samples || teacherTemplate?.samples || [];
+              const rawTeacherSamples: StoredSample[] = (teacherTemplate as TeacherTemplate)?.dataset?.samples || teacherTemplate?.samples || [];
+              const teacherSamples = rawTeacherSamples.map((s, idx) => ({
+                ...s,
+                id: s.id || `legacy_sample_${idx}`
+              }));
 
               // Adaptive Mentorship: Only cross-check with Teacher Validator if student is in Phase B
               let isAnom = false;

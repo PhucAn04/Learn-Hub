@@ -194,7 +194,7 @@ export function crossCheckLiveFeatures(
     teacherLabel: teacherResult.label,
     teacherConfidence: teacherResult.confidence,
     message,
-    teacherNearestSampleIds: isMissingData ? teacherResult.kNearestIds : undefined,
+    teacherNearestSampleIds: (isMissingData || isConflict) ? teacherResult.kNearestIds : undefined,
   };
 }
 

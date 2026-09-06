@@ -205,7 +205,8 @@ export function classifyKNNDetailed(
       label: sample.label,
       distance: Math.sqrt(sumSq),
       thumbnail: sample.thumbnail,
-      sourceId: sample.sourceId
+      sourceId: sample.sourceId,
+      id: sample.id
     };
   });
 

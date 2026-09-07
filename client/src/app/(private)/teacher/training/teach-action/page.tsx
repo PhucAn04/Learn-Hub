@@ -189,16 +189,46 @@ export default function TeacherTeachActionPage() {
     const files = e.target.files;
     if (!files || files.length === 0) return;
     const activeClassLabel = classes.find((c) => c.id === activeClass)?.label || 'Không tên';
-    for (const file of Array.from(files)) {
-      if (!file.type.startsWith('image/')) continue;
+    const typeLabel = type === 'object' ? 'sự vật' : 'cử chỉ';
+
+    const validImageFiles = Array.from(files).filter(
+      (file) => file.type.startsWith('image/') || /\.(jpe?g|png|webp|bmp|gif)$/i.test(file.name)
+    );
+
+    if (validImageFiles.length === 0) {
+      showToast('⚠️ Vui lòng chọn file hình ảnh hợp lệ!');
+      return;
+    }
+
+    const newSamples: StoredSample[] = [];
+    for (const file of validImageFiles) {
       try {
         const base64 = await fileToBase64(file);
         const features = await extractFeaturesFromBase64(base64);
         if (!features) continue;
-        setSamples((prev) => [...prev, { id: crypto.randomUUID(), label: activeClassLabel, sourceId: activeClass, sourceType: type, features, thumbnail: base64, rawThumbnail: base64, isValid: true }]);
-      } catch (err) { console.error('Failed to process uploaded image:', err); }
+        newSamples.push({
+          id: crypto.randomUUID(),
+          label: activeClassLabel,
+          sourceId: activeClass,
+          sourceType: type,
+          features,
+          thumbnail: base64,
+          rawThumbnail: base64,
+          isValid: true,
+        });
+      } catch (err) {
+        console.error('Failed to process uploaded image:', err);
+      }
     }
-    playClickSound();
+
+    if (newSamples.length > 0) {
+      setSamples((prev) => [...prev, ...newSamples]);
+      showToast(`✅ Đã thêm ${newSamples.length} ảnh ${typeLabel} cho "${activeClassLabel}"!`);
+      playClickSound();
+    } else {
+      showToast('⚠️ Không thể trích xuất đặc trưng từ ảnh đã chọn!');
+    }
+
     if (type === 'object' && fileInputObjectRef.current) fileInputObjectRef.current.value = '';
     if (type === 'gesture' && fileInputGestureRef.current) fileInputGestureRef.current.value = '';
   };

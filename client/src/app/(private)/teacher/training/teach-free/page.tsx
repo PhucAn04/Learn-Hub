@@ -232,33 +232,44 @@ export default function TeacherTeachFreePage() {
     if (!files || files.length === 0) return;
 
     const activeClassLabel = classes.find((c) => c.id === activeClass)?.label || 'Không tên';
+    const validImageFiles = Array.from(files).filter(
+      (file) => file.type.startsWith('image/') || /\.(jpe?g|png|webp|bmp|gif)$/i.test(file.name)
+    );
 
-    for (const file of Array.from(files)) {
-      if (!file.type.startsWith('image/')) continue;
+    if (validImageFiles.length === 0) {
+      showToast('⚠️ Vui lòng chọn file hình ảnh hợp lệ!');
+      return;
+    }
 
+    const newSamples: StoredSample[] = [];
+    for (const file of validImageFiles) {
       try {
         const base64 = await fileToBase64(file);
         const features = await extractFeaturesFromBase64(base64);
         if (!features) continue;
 
-        setSamples((prev) => [
-          ...prev,
-          {
-            id: crypto.randomUUID(),
-            label: activeClassLabel,
-            sourceId: activeClass,
-            features,
-            thumbnail: base64,
-            rawThumbnail: base64,
-            isValid: true,
-          },
-        ]);
+        newSamples.push({
+          id: crypto.randomUUID(),
+          label: activeClassLabel,
+          sourceId: activeClass,
+          features,
+          thumbnail: base64,
+          rawThumbnail: base64,
+          isValid: true,
+        });
       } catch (err) {
         console.error('Failed to process uploaded image:', err);
       }
     }
 
-    playClickSound();
+    if (newSamples.length > 0) {
+      setSamples((prev) => [...prev, ...newSamples]);
+      showToast(`✅ Đã thêm ${newSamples.length} ảnh cho "${activeClassLabel}"!`);
+      playClickSound();
+    } else {
+      showToast('⚠️ Không thể trích xuất đặc trưng từ ảnh đã chọn!');
+    }
+
     // Reset input để có thể upload lại cùng file
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
@@ -368,7 +379,8 @@ export default function TeacherTeachFreePage() {
   // ── Upload ảnh để dự đoán ─────────────────────────────
   const handlePredictUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file || !file.type.startsWith('image/') || !trainerRef.current?.isTrained()) return;
+    const isImage = file && (file.type.startsWith('image/') || /\.(jpe?g|png|webp|bmp|gif)$/i.test(file.name));
+    if (!file || !isImage || !trainerRef.current?.isTrained()) return;
 
     setIsPredicting(true);
     setPredictResult(null);

@@ -7,7 +7,7 @@ import { useMl5BodyPose } from '@/hooks/useMl5BodyPose';
 import { useStabilityDetector } from '@/hooks/useStabilityDetector';
 import { drawBodySkeleton } from '@/lib/body-drawing';
 import { normalizeBodyKeypoints } from '@/lib/body-pose-classifier';
-import { classifyKNN, classifyKNNDetailed, StoredSample } from '@/lib/knn-classifier';
+import { classifyKNN, classifyKNNDetailed, StoredSample, resolveClassMatch } from '@/lib/knn-classifier';
 import { playClickSound, playSuccessSound, speakEnglish } from '@/lib/audio';
 import { assessQuality, calculateROI } from '@/lib/image-quality';
 import CameraView from '@/components/CameraView';
@@ -288,7 +288,8 @@ export default function BodyTeachPanel({
           
           let predictedLabel = 'Chưa rõ ràng';
           if (bestVotes >= actualThreshold) {
-            predictedLabel = result.label;
+            const matched = resolveClassMatch(result.label, classesState);
+            predictedLabel = matched?.label || result.label;
           }
           
           const studentClassId = sample.sourceId;
@@ -357,7 +358,8 @@ export default function BodyTeachPanel({
             const bestVotes = (result.counts as Record<string, number>)[result.label] || 0;
             let predictedLabel = 'Chưa rõ ràng';
             if (bestVotes >= actualThreshold) {
-              predictedLabel = result.label;
+              const matched = resolveClassMatch(result.label, classesState);
+              predictedLabel = matched?.label || result.label;
             }
             
             const studentClassId = sample.sourceId;
@@ -654,11 +656,14 @@ export default function BodyTeachPanel({
       <AIFeedbackModal
         isOpen={showFeedbackModal}
         onClose={() => setShowFeedbackModal(false)}
-        onProceed={() => {
+        onProceed={(issueCount: number) => {
           setShowFeedbackModal(false);
+          const validCount = samples.filter(s => s.isValid !== false).length;
+          const correctCount = Math.max(0, validCount - issueCount);
+          const accuracyScore = validCount > 0 ? (correctCount / validCount) * 100 : 0;
           onTrainComplete(samples, async () => {
             return trainerRef.current ? trainerRef.current.saveToBlobs() : null;
-          });
+          }, accuracyScore);
         }}
         studentSamples={samples}
         teacherTemplate={teacherTemplate}

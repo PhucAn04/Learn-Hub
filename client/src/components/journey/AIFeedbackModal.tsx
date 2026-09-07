@@ -2,7 +2,7 @@
 
 import React, { useMemo, useState } from 'react';
 import { X, AlertCircle, CheckCircle, Brain, Target, Info, ChevronRight, RefreshCw, Search, Eye, Sparkles } from 'lucide-react';
-import { StoredSample, classifyKNNDetailed } from '@/lib/knn-classifier';
+import { StoredSample, classifyKNNDetailed, resolveClassMatch } from '@/lib/knn-classifier';
 import { evaluateStudentDatasetPhase } from '@/lib/teacher-validator';
 import SamplePreviewModal from '@/components/SamplePreviewModal';
 import { TeacherTemplate, CorrectnessIssue, NearestNeighbor } from '@/types/models';
@@ -78,7 +78,8 @@ export default function AIFeedbackModal({
         // ── Display cross-check: dùng localK/safeThreshold (slider bé kéo) ──
         const knn = classifyKNNDetailed(studentSample.features, referenceSamples, localK);
         
-        const bestClassId = classes.find(c => c.label === knn.label || c.id === knn.label)?.id || knn.label;
+        const matchedClass = resolveClassMatch(knn.label, classes);
+        const bestClassId = matchedClass?.id || knn.label;
         const bestVotes = (knn.counts as Record<string, number>)[knn.label] || 0;
 
         const finalPredictedClassId = (bestVotes >= safeThreshold) ? bestClassId : 'unclear';
@@ -94,7 +95,8 @@ export default function AIFeedbackModal({
           }
 
           matchingNearest = knn.nearest.filter((n: NearestNeighbor) => {
-            const nClassId = classes.find(c => c.label === n.label || c.id === n.label)?.id || n.label;
+            const nClass = resolveClassMatch(n.label, classes);
+            const nClassId = nClass?.id || n.label;
             return nClassId === bestClassId;
           });
 
@@ -108,22 +110,19 @@ export default function AIFeedbackModal({
           });
         }
 
-        // ── Robust cross-check: cho chấm điểm công bằng (Golden Dataset logic) ──
-        // Dùng adaptive K lớn để phá cluster ảnh sai nhãn.
-        // Giới hạn robustK theo số classes: với 6 classes × 10 mẫu, dùng K quá lớn
-        // sẽ khiến KHÔNG class nào đạt threshold → tất cả bị đánh sai.
-        // Công thức: K ≈ (samples_per_class * 1.5) để class đúng vẫn có thể thắng.
+        // ── Robust cross-check: kiểm tra chéo công bằng với adaptive K ──
         const avgSamplesPerClass = Math.max(1, Math.floor(referenceSamples.length / Math.max(classes.length, 2)));
         const robustK = hasTeacherTemplate
           ? localK
           : Math.max(localK, Math.min(Math.ceil(referenceSamples.length * 0.5), Math.ceil(avgSamplesPerClass * 1.5)));
         const robustThreshold = hasTeacherTemplate
           ? safeThreshold
-          : Math.ceil(robustK * 0.5);
+          : Math.max(2, Math.ceil(robustK / Math.max(classes.length, 2)));
 
         if (robustK !== localK || robustThreshold !== safeThreshold) {
           const robustKnn = classifyKNNDetailed(studentSample.features, referenceSamples, robustK);
-          const rBestClassId = classes.find(c => c.label === robustKnn.label || c.id === robustKnn.label)?.id || robustKnn.label;
+          const rMatchedClass = resolveClassMatch(robustKnn.label, classes);
+          const rBestClassId = rMatchedClass?.id || robustKnn.label;
           const rBestVotes = (robustKnn.counts as Record<string, number>)[robustKnn.label] || 0;
           const rPredicted = (rBestVotes >= robustThreshold) ? rBestClassId : 'unclear';
           if (rPredicted !== studentClassId) {
@@ -430,7 +429,7 @@ export default function AIFeedbackModal({
           </button>
           
           <button 
-            onClick={() => onProceed(Math.max(correctnessIssues.length, robustIssueCount) + qualityIssues.length)}
+            onClick={() => onProceed(correctnessIssues.length + qualityIssues.length)}
             className={`px-8 py-3 rounded-xl font-black text-white shadow-lg transition-transform hover:-translate-y-0.5 active:translate-y-0 flex items-center gap-2 ${
               hasIssues 
                 ? 'bg-amber-500 hover:bg-amber-600 shadow-amber-200' 

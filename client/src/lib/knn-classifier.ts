@@ -397,3 +397,60 @@ export function classifyKNNWithVotes(
     minDistance
   };
 }
+
+/**
+ * Resolves a raw prediction label (from KNN classifier or Teacher Template)
+ * to the matching class from the provided challenge classes.
+ * 
+ * Supports:
+ * 1. Exact ID match (e.g. 'class_1' === 'class_1')
+ * 2. Exact Label match (e.g. 'Thích (Thumbs Up)' === 'Thích (Thumbs Up)')
+ * 3. Two-hands mode mapping (class_3 represents 1 finger, class_4 represents 2 fingers)
+ * 4. Normalized & case-insensitive prefix / substring matching (e.g. 'Thích' <-> 'Thích (Thumbs Up)')
+ * 5. String prefix fallback
+ */
+export function resolveClassMatch<T extends { id: string; label: string }>(
+  rawLabel: string,
+  classes: T[]
+): T | undefined {
+  if (!rawLabel || !classes || classes.length === 0) return undefined;
+
+  // 1. Exact ID match
+  const byId = classes.find(c => c.id === rawLabel);
+  if (byId) return byId;
+
+  // 2. Exact Label match
+  const byLabel = classes.find(c => c.label === rawLabel);
+  if (byLabel) return byLabel;
+
+  // 3. Two-hands mode cross-mapping:
+  // class_3 ('2 Bàn Tay, 1 Ngón Tay') corresponds to single-hand 1 finger ('class_1', '1 Ngón Tay ☝️', '1 Ngón Tay')
+  // class_4 ('2 Bàn Tay, 2 Ngón Tay') corresponds to single-hand 2 fingers ('class_2', '2 Ngón Tay ✌️', '2 Ngón Tay')
+  const isTwoHands = classes.some(c => c.id === 'class_3' || c.id === 'class_4');
+  if (isTwoHands) {
+    const isOneFinger = rawLabel === 'class_1' || rawLabel.includes('1 Ngón') || rawLabel.includes('☝️');
+    const isTwoFingers = rawLabel === 'class_2' || rawLabel.includes('2 Ngón') || rawLabel.includes('✌️');
+    if (isOneFinger) {
+      const cls3 = classes.find(c => c.id === 'class_3');
+      if (cls3) return cls3;
+    }
+    if (isTwoFingers) {
+      const cls4 = classes.find(c => c.id === 'class_4');
+      if (cls4) return cls4;
+    }
+  }
+
+  // 4. Normalized substring / prefix match
+  const normalize = (s: string) => s.toLowerCase().replace(/[^a-zA-Z0-9\u00C0-\u1EF9]/g, '');
+  const normRaw = normalize(rawLabel);
+  if (normRaw.length >= 2) {
+    const byNorm = classes.find(c => {
+      const normC = normalize(c.label);
+      return normC.startsWith(normRaw) || normRaw.startsWith(normC) || normC.includes(normRaw) || normRaw.includes(normC);
+    });
+    if (byNorm) return byNorm;
+  }
+
+  // 5. String prefix fallback
+  return classes.find(c => rawLabel.startsWith(c.label) || c.label.startsWith(rawLabel));
+}

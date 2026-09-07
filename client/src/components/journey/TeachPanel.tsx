@@ -26,6 +26,7 @@ import {
   classifyKNNWithVotes,
   StoredSample,
   HandKeypoint,
+  resolveClassMatch,
 } from '@/lib/knn-classifier';
 import { assessQuality, calculateROI } from '@/lib/image-quality';
 import KnnScatterPlot from './KnnScatterPlot';
@@ -842,13 +843,8 @@ export default function TeachPanel({
           
           let predictedLabel = 'Chưa rõ ràng';
           if (bestVotes >= actualThreshold) {
-            const rawLabel = result.label;
-            const matchById = classes.find(c => c.id === rawLabel);
-            const matchByLabel = classes.find(c => c.label === rawLabel);
-            const matchByPrefix = !matchById && !matchByLabel
-              ? classes.find(c => rawLabel.startsWith(c.label) || c.label.startsWith(rawLabel))
-              : null;
-            predictedLabel = matchById?.label || matchByLabel?.label || matchByPrefix?.label || rawLabel;
+            const matched = resolveClassMatch(result.label, classes);
+            predictedLabel = matched?.label || result.label;
           }
           
           const studentClassId = sample.sourceId;
@@ -899,13 +895,8 @@ export default function TeachPanel({
             const bestVotes = (result.counts as Record<string, number>)[result.label] || 0;
             let predictedLabel = 'Chưa rõ ràng';
             if (bestVotes >= actualThreshold) {
-              const rawLabel = result.label;
-              const matchById = classes.find(c => c.id === rawLabel);
-              const matchByLabel = classes.find(c => c.label === rawLabel);
-              const matchByPrefix = !matchById && !matchByLabel
-                ? classes.find(c => rawLabel.startsWith(c.label) || c.label.startsWith(rawLabel))
-                : null;
-              predictedLabel = matchById?.label || matchByLabel?.label || matchByPrefix?.label || rawLabel;
+              const matched = resolveClassMatch(result.label, classes);
+              predictedLabel = matched?.label || result.label;
             }
             
             const studentClassId = sample.sourceId;

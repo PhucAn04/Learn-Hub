@@ -17,18 +17,53 @@ interface ReportCardProps {
 
 // ── Emoji star rating (child-friendly) ──────────────────────────────────────
 
-function StarRating({ score }: { score: number }) {
-  const stars = score >= 90 ? 5 : score >= 75 ? 4 : score >= 60 ? 3 : score >= 40 ? 2 : 1;
-  const emoji = score >= 75 ? '🦁' : score >= 50 ? '🐨' : '🐣';
-  const message = score >= 90
-    ? 'Tuyệt vời luôn! AI học giỏi lắm!'
-    : score >= 75
-    ? 'Hay quá! AI đã học khá tốt rồi!'
-    : score >= 60
-    ? 'Được rồi! Nhưng AI vẫn còn nhầm chút xíu.'
-    : score >= 40
-    ? 'Ồ, AI vẫn còn hay nhầm lắm!'
-    : 'AI chưa học được tốt... Thử lại nhé!';
+function StarRating({ 
+  score,
+  misclassifiedCount = 0,
+  qualityIssueCount = 0,
+}: { 
+  score: number;
+  misclassifiedCount?: number;
+  qualityIssueCount?: number;
+}) {
+  let baseStars = score >= 90 ? 5 : score >= 75 ? 4 : score >= 60 ? 3 : score >= 40 ? 2 : 1;
+
+  // Cap stars when there are mislabeled images or quality issues
+  if (misclassifiedCount > 5) {
+    baseStars = 1;
+  } else if (misclassifiedCount >= 4) {
+    baseStars = Math.min(baseStars, 2);
+  } else if (misclassifiedCount >= 2) {
+    baseStars = Math.min(baseStars, 3);
+  } else if (misclassifiedCount === 1) {
+    baseStars = Math.min(baseStars, 4);
+  } else if (qualityIssueCount >= 3) {
+    baseStars = Math.min(baseStars, 4);
+  }
+
+  const stars = baseStars;
+  const emoji = stars >= 4 ? '🦁' : stars >= 3 ? '🐨' : '🐣';
+  
+  let message = 'Tuyệt vời luôn! AI học giỏi lắm!';
+  if (stars === 5) {
+    message = 'Tuyệt vời luôn! AI học giỏi lắm!';
+  } else if (misclassifiedCount >= 4) {
+    message = `Bạn AI còn nhầm ${misclassifiedCount} ảnh — bé xem lại mấy ảnh bị nhầm ở dưới nhé!`;
+  } else if (misclassifiedCount >= 2) {
+    message = `Bạn AI vẫn còn nhầm ${misclassifiedCount} ảnh, bé hãy sửa lại nhé!`;
+  } else if (misclassifiedCount === 1) {
+    message = 'Hay quá! Nhưng bạn AI vẫn còn nhầm 1 ảnh kìa.';
+  } else if (qualityIssueCount > 0) {
+    message = 'Khá tốt! Nhưng có vài ảnh hơi mờ hoặc tối đó nha.';
+  } else if (stars === 4) {
+    message = 'Hay quá! AI đã học khá tốt rồi!';
+  } else if (stars === 3) {
+    message = 'Được rồi! Nhưng AI vẫn còn nhầm chút xíu.';
+  } else if (stars === 2) {
+    message = 'Ồ, AI vẫn còn hay nhầm lắm!';
+  } else {
+    message = 'AI chưa học được tốt... Thử lại nhé!';
+  }
 
   return (
     <div className="text-center py-4">
@@ -106,7 +141,11 @@ export default function ReportCard({
         <div className="p-6 space-y-5">
 
           {/* ── 1. Star Rating — thay ScoreCircle ── */}
-          <StarRating score={evaluation.goldenAccuracy} />
+          <StarRating 
+            score={evaluation.goldenAccuracy} 
+            misclassifiedCount={ev?.misclassifiedSamples?.length || 0}
+            qualityIssueCount={ev?.qualityIssues?.length || 0}
+          />
 
           {/* ── 2. Version Comparison (simple) ── */}
           <VersionComparison

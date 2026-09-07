@@ -11,7 +11,7 @@
 
 import { useCallback, useState } from 'react';
 import type { ModelEvaluation } from '@/types/models';
-import { StoredSample, evaluateAgainstGolden, analyzeDataBalance, classifyKNNDetailed, classifyKNN } from '@/lib/knn-classifier';
+import { StoredSample, evaluateAgainstGolden, analyzeDataBalance, classifyKNNDetailed, classifyKNN, resolveClassMatch } from '@/lib/knn-classifier';
 import { buildConfusionMatrix } from '@/lib/confusion-matrix';
 import { evaluateStudentDatasetPhase } from '@/lib/teacher-validator';
 import { evaluateStudentImagesWithTeacher, evaluateStudentImagesWithReference } from '@/lib/knn-teacher-classifier';
@@ -254,42 +254,40 @@ export function useModelEvaluation(config: EvalConfig) {
       // Golden test đánh giá "model predict đúng không" nhưng không phạt ảnh sai nhãn
       // vì ảnh đúng chiếm đa số → model vẫn predict đúng.
       // Self cross-check với adaptive K phá cluster ảnh sai bảo vệ nhau.
-      let robustMislabeledCount = 0;
+      // 3c. Đếm số ảnh sai nhãn để trừ điểm công bằng (mislabelPenalty)
+      // Lấy trực tiếp từ các ảnh bị AI đánh dấu sai (aiFeedback.isMisclassified)
+      // kết hợp với cross-check chuẩn xác
+      const feedbackMislabeledCount = samples.filter(s => s.aiFeedback?.isMisclassified).length;
       
-      if (!hasTeacher) {
-        samples.forEach((sample, index) => {
-          if (sample.quality?.isBlurry || sample.quality?.isDark) return;
-          
-          const sampleClassId = sample.sourceId || config.classes.find(c => c.label === sample.label)?.id || sample.label;
-          const expectedLabel = config.classes.find(c => c.id === sampleClassId)?.label || sample.label;
-          
-          const refs = samples.filter((_, i) => i !== index);
-          if (refs.length === 0) return;
-          
-          const avgSamplesPerClass = Math.max(1, Math.floor(refs.length / Math.max(config.classes.length, 2)));
-          const robustK = Math.max(k, Math.min(Math.ceil(refs.length * 0.5), Math.ceil(avgSamplesPerClass * 1.5)));
-          const robustThreshold = Math.ceil(robustK * 0.5);
-          
-          const knn = classifyKNNDetailed(sample.features, refs, robustK);
-          const bestVotes = (knn.counts as Record<string, number>)[knn.label] || 0;
-          
-          if (bestVotes >= robustThreshold) {
-            const predictedClassId = config.classes.find(c => c.label === knn.label)?.id || knn.label;
-            const sampleClassId2 = sample.sourceId || config.classes.find(c => c.label === sample.label)?.id || sample.label;
-            const predictedLabel = config.classes.find(c => c.id === predictedClassId)?.label || knn.label;
-            const isMatch = predictedClassId === sampleClassId2 || predictedLabel === expectedLabel;
-            
-            if (!isMatch) {
-              robustMislabeledCount++;
-            }
-          }
-        });
-      }
-      
+      let crossCheckMislabeledCount = 0;
+      const refDataset = hasTeacher ? config.teacherSamples! : samples;
+
+      samples.forEach((sample, index) => {
+        if (sample.quality?.isBlurry || sample.quality?.isDark) return;
+        if (sample.aiFeedback?.isMisclassified) {
+          crossCheckMislabeledCount++;
+          return;
+        }
+
+        const refs = hasTeacher ? refDataset : samples.filter((_, i) => i !== index);
+        if (refs.length === 0) return;
+
+        const checkK = Math.min(k, refs.length);
+        const knn = classifyKNNDetailed(sample.features, refs, checkK);
+        const matched = resolveClassMatch(knn.label, config.classes);
+        const predictedClassId = matched?.id || knn.label;
+
+        const sampleClassId = sample.sourceId || config.classes.find(c => c.label === sample.label)?.id || sample.label;
+        if (predictedClassId !== sampleClassId) {
+          crossCheckMislabeledCount++;
+        }
+      });
+
+      const totalMislabeledCount = Math.max(feedbackMislabeledCount, crossCheckMislabeledCount);
+
       // Combine golden accuracy with mislabel penalty
-      // Golden accuracy measures model quality; mislabel penalty measures data quality
       const mislabelPenalty = samples.length > 0 
-        ? (robustMislabeledCount / samples.length) 
+        ? (totalMislabeledCount / samples.length) 
         : 0;
         
       let adjustedGoldenAccuracy = 100;

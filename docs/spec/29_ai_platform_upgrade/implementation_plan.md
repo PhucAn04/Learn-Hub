@@ -57,11 +57,6 @@ Hiện tại việc train phụ thuộc vào cấu hình máy tính của trẻ 
   - Thuật toán tối ưu (Adam, SGD).
 - Lưu lại lịch sử các lần train (Experiments) cho cùng một Dataset để so sánh (Lần train nào có accuracy cao hơn).
 
-### 2.4. ✅ Tiền Xử Lý & Tăng Cường Dữ Liệu (Data Augmentation) - *[Tùy Chọn Mở Rộng / Bài Học Nâng Cao]*
-- **Tiến độ**: Đã hoàn thành (Dưới dạng module ngầm). Đã viết sẵn lõi thuật toán tại `client/src/lib/data-augmentation.ts` (thực hiện Jittering và Scaling tọa độ 1D).
-- **Mục đích giáo dục**: Giúp học sinh hiểu về hiện tượng "Học vẹt" (Overfitting) khi lượng dữ liệu ít và cách AI tổng quát hóa (Generalization).
-- Tính năng này được thiết kế **hoàn toàn độc lập** và chưa gắn trực tiếp vào hệ thống hiện tại để tránh làm trẻ bối rối ở những bài học cơ bản. Khi trẻ học đến bài nâng cao, giáo viên chỉ việc gọi hàm `augmentLandmarks()` trước khi đưa dữ liệu vào huấn luyện.
-
 ---
 
 ## Tóm Lược Lộ Trình Triển Khai Đề Xuất (Roadmap)

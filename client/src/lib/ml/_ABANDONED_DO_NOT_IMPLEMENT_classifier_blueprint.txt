@@ -28,7 +28,6 @@ export interface TrainingOptions {
   batchSize?: number;
   learningRate?: number;
   hiddenLayers?: number[]; // Cho phép tùy chỉnh kiến trúc mạng (VD: [128, 64])
-  augmentData?: boolean;   // Liên kết với tính năng Data Augmentation
 }
 
 export interface PredictionResult {

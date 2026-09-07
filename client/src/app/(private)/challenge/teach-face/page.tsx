@@ -14,6 +14,7 @@ import TeachPanel from '@/components/journey/TeachPanel';
 import { GOLDEN_FACE_DATASET } from '@/lib/golden-face-dataset';
 import ReportCard from '@/components/journey/ReportCard';
 import { useModelEvaluation } from '@/hooks/useModelEvaluation';
+import { getStarRatingInfo } from '@/lib/scoring';
 
 const CLASSES = [
   { id: 'class_1', label: 'Vui vẻ (Happy)', emoji: '😀' },
@@ -314,24 +315,36 @@ export default function TeachFacePage() {
                     <span>🎒</span> Trả Lời Câu Hỏi Cuối Cùng
                   </h3>
                   
-                   {/* Score badge — thang 10 điểm thân thiện */}
-                   <div className="bg-indigo-50 border-2 border-indigo-200 rounded-2xl p-4 flex items-center justify-between mb-6">
-                     <div>
-                       <span className="text-xs text-indigo-700 font-bold block">Bạn AI đoán đúng bao nhiêu câu:</span>
-                       <span className="text-lg text-indigo-900 font-black">
-                         {Math.round((submitScore ?? 0) / 10)}/10 điểm
-                       </span>
-                       <span className="text-xs text-indigo-600 font-semibold block mt-0.5">
-                         {(submitScore ?? 0) >= 90 ? 'Xuất sắc! AI đoán gần như đúng hết!' 
-                          : (submitScore ?? 0) >= 70 ? 'Khá tốt! AI chỉ nhầm vài câu thôi.' 
-                          : (submitScore ?? 0) >= 50 ? 'AI đoán đúng khoảng nửa số câu.' 
-                          : 'AI còn nhầm nhiều lắm — cần dạy lại!'}
-                       </span>
-                     </div>
-                     <span className="text-3xl">
-                       {(submitScore ?? 0) >= 90 ? '🦁🌟' : (submitScore ?? 0) >= 70 ? '🐨👍' : '🐣💪'}
-                     </span>
-                   </div>
+                  {/* Score badge — thang 10 điểm thân thiện & số sao đạt được */}
+                  {(() => {
+                    const score = submitScore ?? 0;
+                    const { stars, badgeEmoji, feedbackMessage } = getStarRatingInfo(score);
+                    return (
+                      <div className="bg-indigo-50 border-2 border-indigo-200 rounded-2xl p-4 flex items-center justify-between mb-6">
+                        <div>
+                          <span className="text-xs text-indigo-700 font-bold block">Bạn AI đoán đúng bao nhiêu câu:</span>
+                          <div className="flex items-center gap-2 mt-0.5">
+                            <span className="text-lg text-indigo-900 font-black">
+                              {Math.round(score / 10)}/10 điểm
+                            </span>
+                            <div className="flex items-center gap-0.5">
+                              {Array.from({ length: 5 }, (_, i) => (
+                                <span key={i} className={`text-base ${i < stars ? '' : 'opacity-20'}`}>
+                                  ⭐
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                          <span className="text-xs text-indigo-600 font-semibold block mt-0.5">
+                            {feedbackMessage}
+                          </span>
+                        </div>
+                        <span className="text-3xl">
+                          {badgeEmoji}
+                        </span>
+                      </div>
+                    );
+                  })()}
 
                   {/* Question Section */}
                   <div className="mb-4">

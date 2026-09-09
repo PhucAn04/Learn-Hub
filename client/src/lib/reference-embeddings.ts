@@ -91,11 +91,44 @@ export const LOGICAL_SCENARIOS: string[][] = [
   ['apple', 'banana', 'orange'],
 ];
 
+
+/**
+ * Phân loại đặc trưng 1280D với toàn bộ 26 lớp chuẩn qua xác suất Softmax
+ * Giúp suy luận Top-K lớp có xác suất cao nhất từ mô hình pre-trained 26 lớp
+ */
+export function predictTopClasses(
+  features: number[],
+  topK = 3,
+  temperature = 20.0
+): { key: string; labelVi: string; probability: number }[] {
+  if (!features || features.length === 0) return [];
+  const keys = Object.keys(REFERENCE_CENTROIDS);
+  const logits = keys.map((k) => {
+    const c = REFERENCE_CENTROIDS[k];
+    return c ? cosineSimilarity(features, c) * temperature : -Infinity;
+  });
+  const maxL = Math.max(...logits);
+  const exp = logits.map((l) => Math.exp(l - maxL));
+  const sumExp = exp.reduce((a, b) => a + b, 0) || 1;
+  const probs = exp.map((v) => v / sumExp);
+
+  return keys
+    .map((k, i) => ({
+      key: k,
+      labelVi: CENTROID_LABELS_VI[k] || k,
+      probability: Math.round(probs[i] * 1000) / 10,
+    }))
+    .sort((a, b) => b.probability - a.probability)
+    .slice(0, topK);
+}
+
 /**
  * Kiểm tra xem ảnh tải lên có bị nghi vấn sai nhãn hay không (Universal Zero-Shot Cross-Check)
  * Thuật toán 2 tầng:
  * - Tầng 1: Context Conflict Check (Kiểm tra xung đột trực tiếp với các nhãn khác trong bài tập hiện tại)
  * - Tầng 2: Global Reference Library Check (Kiểm tra đối chiếu toàn bộ 26 centroid chuẩn từ 5 dataset)
+ *   + 1A: Misclassification - Ảnh mang đặc trưng của lớp chuẩn khác trong kho dữ liệu vượt trội hơn nhãn mục tiêu
+ *   + 1B: OOD (Out-of-Distribution) - Ảnh chụp người/mặt/phòng/webcam/vật thể lạ không mang đặc trưng của nhãn đã chọn
  *
  * @param sampleFeatures - Vector đặc trưng 1280D của ảnh cần kiểm tra
  * @param activeClassLabel - Tên nhãn hiện tại (VD: "Sâu đục quả", "Chó", "Mèo"...)
@@ -208,15 +241,32 @@ export function checkMisclassification(
       };
     }
 
-    // 1B. Ảnh lạ (OOD): Khác với tên nhãn VÀ khác với các bộ dataset đã huấn luyện
-    // Ảnh không có đặc trưng của nhãn mục tiêu (sim < 0.54) và không thuộc lớp dataset nào
-    if (simTarget < 0.54) {
+    // 1B. Ảnh lạ (OOD) / Người / Webcam / Đồ vật lạ không thuộc bộ dữ liệu:
+    // Kiểm tra phân phối xác suất Softmax và độ tương đồng đặc thù:
+    // Khi ảnh chụp người, khuôn mặt, góc phòng, bàn ghế hoặc vật thể lạ không thuộc nhãn,
+    // các đặc trưng phân bố phẳng/mờ nhạt trên 26 lớp (xác suất top1 < 16%, xác suất nhãn mục tiêu < 16%),
+    // hoặc độ tương đồng quá mờ nhạt (simTarget < 0.44), hoặc không có sự cách biệt rõ ràng (simTarget < 0.55 && targetProb < 18%).
+    const topProbs = predictTopClasses(sampleFeatures, 3, 20.0);
+    const top1 = topProbs[0];
+    const targetProbEntry = topProbs.find((p) => p.key === targetKey);
+    const targetProb = targetProbEntry ? targetProbEntry.probability : 0;
+
+    // Nếu mô hình nhận diện chính xác nhãn mục tiêu đứng Top 1 với xác suất tự tin (>= 20%)
+    // thì đây chắc chắn là ảnh hợp lệ của nhãn (kể cả khi góc chụp xa hoặc phông nền làm cosine similarity giảm)
+    const isTargetDominant = Boolean(top1 && top1.key === targetKey && targetProb >= 20.0);
+
+    const isFlatDistribution = top1 && top1.probability < 16.0;
+    const isWeakTarget = targetProb < 16.0;
+    const isLowSim = !isTargetDominant && simTarget < 0.44;
+    const isAmbiguousOOD = !isTargetDominant && simTarget < 0.55 && targetProb < 18.0;
+
+    if (!isTargetDominant && (isFlatDistribution || isWeakTarget || isLowSim || isAmbiguousOOD)) {
       return {
         isSuspect: true,
         targetKey,
         targetLabelVi: targetName,
         similarityTarget: simTargetPct,
-        message: `⚠️ Cảnh báo ảnh lạ: Ảnh không khớp với nhãn '${targetName}' (độ tương đồng chỉ ${simTargetPct}%) và không thuộc bộ dữ liệu đã học!`,
+        message: `⚠️ Cảnh báo ảnh lạ: Ảnh không có đặc trưng của nhãn '${targetName}' (độ tương đồng chỉ ${simTargetPct}%) và không thuộc bộ dữ liệu đã học!`,
       };
     }
   }
@@ -244,36 +294,6 @@ export function checkMisclassification(
     targetKey,
     similarityTarget: targetCentroid ? Math.round(Math.max(0, simTarget) * 100) : undefined,
   };
-}
-
-/**
- * Phân loại đặc trưng 1280D với toàn bộ 26 lớp chuẩn qua xác suất Softmax
- * Giúp suy luận Top-K lớp có xác suất cao nhất từ mô hình pre-trained 26 lớp
- */
-export function predictTopClasses(
-  features: number[],
-  topK = 3,
-  temperature = 20.0
-): { key: string; labelVi: string; probability: number }[] {
-  if (!features || features.length === 0) return [];
-  const keys = Object.keys(REFERENCE_CENTROIDS);
-  const logits = keys.map((k) => {
-    const c = REFERENCE_CENTROIDS[k];
-    return c ? cosineSimilarity(features, c) * temperature : -Infinity;
-  });
-  const maxL = Math.max(...logits);
-  const exp = logits.map((l) => Math.exp(l - maxL));
-  const sumExp = exp.reduce((a, b) => a + b, 0) || 1;
-  const probs = exp.map((v) => v / sumExp);
-
-  return keys
-    .map((k, i) => ({
-      key: k,
-      labelVi: CENTROID_LABELS_VI[k] || k,
-      probability: Math.round(probs[i] * 1000) / 10,
-    }))
-    .sort((a, b) => b.probability - a.probability)
-    .slice(0, topK);
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

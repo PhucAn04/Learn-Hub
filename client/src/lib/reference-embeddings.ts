@@ -186,37 +186,57 @@ export function checkMisclassification(
     }
   }
 
-  // Nếu nhãn mục tiêu có centroid và có lớp trong thư viện vượt trội
-  if (targetCentroid && bestGlobalKey && maxSimGlobal > simTarget + deltaThreshold) {
+  // Trường hợp 1: Nhãn mục tiêu là nhãn đã huấn luyện trong dataset (có targetCentroid)
+  if (targetCentroid) {
     const targetName = CENTROID_LABELS_VI[targetKey!] || matchTarget.classMapping?.labelVi || activeClassLabel;
-    const suspectName = CENTROID_LABELS_VI[bestGlobalKey] || bestGlobalKey;
     const simTargetPct = Math.round(Math.max(0, simTarget) * 100);
-    const simGlobalPct = Math.round(Math.max(0, maxSimGlobal) * 100);
 
-    return {
-      isSuspect: true,
-      targetKey,
-      targetLabelVi: targetName,
-      suspectedKey: bestGlobalKey,
-      suspectedLabelVi: suspectName,
-      similarityTarget: simTargetPct,
-      similaritySuspect: simGlobalPct,
-      message: `⚠️ Nghi vấn sai nhãn: Ảnh có đặc trưng giống ${suspectName} (${simGlobalPct}%) hơn là ${targetName} (${simTargetPct}%).`,
-    };
+    // 1A. Ảnh khác với tên nhãn (thuộc một lớp chuẩn khác trong dataset vượt trội)
+    if (bestGlobalKey && maxSimGlobal > simTarget + deltaThreshold) {
+      const suspectName = CENTROID_LABELS_VI[bestGlobalKey] || bestGlobalKey;
+      const simGlobalPct = Math.round(Math.max(0, maxSimGlobal) * 100);
+
+      return {
+        isSuspect: true,
+        targetKey,
+        targetLabelVi: targetName,
+        suspectedKey: bestGlobalKey,
+        suspectedLabelVi: suspectName,
+        similarityTarget: simTargetPct,
+        similaritySuspect: simGlobalPct,
+        message: `⚠️ Nghi vấn sai nhãn: Ảnh có đặc trưng giống ${suspectName} (${simGlobalPct}%) hơn là ${targetName} (${simTargetPct}%).`,
+      };
+    }
+
+    // 1B. Ảnh lạ (OOD): Khác với tên nhãn VÀ khác với các bộ dataset đã huấn luyện
+    // Ảnh không có đặc trưng của nhãn mục tiêu (sim < 0.54) và không thuộc lớp dataset nào
+    if (simTarget < 0.54) {
+      return {
+        isSuspect: true,
+        targetKey,
+        targetLabelVi: targetName,
+        similarityTarget: simTargetPct,
+        message: `⚠️ Cảnh báo ảnh lạ: Ảnh không khớp với nhãn '${targetName}' (độ tương đồng chỉ ${simTargetPct}%) và không thuộc bộ dữ liệu đã học!`,
+      };
+    }
   }
 
-  // Nếu nhãn mục tiêu là nhãn tự do và ảnh khớp rất mạnh (>= 0.78) với một lớp chuẩn đã biết
-  if (!targetCentroid && bestGlobalKey && maxSimGlobal >= 0.78) {
-    const suspectName = CENTROID_LABELS_VI[bestGlobalKey] || bestGlobalKey;
-    const simGlobalPct = Math.round(Math.max(0, maxSimGlobal) * 100);
+  // Trường hợp 2: Tên nhãn rất khác biệt (nhãn tự do ngoài bộ dataset, không có targetCentroid)
+  if (!targetCentroid) {
+    // Nếu ảnh khớp rất mạnh (>= 0.78) với một lớp chuẩn đã biết trong dataset -> cảnh báo nhầm lẫn
+    if (bestGlobalKey && maxSimGlobal >= 0.78) {
+      const suspectName = CENTROID_LABELS_VI[bestGlobalKey] || bestGlobalKey;
+      const simGlobalPct = Math.round(Math.max(0, maxSimGlobal) * 100);
 
-    return {
-      isSuspect: true,
-      suspectedKey: bestGlobalKey,
-      suspectedLabelVi: suspectName,
-      similaritySuspect: simGlobalPct,
-      message: `⚠️ Nghi vấn sai nhãn: Ảnh có đặc trưng giống ${suspectName} (${simGlobalPct}%), vui lòng kiểm tra lại ảnh cho nhãn '${activeClassLabel}'!`,
-    };
+      return {
+        isSuspect: true,
+        suspectedKey: bestGlobalKey,
+        suspectedLabelVi: suspectName,
+        similaritySuspect: simGlobalPct,
+        message: `⚠️ Nghi vấn sai nhãn: Ảnh có đặc trưng giống ${suspectName} (${simGlobalPct}%), vui lòng kiểm tra lại ảnh cho nhãn '${activeClassLabel}'!`,
+      };
+    }
+    // Trường hợp tên nhãn rất khác biệt và ảnh khác với tập dữ liệu đã huấn luyện -> CHẤP NHẬN
   }
 
   return {

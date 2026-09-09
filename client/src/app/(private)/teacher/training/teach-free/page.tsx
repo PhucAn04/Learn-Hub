@@ -197,14 +197,15 @@ export default function TeacherTeachFreePage() {
 
     const activeClassLabel = classes.find((c) => c.id === activeClass)?.label || 'Không tên';
 
-    // Zero-Shot Cross-Check: kiểm tra nghi vấn sai nhãn dựa trên MobileNet Embedding
+    // Zero-Shot Cross-Check: bắt buộc ảnh phải có thể thuộc nhãn đó
+    // Nếu khác tên nhãn hoặc là ảnh lạ (OOD) -> vẫn đưa vào Thư viện ảnh nhưng chỉ cảnh báo viền đỏ ảnh lạ thôi, trên khung tên nhãn thì không tính cộng ảnh vào
     const mischeck = checkMisclassification(
       features,
       activeClassLabel,
       classes.map((c) => c.label)
     );
 
-    // Ảnh chỉ hợp lệ khi đạt chất lượng và không có dấu hiệu sai nhãn
+    // Ảnh chỉ hợp lệ khi đạt chất lượng và không có dấu hiệu sai nhãn / ảnh lạ
     const isValid = isQualityOk && !mischeck.isSuspect;
 
     if (!isQualityOk && quality) {
@@ -213,7 +214,7 @@ export default function TeacherTeachFreePage() {
         : 'Ảnh hơi mờ! Hãy giữ yên camera 📸';
       showToast(`⚠️ ${msg}`);
     } else if (mischeck.isSuspect) {
-      showToast(mischeck.message || '⚠️ Ảnh vừa chụp có dấu hiệu sai nhãn (không tính vào khung mẫu)!');
+      showToast(mischeck.message || '⚠️ Ảnh vừa chụp có dấu hiệu sai nhãn hoặc là ảnh lạ (đã đánh dấu viền đỏ trong Thư viện, không tính vào số mẫu)!');
     }
 
     setSamples((prev) => [
@@ -287,7 +288,8 @@ export default function TeacherTeachFreePage() {
         const features = await extractFeaturesFromBase64(base64);
         if (!features) continue;
 
-        // Zero-Shot Cross-Check: kiểm tra nghi vấn sai nhãn dựa trên MobileNet Embedding
+        // Zero-Shot Cross-Check: bắt buộc ảnh phải có thể thuộc nhãn đó
+        // Nếu khác tên nhãn hoặc là ảnh lạ (OOD) -> vẫn đưa vào Thư viện ảnh nhưng chỉ cảnh báo viền đỏ ảnh lạ thôi, trên khung tên nhãn thì không tính cộng ảnh vào
         const mischeck = checkMisclassification(
           features,
           activeClassLabel,
@@ -323,8 +325,8 @@ export default function TeacherTeachFreePage() {
       if (misclassifiedCount > 0) {
         showToast(
           firstSuspectMsg
-            ? `${firstSuspectMsg} (Ảnh sai nhãn không được tính vào khung mẫu!)`
-            : `⚠️ Phát hiện ${misclassifiedCount} ảnh sai nhãn (không được tính vào khung mẫu)!`
+            ? `${firstSuspectMsg} (Đã thêm vào Thư viện với viền đỏ cảnh báo, không tính vào số mẫu!)`
+            : `⚠️ Phát hiện ${misclassifiedCount} ảnh lạ / sai nhãn (đã thêm vào Thư viện với viền đỏ cảnh báo, không tính vào số mẫu)!`
         );
       } else {
         showToast(`✅ Đã thêm ${validAddedCount} ảnh hợp lệ cho "${activeClassLabel}"!`);
@@ -734,7 +736,7 @@ export default function TeacherTeachFreePage() {
           <div>
             <h1 className="text-4xl font-black text-indigo-900 tracking-tight flex items-center gap-3">
               <Sparkles className="w-10 h-10 text-amber-500" />
-              Phân Loại Ảnh Tự Do
+              Phân Loại Ảnh Tạo Nhãn Tự Do
             </h1>
             <p className="text-lg text-slate-600 font-medium mt-2">
               Tạo nhãn tùy ý (VD: chó/mèo, táo/lê) và huấn luyện AI phân biệt bằng ảnh thực.
@@ -1419,7 +1421,7 @@ export default function TeacherTeachFreePage() {
               </button>
               <h2 className="text-2xl font-black flex items-center gap-2">
                 <Save className="w-7 h-7" />
-                Lưu Template Phân Loại Tự Do
+                Lưu Template Phân Loại Ảnh Tạo Nhãn Tự Do
               </h2>
               <p className="text-indigo-100 mt-2 font-medium">
                 Các nhãn:{' '}

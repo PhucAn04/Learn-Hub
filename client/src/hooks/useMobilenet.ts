@@ -2,7 +2,7 @@
  * useMobilenet — React hook quản lý MobileNet lifecycle
  *
  * Tương tự useMl5Handpose / useMl5BodyPose nhưng cho MobileNet feature extraction.
- * Dùng cho chế độ phân loại ảnh tự do (Free-Label Image Classification).
+ * Dùng cho chế độ phân loại ảnh tạo nhãn tự do (Free-Label Image Classification).
  *
  * Usage:
  *   const { modelStatus, extractFeatures, extractFeaturesFromVideo } = useMobilenet();

@@ -1,8 +1,8 @@
-# Chế Độ Phân Loại Ảnh Tự Do & Gán Nhãn Bằng Hành Động — Implementation Plan
+# Chế Độ Phân Loại Ảnh Tạo Nhãn Tự Do & Gán Nhãn Bằng Hành Động — Implementation Plan
 
 > [!NOTE]
 > **Tính năng**: Hai chế độ huấn luyện AI mới trên trang `/teacher/training`:
-> - **Teach-Free** (`/teacher/training/teach-free`): Phân loại ảnh tự do — tương tự Google Teachable Machine
+> - **Teach-Free** (`/teacher/training/teach-free`): Phân loại ảnh tạo nhãn tự do — tương tự Google Teachable Machine
 > - **Teach-Action** (`/teacher/training/teach-action`): Gán nhãn bằng hành động — ánh xạ cử chỉ → sự vật
 > - Sử dụng **MobileNet v2** thay vì MediaPipe Landmarks, trích xuất vector đặc trưng **1024 chiều** từ ảnh thô
 > - Huấn luyện mạng nơ-ron MLP phân loại (`TfTrainer`) trực tiếp trên trình duyệt
@@ -18,7 +18,7 @@
 | Cử chỉ tay | `teach-gestures` | MediaPipe Hands | 42D | Cố định: `class_1`, `class_2` |
 | Cảm xúc mặt | `teach-face` | MediaPipe Face | 936D (468 × 2) | Cố định: `class_1`→`class_3` |
 | Động tác thể dục | `teach-body` | MediaPipe Pose | 66D (33 × 2) | Tự do (động) |
-| **Phân loại ảnh tự do** | **`teach-free`** | **MobileNet v2** | **1024D** | **Tự do (2–10 nhãn)** |
+| **Phân loại ảnh tạo nhãn tự do** | **`teach-free`** | **MobileNet v2** | **1024D** | **Tự do (2–10 nhãn)** |
 | **Gán nhãn hành động** | **`teach-action`** | **MobileNet v2** | **1024D** | **Tự do (2–10 nhãn)** |
 
 **Vấn đề của MediaPipe:** Các bài truyền thống chỉ nhận diện được **cơ thể người** (tay, mặt, thân) thông qua tọa độ keypoints. Nếu muốn AI phân biệt **chó/mèo**, **táo/lê**, hay bất kỳ vật thể nào — MediaPipe không thể làm được vì nó không phát hiện được vật thể ngoài cơ thể.
@@ -228,7 +228,7 @@ export interface StoredSample {
 
 ---
 
-## 5. Chế Độ 1: Phân Loại Ảnh Tự Do (`teach-free`)
+## 5. Chế Độ 1: Phân Loại Ảnh Tạo Nhãn Tự Do (`teach-free`)
 
 ### 5.1 Tổng quan
 
@@ -679,7 +679,7 @@ flowchart LR
         <div className="w-20 h-20 bg-white rounded-full flex items-center justify-center text-4xl">
           🧪
         </div>
-        <h2 className="text-2xl font-bold">Phân Loại Ảnh Tự Do</h2>
+        <h2 className="text-2xl font-bold">Phân Loại Ảnh Tạo Nhãn Tự Do</h2>
         <p>Tạo nhãn tùy ý và huấn luyện AI phân biệt bằng ảnh thực.</p>
       </div>
     </Link>
@@ -702,7 +702,7 @@ flowchart LR
 |---------|---------|
 | ⭐ Bài Tập Cơ Bản | 4 card: Đếm ngón 1 tay, 2 tay, Cử chỉ, Biểu cảm |
 | 🤸 Bài Tập Thể Dục | 1 card: Tất cả Động tác (teach-body) |
-| 🧪 **Tạo Nhãn Tự Do** | **2 card: Phân Loại Ảnh Tự Do + Gán Nhãn Bằng Hành Động** |
+| 🧪 **Tạo Nhãn Tự Do** | **2 card: Phân Loại Ảnh Tạo Nhãn Tự Do + Gán Nhãn Bằng Hành Động** |
 
 ---
 
@@ -830,7 +830,7 @@ URL.revokeObjectURL(weightsUrl);
 
 ---
 
-#### [NEW] [`teach-free/page.tsx`](file:///d:/HOCTAP/Learn-Hub/client/src/app/(private)/teacher/training/teach-free/page.tsx) — Phân Loại Ảnh Tự Do (1283 dòng)
+#### [NEW] [`teach-free/page.tsx`](file:///d:/HOCTAP/Learn-Hub/client/src/app/(private)/teacher/training/teach-free/page.tsx) — Phân Loại Ảnh Tạo Nhãn Tự Do (1283 dòng)
 
 1. 23 `useState` + 6 `useRef` quản lý toàn bộ vòng đời
 2. **Class management**: `addClass()` (class_free_* prefix), `removeClass()`, `clearClassSamples()`
@@ -973,7 +973,7 @@ flowchart TD
 > - Phân loại 2 lớp cơ bản hoặc đa lớp (3–5 lớp)
 > - Phù hợp lứa tuổi học sinh (chủ đề thân thiện, không nhạy cảm)
 
-### 13.1 Dataset cho `teach-free` — Phân loại ảnh tự do
+### 13.1 Dataset cho `teach-free` — Phân loại ảnh tạo nhãn tự do
 
 #### 🐶🐱 Dataset 1: Chó vs Mèo (Mini)
 

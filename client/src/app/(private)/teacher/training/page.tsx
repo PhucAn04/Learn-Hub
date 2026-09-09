@@ -124,7 +124,7 @@ export default function TeacherTrainingDashboard() {
                   🧪
                 </div>
                 <div>
-                  <h2 className="text-2xl font-bold text-slate-800 mb-2">Phân Loại Ảnh Tự Do</h2>
+                  <h2 className="text-2xl font-bold text-slate-800 mb-2">Phân Loại Ảnh Tạo Nhãn Tự Do</h2>
                   <p className="text-slate-600 font-medium">
                     Tạo nhãn tùy ý và huấn luyện AI phân biệt bằng ảnh thực.
                   </p>

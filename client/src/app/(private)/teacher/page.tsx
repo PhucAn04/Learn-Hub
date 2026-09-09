@@ -24,6 +24,7 @@ interface StudentProgress {
   teachFace: { completed: boolean; bestScore: number };
   teachGestures: { completed: boolean; bestScore: number };
   teachTwoHands: { completed: boolean; bestScore: number };
+  teachFree: { completed: boolean; bestScore: number };
 }
 
 export default function TeacherDashboard() {
@@ -31,14 +32,15 @@ export default function TeacherDashboard() {
     const userProfile = await api.getProfile().catch(() => null);
 
     // Fetch all four challenges
-    const [teachRes, faceRes, gesturesRes, twoHandsRes] = await Promise.all([
+    const [teachRes, faceRes, gesturesRes, twoHandsRes, freeRes] = await Promise.all([
       api.getDatasetsByChallenge('teach').catch(() => [] as DatasetRecord[]),
       api.getDatasetsByChallenge('teach-face').catch(() => [] as DatasetRecord[]),
       api.getDatasetsByChallenge('teach-gestures').catch(() => [] as DatasetRecord[]),
-      api.getDatasetsByChallenge('teach-two-hands').catch(() => [] as DatasetRecord[])
+      api.getDatasetsByChallenge('teach-two-hands').catch(() => [] as DatasetRecord[]),
+      api.getDatasetsByChallenge('teach-free').catch(() => [] as DatasetRecord[])
     ]);
 
-    const allDatasets = [...teachRes, ...faceRes, ...gesturesRes, ...twoHandsRes];
+    const allDatasets = [...teachRes, ...faceRes, ...gesturesRes, ...twoHandsRes, ...freeRes];
     const studentMap = new Map<string, StudentProgress>();
     
     let sumAccuracy = 0;
@@ -53,6 +55,7 @@ export default function TeacherDashboard() {
           teachFace: { completed: false, bestScore: 0 },
           teachGestures: { completed: false, bestScore: 0 },
           teachTwoHands: { completed: false, bestScore: 0 },
+          teachFree: { completed: false, bestScore: 0 },
         });
       }
       
@@ -76,13 +79,16 @@ export default function TeacherDashboard() {
       } else if (ds.challengeType === 'teach-two-hands') {
         st.teachTwoHands.completed = true;
         if (score > st.teachTwoHands.bestScore) st.teachTwoHands.bestScore = score;
+      } else if (ds.challengeType === 'teach-free') {
+        st.teachFree.completed = true;
+        if (score > st.teachFree.bestScore) st.teachFree.bestScore = score;
       }
     });
 
     // Sort students by average score descending
     const sortedStudents = Array.from(studentMap.values()).sort((a, b) => {
-      const avgA = (a.teach.bestScore + a.teachFace.bestScore + a.teachGestures.bestScore + a.teachTwoHands.bestScore) / 4;
-      const avgB = (b.teach.bestScore + b.teachFace.bestScore + b.teachGestures.bestScore + b.teachTwoHands.bestScore) / 4;
+      const avgA = (a.teach.bestScore + a.teachFace.bestScore + a.teachGestures.bestScore + a.teachTwoHands.bestScore + a.teachFree.bestScore) / 5;
+      const avgB = (b.teach.bestScore + b.teachFace.bestScore + b.teachGestures.bestScore + b.teachTwoHands.bestScore + b.teachFree.bestScore) / 5;
       return avgB - avgA;
     });
 

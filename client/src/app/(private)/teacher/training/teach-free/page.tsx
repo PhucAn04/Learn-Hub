@@ -36,9 +36,6 @@ import { TEACHER_DATASET_PRESETS, cleanClassLabel, matchLabelToDataset } from '@
 /** Số mẫu tối thiểu mỗi nhãn để có thể huấn luyện (ít nhất 3 mẫu) */
 const MIN_SAMPLES_PER_CLASS = 3;
 
-/** Mục tiêu số mẫu thu thập mỗi nhãn (10 mẫu) */
-const TARGET_SAMPLES_PER_CLASS = 10;
-
 /** Số nhãn tối đa cho phép */
 const MAX_CLASSES = 10;
 
@@ -353,7 +350,7 @@ export default function TeacherTeachFreePage() {
 
   const handleTrain = async () => {
     if (!canTrain) {
-      showToast(`⚠️ Cần ít nhất ${MIN_SAMPLES_PER_CLASS} ảnh hợp lệ cho mỗi nhãn (mục tiêu ${TARGET_SAMPLES_PER_CLASS} mẫu)!`);
+      showToast(`⚠️ Cần ít nhất ${MIN_SAMPLES_PER_CLASS} ảnh hợp lệ cho mỗi nhãn để huấn luyện!`);
       return;
     }
 
@@ -826,8 +823,7 @@ export default function TeacherTeachFreePage() {
               {classes.map((c) => {
                 const count = classCounts[c.id] || 0;
                 const isActive = activeClass === c.id;
-                const progress = Math.min(100, (count / TARGET_SAMPLES_PER_CLASS) * 100);
-                const hasTarget = count >= TARGET_SAMPLES_PER_CLASS;
+                const progress = Math.min(100, (count / MIN_SAMPLES_PER_CLASS) * 100);
                 const canTrainClass = count >= MIN_SAMPLES_PER_CLASS;
 
                 return (
@@ -854,21 +850,13 @@ export default function TeacherTeachFreePage() {
                         </div>
                         <div
                           className={`text-xs font-bold flex items-center gap-1.5 mt-0.5 ${
-                            hasTarget
-                              ? 'text-emerald-600'
-                              : canTrainClass
-                              ? 'text-indigo-600'
-                              : 'text-amber-500'
+                            canTrainClass ? 'text-emerald-600' : 'text-amber-500'
                           }`}
                         >
-                          <span>{count} / {TARGET_SAMPLES_PER_CLASS} mẫu</span>
-                          {hasTarget ? (
+                          <span>{count} mẫu</span>
+                          {canTrainClass ? (
                             <span className="bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-full text-[10px] font-black">
-                              ✅ Đủ 10 mẫu
-                            </span>
-                          ) : canTrainClass ? (
-                            <span className="bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded-full text-[10px] font-black">
-                              ✅ Có thể dạy (3+)
+                              ✅ Sẵn sàng
                             </span>
                           ) : (
                             <span className="bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full text-[10px] font-black">
@@ -1123,7 +1111,7 @@ export default function TeacherTeachFreePage() {
                 <p className="text-xs text-center text-slate-400 font-semibold">
                   {classes.length < 2
                     ? '📌 Cần thêm ít nhất 2 nhãn để huấn luyện'
-                    : `📌 Cần ít nhất ${MIN_SAMPLES_PER_CLASS} ảnh hợp lệ cho mỗi nhãn (mục tiêu ${TARGET_SAMPLES_PER_CLASS} mẫu)`}
+                    : `📌 Cần ít nhất ${MIN_SAMPLES_PER_CLASS} ảnh hợp lệ cho mỗi nhãn`}
                 </p>
               )}
             </div>
@@ -1389,14 +1377,12 @@ export default function TeacherTeachFreePage() {
                     <div className="text-sm font-black text-slate-800 truncate">{c.label}</div>
                     <div
                       className={`text-2xl font-black ${
-                        (classCounts[c.id] || 0) >= TARGET_SAMPLES_PER_CLASS
+                        (classCounts[c.id] || 0) >= MIN_SAMPLES_PER_CLASS
                           ? 'text-emerald-500'
-                          : (classCounts[c.id] || 0) >= MIN_SAMPLES_PER_CLASS
-                          ? 'text-indigo-600'
                           : 'text-amber-500'
                       }`}
                     >
-                      {classCounts[c.id] || 0} / {TARGET_SAMPLES_PER_CLASS}
+                      {classCounts[c.id] || 0}
                     </div>
                     <div className="text-[10px] text-slate-400 font-bold">ảnh mẫu</div>
                   </div>

@@ -244,6 +244,8 @@ export default function TeacherTeachActionPage() {
       quality = ctx ? assessQuality(cv) : undefined;
       const isQualityOk = !(quality?.isDark || quality?.isBlurry);
 
+      // Zero-Shot Cross-Check: bắt buộc ảnh phải có thể thuộc nhãn đó
+      // Nếu khác tên nhãn hoặc là ảnh lạ (OOD) -> vẫn đưa vào Thư viện ảnh nhưng chỉ cảnh báo viền đỏ ảnh lạ thôi, trên khung tên nhãn thì không tính cộng ảnh vào
       const mischeck = checkMisclassification(
         features,
         activeClassLabel,
@@ -255,9 +257,9 @@ export default function TeacherTeachActionPage() {
       questionableReason = mischeck.message;
 
       if (!isQualityOk && quality) {
-        showToast(`⚠️ ${quality.isDark ? 'Ảnh hơi tối! 🌙' : 'Ảnh hơi mờ! 📸'}`);
+        showToast(`⚠️ ${quality.isDark ? 'Ảnh hơi tối! Hãy tìm chỗ sáng hơn 🌙' : 'Ảnh hơi mờ! Hãy giữ yên camera 📸'}`);
       } else if (mischeck.isSuspect) {
-        showToast(mischeck.message || '⚠️ Ảnh sự vật có dấu hiệu sai nhãn (không tính vào khung mẫu)!');
+        showToast(mischeck.message || '⚠️ Ảnh sự vật có dấu hiệu sai nhãn hoặc là ảnh lạ (đã đánh dấu viền đỏ trong Thư viện, không tính vào số mẫu)!');
       }
     } else {
       // ── BỘ 1: VIDEO / CỬ CHỈ HÀNH ĐỘNG ──
@@ -582,7 +584,8 @@ export default function TeacherTeachActionPage() {
 
         if (type === 'object') {
           // ── BỘ 2: HÌNH ẢNH SỰ VẬT TƯƠNG ĐƯƠNG ──
-          // Đối soát với các bộ dữ liệu sự vật (Dataset 1..5) để phát hiện ảnh sai nhãn
+          // Zero-Shot Cross-Check: bắt buộc ảnh phải có thể thuộc nhãn đó
+          // Nếu khác tên nhãn hoặc là ảnh lạ (OOD) -> vẫn đưa vào Thư viện ảnh nhưng chỉ cảnh báo viền đỏ ảnh lạ thôi, trên khung tên nhãn thì không tính cộng ảnh vào
           const mischeck = checkMisclassification(
             features,
             activeClassLabel,
@@ -626,11 +629,11 @@ export default function TeacherTeachActionPage() {
       if (misclassifiedCount > 0) {
         showToast(
           firstSuspectMsg
-            ? `${firstSuspectMsg} (Ảnh sai nhãn không được tính vào khung mẫu!)`
-            : `⚠️ Phát hiện ${misclassifiedCount} ảnh ${typeLabel} sai nhãn (không tính vào khung mẫu)!`
+            ? `${firstSuspectMsg} (Đã thêm vào Thư viện với viền đỏ cảnh báo, không tính vào số mẫu!)`
+            : `⚠️ Phát hiện ${misclassifiedCount} ảnh ${typeLabel} lạ / sai nhãn (đã thêm vào Thư viện với viền đỏ cảnh báo, không tính vào số mẫu)!`
         );
       } else {
-        showToast(`✅ Đã thêm ${validAddedCount} ảnh ${typeLabel} cho "${activeClassLabel}"!`);
+        showToast(`✅ Đã thêm ${validAddedCount} ảnh ${typeLabel} hợp lệ cho "${activeClassLabel}"!`);
       }
       playClickSound();
     } else {
@@ -854,7 +857,7 @@ export default function TeacherTeachActionPage() {
       for (const c of classes) {
         let maxC = -1;
         // Kiểm tra đối soát với các mẫu thực tế giáo viên đã nạp (webcam/video/upload)
-        const cSamples = samples.filter((s) => s.label === c.label && s.isValid !== false);
+        const cSamples = samples.filter((s) => s.label === c.label && s.isValid !== false && !s.isQuestionable);
         for (const s of cSamples) {
           const sim = cosineSimilarity(features, s.features);
           if (sim > maxC) maxC = sim;

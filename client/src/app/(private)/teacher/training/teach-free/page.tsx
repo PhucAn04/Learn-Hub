@@ -30,9 +30,14 @@ import {
   isCloudinaryConfigured,
 } from '@/lib/cloudinary';
 import { assessQuality } from '@/lib/image-quality';
+import { checkMisclassification, REFERENCE_CENTROIDS } from '@/lib/reference-embeddings';
+import { TEACHER_DATASET_PRESETS, cleanClassLabel, matchLabelToDataset } from '@/lib/dataset-label-mapping';
 
-/** Số mẫu tối thiểu mỗi nhãn để huấn luyện */
-const MIN_SAMPLES_PER_CLASS = 5;
+/** Số mẫu tối thiểu mỗi nhãn để có thể huấn luyện (ít nhất 3 mẫu) */
+const MIN_SAMPLES_PER_CLASS = 3;
+
+/** Mục tiêu số mẫu thu thập mỗi nhãn (10 mẫu) */
+const TARGET_SAMPLES_PER_CLASS = 10;
 
 /** Số nhãn tối đa cho phép */
 const MAX_CLASSES = 10;
@@ -81,7 +86,7 @@ export default function TeacherTeachFreePage() {
 
   // ── Upload để dự đoán (thay vì camera) ────────────────
   const [predictImage, setPredictImage] = useState<string | null>(null);
-  const [predictResult, setPredictResult] = useState<{ label: string; confidence: number; confidences: Record<string, number>; isOOD: boolean } | null>(null);
+  const [predictResult, setPredictResult] = useState<{ label: string; confidence: number; confidences: Record<string, number>; isOOD: boolean; reason?: string } | null>(null);
   const [isPredicting, setIsPredicting] = useState(false);
   const predictFileRef = useRef<HTMLInputElement | null>(null);
 
@@ -115,8 +120,9 @@ export default function TeacherTeachFreePage() {
 
   // ── Class Management ─────────────────────────────────
   const addClass = () => {
-    const label = newLabelInput.trim();
-    if (!label) return;
+    const rawLabel = newLabelInput.trim();
+    if (!rawLabel) return;
+    const label = cleanClassLabel(rawLabel, newEmojiInput) || rawLabel;
     if (classes.length >= MAX_CLASSES) {
       showToast(`⚠️ Tối đa ${MAX_CLASSES} nhãn!`);
       return;
@@ -139,6 +145,22 @@ export default function TeacherTeachFreePage() {
     setSamples((prev) => prev.filter((s) => s.sourceId !== classId));
     setIsTrained(false);
     setActiveClass((prev) => (prev === classId ? classes[0]?.id || '' : prev));
+  };
+
+  const applyPreset = (presetId: string) => {
+    const preset = TEACHER_DATASET_PRESETS.find((p) => p.id === presetId);
+    if (!preset) return;
+    const newClasses = preset.classes.map((c) => ({
+      id: `class_free_${++classIdCounterRef.current}`,
+      label: cleanClassLabel(c.label, c.emoji) || c.label,
+      emoji: c.emoji,
+    }));
+    setClasses(newClasses);
+    setActiveClass(newClasses[0]?.id || '');
+    setSamples([]);
+    setIsTrained(false);
+    playSuccessSound();
+    showToast(`Đã nạp kịch bản: ${preset.title}! Hãy thêm ảnh cho từng nhãn nhé 📸`);
   };
 
   // ── Toast helper ─────────────────────────────────────
@@ -171,16 +193,28 @@ export default function TeacherTeachFreePage() {
 
     // Kiểm tra chất lượng ảnh
     const quality = ctx ? assessQuality(cv) : undefined;
-    const isValid = !(quality?.isDark || quality?.isBlurry);
+    const isQualityOk = !(quality?.isDark || quality?.isBlurry);
 
-    if (!isValid && quality) {
+    const activeClassLabel = classes.find((c) => c.id === activeClass)?.label || 'Không tên';
+
+    // Zero-Shot Cross-Check: kiểm tra nghi vấn sai nhãn dựa trên MobileNet Embedding
+    const mischeck = checkMisclassification(
+      features,
+      activeClassLabel,
+      classes.map((c) => c.label)
+    );
+
+    // Ảnh chỉ hợp lệ khi đạt chất lượng và không có dấu hiệu sai nhãn
+    const isValid = isQualityOk && !mischeck.isSuspect;
+
+    if (!isQualityOk && quality) {
       const msg = quality.isDark
         ? 'Ảnh hơi tối! Hãy tìm chỗ sáng hơn 🌙'
         : 'Ảnh hơi mờ! Hãy giữ yên camera 📸';
       showToast(`⚠️ ${msg}`);
+    } else if (mischeck.isSuspect) {
+      showToast(mischeck.message || '⚠️ Ảnh vừa chụp có dấu hiệu sai nhãn (không tính vào khung mẫu)!');
     }
-
-    const activeClassLabel = classes.find((c) => c.id === activeClass)?.label || 'Không tên';
 
     setSamples((prev) => [
       ...prev,
@@ -192,6 +226,8 @@ export default function TeacherTeachFreePage() {
         thumbnail,
         rawThumbnail: thumbnail,
         isValid,
+        isQuestionable: mischeck.isSuspect,
+        questionableReason: mischeck.message,
         quality,
       },
     ]);
@@ -242,11 +278,28 @@ export default function TeacherTeachFreePage() {
     }
 
     const newSamples: StoredSample[] = [];
+    let misclassifiedCount = 0;
+    let firstSuspectMsg = '';
+
     for (const file of validImageFiles) {
       try {
         const base64 = await fileToBase64(file);
         const features = await extractFeaturesFromBase64(base64);
         if (!features) continue;
+
+        // Zero-Shot Cross-Check: kiểm tra nghi vấn sai nhãn dựa trên MobileNet Embedding
+        const mischeck = checkMisclassification(
+          features,
+          activeClassLabel,
+          classes.map((c) => c.label)
+        );
+
+        if (mischeck.isSuspect) {
+          misclassifiedCount++;
+          if (!firstSuspectMsg) {
+            firstSuspectMsg = mischeck.message || '';
+          }
+        }
 
         newSamples.push({
           id: crypto.randomUUID(),
@@ -255,7 +308,9 @@ export default function TeacherTeachFreePage() {
           features,
           thumbnail: base64,
           rawThumbnail: base64,
-          isValid: true,
+          isValid: !mischeck.isSuspect,
+          isQuestionable: mischeck.isSuspect,
+          questionableReason: mischeck.message,
         });
       } catch (err) {
         console.error('Failed to process uploaded image:', err);
@@ -264,7 +319,16 @@ export default function TeacherTeachFreePage() {
 
     if (newSamples.length > 0) {
       setSamples((prev) => [...prev, ...newSamples]);
-      showToast(`✅ Đã thêm ${newSamples.length} ảnh cho "${activeClassLabel}"!`);
+      const validAddedCount = newSamples.filter((s) => s.isValid !== false && !s.isQuestionable).length;
+      if (misclassifiedCount > 0) {
+        showToast(
+          firstSuspectMsg
+            ? `${firstSuspectMsg} (Ảnh sai nhãn không được tính vào khung mẫu!)`
+            : `⚠️ Phát hiện ${misclassifiedCount} ảnh sai nhãn (không được tính vào khung mẫu)!`
+        );
+      } else {
+        showToast(`✅ Đã thêm ${validAddedCount} ảnh hợp lệ cho "${activeClassLabel}"!`);
+      }
       playClickSound();
     } else {
       showToast('⚠️ Không thể trích xuất đặc trưng từ ảnh đã chọn!');
@@ -279,7 +343,7 @@ export default function TeacherTeachFreePage() {
     if (classes.length < 2) return false;
     return classes.every((c) => {
       const count = samples.filter(
-        (s) => s.isValid !== false && s.sourceId === c.id
+        (s) => s.isValid !== false && !s.isQuestionable && s.sourceId === c.id
       ).length;
       return count >= MIN_SAMPLES_PER_CLASS;
     });
@@ -287,7 +351,7 @@ export default function TeacherTeachFreePage() {
 
   const handleTrain = async () => {
     if (!canTrain) {
-      showToast(`⚠️ Cần ít nhất ${MIN_SAMPLES_PER_CLASS} ảnh hợp lệ cho mỗi nhãn!`);
+      showToast(`⚠️ Cần ít nhất ${MIN_SAMPLES_PER_CLASS} ảnh hợp lệ cho mỗi nhãn (mục tiêu ${TARGET_SAMPLES_PER_CLASS} mẫu)!`);
       return;
     }
 
@@ -297,10 +361,32 @@ export default function TeacherTeachFreePage() {
     playClickSound();
 
     try {
-      const validSamples = samples.filter((s) => s.isValid !== false);
+      const validSamples = samples.filter((s) => s.isValid !== false && !s.isQuestionable);
+
+      // Tích hợp dữ liệu đặc trưng chuẩn từ Thư viện ảnh (Dataset Prototypes) cho các nhãn tương ứng (Chó, Mèo, Bọ Cánh Cứng...)
+      const trainingDatasetSamples: StoredSample[] = [...validSamples];
+      for (const c of classes) {
+        const match = matchLabelToDataset(c.label);
+        if (match.matched && match.classMapping && REFERENCE_CENTROIDS[match.classMapping.key]) {
+          const centroid = REFERENCE_CENTROIDS[match.classMapping.key];
+          for (let i = 0; i < 10; i++) {
+            const noisy = i === 0 ? centroid : centroid.map((v) => v + (Math.random() - 0.5) * 0.04);
+            const norm = Math.sqrt(noisy.reduce((sum, v) => sum + v * v, 0)) || 1;
+            trainingDatasetSamples.push({
+              id: `proto_${c.id}_${i}`,
+              label: c.label,
+              sourceId: c.id,
+              features: noisy.map((v) => v / norm),
+              thumbnail: '',
+              isValid: true,
+            });
+          }
+        }
+      }
+
       if (trainerRef.current) {
         await trainerRef.current.train(
-          validSamples,
+          trainingDatasetSamples,
           (_epoch, progress, loss, acc) => {
             setTrainingProgress(progress);
             setTrainingLogs((prev) => [...prev, { epoch: _epoch, loss, acc }]);
@@ -396,32 +482,125 @@ export default function TeacherTeachFreePage() {
         return;
       }
 
+      // 1. Chạy qua Mạng Nơ-ron (NN) đã học
       const result = await trainerRef.current.predict(features);
-      const validSamples = samples.filter((s) => s.isValid !== false);
 
-      // OOD check
-      const isLowConf = result.confidence < OOD_CONFIDENCE_THRESHOLD;
-      let isFar = false;
-      if (validSamples.length > 0) {
-        let minDist = Infinity;
-        for (const s of validSamples) {
-          let dist = 0;
-          for (let i = 0; i < features.length && i < s.features.length; i++) {
-            const d = features[i] - s.features[i];
-            dist += d * d;
-          }
-          dist = Math.sqrt(dist);
-          if (dist < minDist) minDist = dist;
+      // 2. Thu thập các key centroid của các nhãn đang dạy (Active Classes)
+      const activeCentroidKeys = new Set<string>();
+      const activeClassMap: Record<string, string> = {};
+      for (const c of classes) {
+        const match = matchLabelToDataset(c.label);
+        if (match.matched && match.classMapping && REFERENCE_CENTROIDS[match.classMapping.key]) {
+          activeCentroidKeys.add(match.classMapping.key);
+          activeClassMap[c.label] = match.classMapping.key;
         }
-        isFar = minDist > OOD_MAX_KNN_DISTANCE;
       }
 
-      setPredictResult({
-        label: (isLowConf || isFar) ? 'Không nhận diện được' : result.label,
-        confidence: result.confidence,
-        confidences: result.confidences || {},
-        isOOD: isLowConf || isFar,
-      });
+      // 3. Tính độ tương đồng với từng lớp đang dạy (Active Classes)
+      let maxActiveSim = -1;
+      let matchedLabel: string | null = null;
+      const classSims: Record<string, number> = {};
+
+      for (const c of classes) {
+        let maxC = -1;
+        // Kiểm tra đối soát với các mẫu thực tế giáo viên đã nạp
+        const cSamples = samples.filter((s) => s.label === c.label && s.isValid !== false);
+        for (const s of cSamples) {
+          let dot = 0;
+          for (let i = 0; i < features.length && i < s.features.length; i++) dot += features[i] * s.features[i];
+          if (dot > maxC) maxC = dot;
+        }
+        // Kiểm tra đối soát với centroid chuẩn của nhãn đó (nếu có trong dataset)
+        const cKey = activeClassMap[c.label];
+        if (cKey && REFERENCE_CENTROIDS[cKey]) {
+          const centroid = REFERENCE_CENTROIDS[cKey];
+          let dot = 0;
+          for (let i = 0; i < features.length && i < centroid.length; i++) dot += features[i] * centroid[i];
+          if (dot > maxC) maxC = dot;
+        }
+        classSims[c.label] = maxC;
+        if (maxC > maxActiveSim) {
+          maxActiveSim = maxC;
+          matchedLabel = c.label;
+        }
+      }
+
+      // Sắp xếp điểm tương đồng các lớp đang dạy để tính khoảng cách phân biệt (margin)
+      const sortedSims = Object.values(classSims).sort((a, b) => b - a);
+      const runnerUpSim = sortedSims.length > 1 ? sortedSims[1] : 0;
+      const margin = maxActiveSim - runnerUpSim;
+
+      // 4. Đối soát với TẤT CẢ các lớp centroid KHÁC (Inactive Centroids) trong toàn bộ 5 dataset
+      let maxOtherCentroidSim = -1;
+      let bestOtherKey = '';
+      for (const [key, centroidVec] of Object.entries(REFERENCE_CENTROIDS)) {
+        if (!activeCentroidKeys.has(key)) {
+          let dot = 0;
+          for (let i = 0; i < features.length && i < centroidVec.length; i++) dot += features[i] * centroidVec[i];
+          if (dot > maxOtherCentroidSim) {
+            maxOtherCentroidSim = dot;
+            bestOtherKey = key;
+          }
+        }
+      }
+
+      // 5. Các quy tắc REJECT OOD (Loại trừ ảnh lạ):
+      // A. Ảnh thuộc về một lớp sự vật khác ngoài các lớp đang dạy (VD: tải táo/lá/bọ khi chỉ dạy chó/mèo)
+      const belongsToOtherDatasetClass =
+        maxOtherCentroidSim > maxActiveSim + 0.03 ||
+        (maxOtherCentroidSim >= 0.65 && maxOtherCentroidSim > maxActiveSim);
+
+      // B. Ảnh hoàn toàn không giống bất kỳ mẫu nào đã dạy (độ tương đồng tuyệt đối quá thấp)
+      const lowAbsoluteSimilarity = maxActiveSim < 0.54;
+
+      // C. Độ cách biệt quá mập mờ giữa các lớp (ảnh noise, phông nền mờ, vật thể lạ không định hình)
+      const ambiguousLowMargin = classes.length >= 2 && maxActiveSim < 0.65 && margin < 0.035;
+
+      // D. Mạng nơ-ron không đủ tự tin
+      const lowConfidence = result.confidence < 60 && maxActiveSim < 0.60;
+
+      const isOOD = belongsToOtherDatasetClass || lowAbsoluteSimilarity || ambiguousLowMargin || lowConfidence;
+
+      if (isOOD) {
+        let reason = 'Ảnh không giống các mẫu trong Thư viện ảnh hoặc bộ dữ liệu đã dạy.';
+        if (belongsToOtherDatasetClass) {
+          reason = `Ảnh có dấu hiệu thuộc nhóm đối tượng khác (${bestOtherKey}) nằm ngoài các nhãn đang dạy.`;
+        } else if (lowAbsoluteSimilarity) {
+          reason = 'Độ tương đồng quá thấp, ảnh không nằm trong bộ dữ liệu hoặc Thư viện ảnh.';
+        } else if (ambiguousLowMargin) {
+          reason = 'Không phân biệt rõ ràng với các nhãn đã dạy (ảnh mờ hoặc vật thể không xác định).';
+        }
+
+        setPredictResult({
+          label: 'Không nhận diện được',
+          confidence: 0,
+          confidences: {},
+          isOOD: true,
+          reason,
+        });
+      } else {
+        // Ảnh hợp lệ: Tính toán phân bổ tự tin chính xác
+        const targetLabel = matchedLabel || result.label;
+        const confidences: Record<string, number> = {};
+        let sumExp = 0;
+        for (const c of classes) {
+          const s = Math.max(0.1, classSims[c.label] || 0.2);
+          const expVal = Math.exp((s - maxActiveSim) * 10);
+          confidences[c.label] = expVal;
+          sumExp += expVal;
+        }
+        for (const c of classes) {
+          confidences[c.label] = Number(((confidences[c.label] || 0) / sumExp).toFixed(2));
+        }
+        const topConfidence = Math.min(100, Math.max(result.confidence, Math.round((confidences[targetLabel] || 0.85) * 100)));
+
+        setPredictResult({
+          label: targetLabel,
+          confidence: topConfidence,
+          confidences,
+          isOOD: false,
+        });
+      }
     } catch {
       showToast('❌ Lỗi khi dự đoán ảnh.');
     } finally {
@@ -432,7 +611,7 @@ export default function TeacherTeachFreePage() {
 
   // ── Self-Evaluation (Leave-one-out KNN) ──────────────
   const selfAccuracy = useMemo(() => {
-    const validSamples = samples.filter((s) => s.isValid !== false);
+    const validSamples = samples.filter((s) => s.isValid !== false && !s.isQuestionable);
     if (validSamples.length < 4) return null;
 
     let correct = 0;
@@ -461,11 +640,11 @@ export default function TeacherTeachFreePage() {
     try {
       setIsSubmitting(true);
 
-      let processedSamples = samples;
+      let processedSamples = samples.filter((s) => s.isValid !== false && !s.isQuestionable);
       if (isCloudinaryConfigured()) {
         setUploadProgress('Đang tải ảnh lên Cloud...');
         processedSamples = await uploadSamplesToCloudinary(
-          samples,
+          processedSamples,
           'teach-free',
           (uploaded, total) => {
             setUploadProgress(`Tải ảnh ${uploaded}/${total}...`);
@@ -526,12 +705,12 @@ export default function TeacherTeachFreePage() {
     setIsTrained(false);
   };
 
-  // ── Sample counts per class ──────────────────────────
+  // ── Sample counts per class (chỉ tính ảnh hợp lệ, không tính ảnh sai nhãn) ──
   const classCounts = useMemo(() => {
     const counts: Record<string, number> = {};
     classes.forEach((c) => {
       counts[c.id] = samples.filter(
-        (s) => s.isValid !== false && s.sourceId === c.id
+        (s) => s.isValid !== false && !s.isQuestionable && s.sourceId === c.id
       ).length;
     });
     return counts;
@@ -567,9 +746,44 @@ export default function TeacherTeachFreePage() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           {/* ══ LEFT: Label Management & Sample Gallery ══ */}
           <div className="bg-white rounded-3xl p-6 shadow-xl border-4 border-indigo-100 flex flex-col">
-            <h3 className="font-black text-xl text-indigo-900 mb-4 flex items-center gap-2">
-              <span className="text-2xl">🏷️</span> Quản Lý Nhãn
-            </h3>
+            {/* Quick Presets & Flexible 3-Label Classification */}
+            <div className="mb-4 bg-slate-50 border-2 border-dashed border-indigo-200 rounded-2xl p-3">
+              <div className="flex items-center justify-between mb-1.5">
+                <div className="text-[11px] font-black text-indigo-800 uppercase tracking-wider flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                  Gợi ý mẫu nhanh 1-Click (hoặc tự do tạo 3 nhãn tùy ý)
+                </div>
+              </div>
+              <p className="text-[11px] text-slate-500 mb-2 leading-relaxed">
+                Tự do tùy biến bất kỳ 3 nhãn nào. AI sẽ tự động đối soát thông minh giữa các nhãn đã chọn!
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => applyPreset('agri-doctor')}
+                  className="text-xs font-bold px-2.5 py-1.5 rounded-xl bg-emerald-50 text-emerald-800 border border-emerald-300 hover:bg-emerald-100 hover:scale-105 active:scale-95 transition-all shadow-sm flex items-center gap-1"
+                  title="Plant_Village + Pest_Dataset: Lá Khỏe, Lá Bệnh, Bọ Cánh Cứng"
+                >
+                  🌿 Bác sĩ Nông nghiệp (3 nhãn)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => applyPreset('animal-world')}
+                  className="text-xs font-bold px-2.5 py-1.5 rounded-xl bg-amber-50 text-amber-800 border border-amber-300 hover:bg-amber-100 hover:scale-105 active:scale-95 transition-all shadow-sm flex items-center gap-1"
+                  title="Cats_And_Dogs + Pest_Dataset: Chó, Mèo, Bọ Cánh Cứng"
+                >
+                  🐾 Thế giới Động vật (3 nhãn)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => applyPreset('fruit-garden')}
+                  className="text-xs font-bold px-2.5 py-1.5 rounded-xl bg-rose-50 text-rose-800 border border-rose-300 hover:bg-rose-100 hover:scale-105 active:scale-95 transition-all shadow-sm flex items-center gap-1"
+                  title="Fruit_Classification_10_Class: Táo, Chuối, Cam"
+                >
+                  🍎 Vườn Trái Cây (3 nhãn)
+                </button>
+              </div>
+            </div>
 
             {/* Add new label */}
             <div className="mb-4 space-y-2">
@@ -610,7 +824,9 @@ export default function TeacherTeachFreePage() {
               {classes.map((c) => {
                 const count = classCounts[c.id] || 0;
                 const isActive = activeClass === c.id;
-                const progress = Math.min(100, (count / MIN_SAMPLES_PER_CLASS) * 100);
+                const progress = Math.min(100, (count / TARGET_SAMPLES_PER_CLASS) * 100);
+                const hasTarget = count >= TARGET_SAMPLES_PER_CLASS;
+                const canTrainClass = count >= MIN_SAMPLES_PER_CLASS;
 
                 return (
                   <button
@@ -635,12 +851,28 @@ export default function TeacherTeachFreePage() {
                           {c.emoji} {c.label}
                         </div>
                         <div
-                          className={`text-xs font-bold ${
-                            count >= MIN_SAMPLES_PER_CLASS ? 'text-emerald-500' : 'text-amber-500'
+                          className={`text-xs font-bold flex items-center gap-1.5 mt-0.5 ${
+                            hasTarget
+                              ? 'text-emerald-600'
+                              : canTrainClass
+                              ? 'text-indigo-600'
+                              : 'text-amber-500'
                           }`}
                         >
-                          {count} / {MIN_SAMPLES_PER_CLASS} mẫu
-                          {count >= MIN_SAMPLES_PER_CLASS && ' ✅'}
+                          <span>{count} / {TARGET_SAMPLES_PER_CLASS} mẫu</span>
+                          {hasTarget ? (
+                            <span className="bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-full text-[10px] font-black">
+                              ✅ Đủ 10 mẫu
+                            </span>
+                          ) : canTrainClass ? (
+                            <span className="bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded-full text-[10px] font-black">
+                              ✅ Có thể dạy (3+)
+                            </span>
+                          ) : (
+                            <span className="bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full text-[10px] font-black">
+                              ⚠️ Thiếu {MIN_SAMPLES_PER_CLASS - count}
+                            </span>
+                          )}
                         </div>
                       </div>
                       <div className="flex items-center gap-1">
@@ -889,7 +1121,7 @@ export default function TeacherTeachFreePage() {
                 <p className="text-xs text-center text-slate-400 font-semibold">
                   {classes.length < 2
                     ? '📌 Cần thêm ít nhất 2 nhãn để huấn luyện'
-                    : `📌 Cần ít nhất ${MIN_SAMPLES_PER_CLASS} ảnh hợp lệ cho mỗi nhãn`}
+                    : `📌 Cần ít nhất ${MIN_SAMPLES_PER_CLASS} ảnh hợp lệ cho mỗi nhãn (mục tiêu ${TARGET_SAMPLES_PER_CLASS} mẫu)`}
                 </p>
               )}
             </div>
@@ -960,8 +1192,8 @@ export default function TeacherTeachFreePage() {
                     </div>
                   </div>
 
-                  {/* Per-class confidence bars */}
-                  {Object.keys(confidences).length > 0 && (
+                  {/* Per-class confidence bars — CHỈ HIỆN KHI PHÁT HIỆN ĐỐI TƯỢNG TRONG THƯ VIỆN */}
+                  {confidence >= 50 && Object.keys(confidences).length > 0 && (
                     <div className="mt-4 space-y-2">
                       {classes.map((c) => {
                         const pct = Math.round((confidences[c.label] || 0) * 100);
@@ -1086,11 +1318,11 @@ export default function TeacherTeachFreePage() {
                       <div className="flex-1">
                         {predictResult.isOOD ? (
                           <div className="bg-red-50 border-2 border-red-200 rounded-xl p-3">
-                            <p className="font-bold text-red-700 text-sm flex items-center gap-1">
-                              🚫 Không nhận diện được
+                            <p className="font-bold text-red-700 text-sm flex items-center gap-1.5">
+                              🚫 Không nhận diện được (Ảnh lạ)
                             </p>
-                            <p className="text-[11px] text-red-500 mt-1">
-                              Ảnh này không giống với các nhãn đã học.
+                            <p className="text-[11px] text-red-600 mt-1 font-medium leading-relaxed">
+                              {predictResult.reason || 'Ảnh này không giống với các nhãn đã học hoặc nằm ngoài bộ dữ liệu.'}
                             </p>
                           </div>
                         ) : (
@@ -1108,8 +1340,8 @@ export default function TeacherTeachFreePage() {
                       </div>
                     </div>
 
-                    {/* Confidence bars */}
-                    {Object.keys(predictResult.confidences).length > 0 && (
+                    {/* Confidence bars — chỉ hiện khi ảnh thuộc Thư viện */}
+                    {!predictResult.isOOD && Object.keys(predictResult.confidences).length > 0 && (
                       <div className="bg-slate-50 rounded-xl p-3 space-y-1.5">
                         {classes.map((c) => {
                           const pct = Math.round((predictResult.confidences[c.label] || 0) * 100);
@@ -1155,12 +1387,14 @@ export default function TeacherTeachFreePage() {
                     <div className="text-sm font-black text-slate-800 truncate">{c.label}</div>
                     <div
                       className={`text-2xl font-black ${
-                        (classCounts[c.id] || 0) >= MIN_SAMPLES_PER_CLASS
+                        (classCounts[c.id] || 0) >= TARGET_SAMPLES_PER_CLASS
                           ? 'text-emerald-500'
+                          : (classCounts[c.id] || 0) >= MIN_SAMPLES_PER_CLASS
+                          ? 'text-indigo-600'
                           : 'text-amber-500'
                       }`}
                     >
-                      {classCounts[c.id] || 0}
+                      {classCounts[c.id] || 0} / {TARGET_SAMPLES_PER_CLASS}
                     </div>
                     <div className="text-[10px] text-slate-400 font-bold">ảnh mẫu</div>
                   </div>
@@ -1204,9 +1438,9 @@ export default function TeacherTeachFreePage() {
                         <span className="font-black text-slate-800 ml-2">{classes.length}</span>
                       </div>
                       <div>
-                        <span className="text-slate-500 font-semibold">Tổng ảnh:</span>
+                        <span className="text-slate-500 font-semibold">Tổng ảnh hợp lệ:</span>
                         <span className="font-black text-slate-800 ml-2">
-                          {samples.filter((s) => s.isValid !== false).length}
+                          {samples.filter((s) => s.isValid !== false && !s.isQuestionable).length}
                         </span>
                       </div>
                       {selfAccuracy !== null && (

@@ -25,7 +25,7 @@ const MOBILENET_URL =
 const INPUT_SIZE = 224;
 
 /** Số chiều feature vector output */
-export const MOBILENET_FEATURE_DIM = 1024;
+export const MOBILENET_FEATURE_DIM = 1280;
 
 class MobileNetExtractor {
   private static instance: MobileNetExtractor | null = null;

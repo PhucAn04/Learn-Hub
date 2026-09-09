@@ -311,7 +311,60 @@ flowchart TD
     K --> L
 ```
 
-### 5.6 Huấn luyện mô hình
+### 5.6 Kiểm Tra & Cảnh Báo Sai Nhãn Bằng AI Reference Embeddings (Zero-Shot Cross-Check)
+
+#### Vấn đề:
+Khi Giáo viên hoặc Học sinh thu thập dữ liệu (chụp camera hoặc tải file ảnh lên):
+- Rất dễ xảy ra tình trạng chọn nhãn `Mèo 🐱` nhưng lại vô tình tải ảnh `Chó 🐶`.
+- **Tại sao KHÔNG kiểm tra bằng tên file / thư mục?** Tên file ảnh thực tế thường là dãy ký tự ngẫu nhiên hoặc mã máy ảnh tự sinh (VD: `IMG_20260908_131500.jpg`, `download (3).png`, `7a8b9c.jpg`, `camera_frame.png`...). Việc lọc theo tên file sẽ **hoàn toàn vô hiệu** khi tên file không chứa từ khóa ngữ nghĩa.
+
+#### Giải pháp: Zero-Shot Cross-Check bằng AI Reference Embeddings
+Sử dụng chính vector đặc trưng **1024 chiều** từ MobileNet v2 để phân tích nội dung thị giác thực tế của ảnh thông qua không gian embedding:
+
+1. **Bộ Vector Đặc Trưng Chuẩn (Reference Centroid Vectors):**
+   - Tính toán trước các vector trọng tâm (Centroid) $C_k \in \mathbb{R}^{1024}$ đại diện cho các lớp phổ biến từ 5 bộ dataset kiểm thử chuẩn:
+     - Chó (`dog`) vs Mèo (`cat`)
+     - Các loại trái cây: Táo (`apple`), Chuối (`banana`), Cam (`orange`), Bơ (`avocado`), Dưa hấu (`watermelon`)...
+     - Côn trùng: Bọ cánh cứng (`beetle`), Châu chấu (`grasshopper`), Rệp (`aphids`), Sâu keo (`armyworm`)...
+     - Bệnh lá cây: Lá khỏe mạnh (`healthy_leaf`) vs Lá có đốm / bị bệnh (`diseased_leaf`)
+     - Cử chỉ bàn tay: Búa (`rock`), Bao (`paper`), Kéo (`scissors`)
+   - Lưu trữ tại [`reference-embeddings.ts`](file:///d:/HOCTAP/Learn-Hub/client/src/lib/reference-embeddings.ts) kết hợp từ điển song ngữ [`dataset-label-mapping.ts`](file:///d:/HOCTAP/Learn-Hub/client/src/lib/dataset-label-mapping.ts).
+
+2. **Cơ chế phát hiện sai nhãn thời gian thực khi tải ảnh:**
+   ```
+   Ảnh tải lên (bất kể tên file là gì)
+     → MobileNet v2 trích xuất vector F_img (1024D, L2-normalized)
+     → matchLabelToDataset(activeClassLabel) xác định lớp mục tiêu (Target Class: C_target)
+     → Tính Cosine Similarity / Khoảng cách L2:
+         sim_target = dot(F_img, C_target)
+         sim_candidates = [dot(F_img, C_other) for C_other in ReferenceSet]
+     → Nếu tồn tại C_candidate có sim_candidate > sim_target + DELTA_THRESHOLD (hoặc sim_target quá thấp):
+         ⚠️ KÍCH HOẠT CẢNH BÁO SAI NHÃN TỨC THÌ!
+   ```
+
+3. **Giao diện cảnh báo (Misclassification Feedback Toast / Modal):**
+   - Thông báo tức thì: *"⚠️ Phát hiện nghi vấn sai nhãn: Ảnh tải lên có đặc trưng giống **Chó 🐶** (89%) hơn là **Mèo 🐱** (41%). Thầy cô/Bé kiểm tra lại nhé!"*
+   - Cung cấp 2 lựa chọn:
+     - **[Loại bỏ ảnh này]** (Khuyên dùng): Loại bỏ ngay ảnh nghi vấn khỏi tập mẫu.
+     - **[Vẫn giữ lại]**: Cho phép giữ lại nếu người dùng chủ ý dạy biến thể đặc biệt.
+
+```mermaid
+flowchart TD
+    A["Tải ảnh lên\n(Bất kể tên file: IMG_8391.jpg)"] --> B["MobileNet v2 trích xuất\nVector đặc trưng F_img (1024D)"]
+    B --> C["Xác định lớp chuẩn mục tiêu\nTarget: C_target (VD: Mèo)"]
+    B --> D["So sánh Cosine Similarity\nvới các Reference Centroids"]
+    
+    C & D --> E{"sim(F_img, C_other) > \nsim(F_img, C_target) + 0.25?"}
+    
+    E -->|"Có (Phát hiện ảnh Chó)"| F["⚠️ CẢNH BÁO SAI NHÃN TỨC THÌ\n'Ảnh này giống Chó (89%) hơn Mèo (41%)'"]
+    F --> G{"Người dùng chọn"}
+    G -->|"Bỏ qua (Khuyên dùng)"| H["❌ Loại bỏ ảnh khỏi nhãn"]
+    G -->|"Vẫn thêm"| I["⚠️ Đánh dấu cờ nghi vấn\nvào sample"]
+    
+    E -->|"Không (Ảnh hợp lệ)"| J["✅ Chấp nhận ảnh hợp lệ\nThêm vào samples[]"]
+```
+
+### 5.7 Huấn luyện mô hình
 
 ```typescript
 const handleTrain = async () => {
@@ -346,7 +399,7 @@ Output Layer: N units, Softmax activation (N = số nhãn)
 Optimizer: Adam | Loss: Categorical Cross-entropy
 ```
 
-### 5.7 Dự đoán thời gian thực — OOD Detection kép
+### 5.8 Dự đoán thời gian thực — OOD Detection kép
 
 ```typescript
 // useEffect prediction loop — chạy bằng requestAnimationFrame
@@ -417,7 +470,7 @@ flowchart TD
 > - **Chỉ KNN distance:** Nếu model train kém (underfitting), KNN distance có thể thấp nhưng prediction sai.
 > - **Kết hợp cả hai:** Chỉ accept khi model tự tin VÀ ảnh gần với dữ liệu đã học → giảm false positive đáng kể.
 
-### 5.8 Self-Evaluation — Leave-One-Out KNN
+### 5.9 Self-Evaluation — Leave-One-Out KNN
 
 ```typescript
 const selfAccuracy = useMemo(() => {
@@ -473,55 +526,57 @@ const addClass = () => {
 > - `class_free_*`: Teach-free
 > - `class_action_*`: Teach-action
 
-### 6.3 Thu thập dữ liệu phân đôi (Dual-Modality)
+### 6.3 Thu thập dữ liệu phân đôi & Thu Thập Bằng Video (Dual-Modality with Video Frame Slicing)
+
+Chế độ `teach-action` hỗ trợ đầy đủ cả **hình ảnh** và **video** để tạo ra trải nghiệm liên kết hành động - sự vật chân thực nhất:
 
 ```typescript
-// captureSample nhận tham số type
+// 1. Tải Video lên (MP4, WebM, MOV) -> Cắt 8 khung hình đại diện
+const handleVideoUpload = async (e) => {
+  const frames = await extractFramesFromVideoFile(videoFile, 8);
+  for (const frame of frames) {
+    const features = extractFeatures(frame.canvas);
+    // Nạp frame vào mẫu gesture
+  }
+};
+
+// 2. Quay Video trực tiếp từ webcam (3s đếm ngược chuẩn bị + 10s quay clip)
+const startLiveVideoRecording = () => {
+  // Đếm ngược 3... 2... 1...
+  // Bắt đầu quay trong đúng 10 giây, mỗi 500ms cắt 1 frame -> 20 frames đại diện
+  // Trích xuất đặc trưng MobileNet và nạp vào Bộ 1: Video / Cử chỉ hành động
+  // (Không đối soát với dataset sự vật Dataset 1..5 và không chặn frame vì chuyển động quay)
+};
+
+// 3. Tải ảnh hoặc Chụp liên tục (Hold-to-record)
 const captureSample = (type: 'gesture' | 'object') => {
-  // ... MobileNet extraction ...
-  
-  setSamples((prev) => [
-    ...prev,
-    {
-      id: crypto.randomUUID(),
-      label: activeClassLabel,
-      sourceId: activeClass,
-      sourceType: type,       // ← Phân loại nguồn gốc
-      features,
-      thumbnail,
-      rawThumbnail: thumbnail,
-      isValid,
-      quality,
-    },
-  ]);
-};
-
-// handleFileUpload cũng nhận type
-const handleFileUpload = async (e, type: 'gesture' | 'object') => {
-  // ...
-  setSamples((prev) => [...prev, {
-    ...newSample,
-    sourceType: type,  // ← Upload cũng ghi sourceType
-  }]);
+  // - type === 'gesture': Dữ liệu hành động riêng của giáo viên -> Chấp nhận làm mẫu cử chỉ
+  // - type === 'object': Dữ liệu sự vật tĩnh -> Kiểm tra chất lượng & đối soát với Dataset 1..5
 };
 ```
 
-**Giao diện thu thập được chia đôi:**
+> [!IMPORTANT]
+> **Phân định ranh giới kiểm tra dữ liệu giữa 2 Bộ (Validation Separation of Concerns):**
+> 1. **🎬 BỘ 1 (Video / Cử chỉ hành động)**: Chỉ thu video clip và ảnh động tác/cử chỉ của giáo viên (hoặc cử chỉ Dataset 6: Kéo Búa Bao). Dữ liệu này **hoàn toàn độc lập với các bộ dataset sự vật Dataset 1..5** (Chó vs Mèo, Lá Táo, Lá Cà Chua, Côn Trùng, Trái Cây). Hệ thống **không so sánh frame video của Bộ 1 với ảnh sự vật** và không báo lỗi sai nhãn hay ảnh mờ chuyển động khi quay video.
+> 2. **🖼️ BỘ 2 (Hình ảnh sự vật tương đương)**: Nơi giáo viên tải ảnh con vật, lá cây, hoa quả, côn trùng. **Tại đây hệ thống chạy cơ chế Zero-Shot Cross-Check đối soát với Dataset 1..5** để phát hiện nếu giáo viên tải nhầm ảnh chó vào nhãn mèo, hoặc ảnh cam vào nhãn táo.
+> 3. **🎭 Camera sau khi huấn luyện (Live Playground)**: Camera nhận diện đúng cử chỉ hành động của người dùng (từ Bộ 1) $\rightarrow$ Ngay lập tức hiển thị Khung nổi bật (Hero Showcase Card) của hình ảnh sự vật tương đương (từ Bộ 2)!
+
+**Giao diện thu thập được phân đôi rõ ràng thành 2 Bộ:**
 
 ```
-┌──────────────────────────────────────────┐
-│ 🏷️ Nhãn: Chó 🐶                          │
-│                                          │
-│ ┌─────────────────┐ ┌──────────────────┐ │
-│ │ 🖼️ Ảnh sự vật    │ │ 👋 Ảnh cử chỉ tay │ │
-│ │ (Amber theme)   │ │ (Emerald theme)  │ │
-│ │                 │ │                  │ │
-│ │ [Tải ảnh lên]   │ │ [Tải ảnh lên]    │ │
-│ │ [Giữ để chụp]   │ │ [Giữ để chụp]    │ │
-│ │                 │ │                  │ │
-│ │ Gallery: 🐕🐕🐕 │ │ Gallery: ✋✋✋   │ │
-│ └─────────────────┘ └──────────────────┘ │
-└──────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🏷️ Nhãn: ✊ BÚA (ĐÁ)                                                   │
+│                                                                        │
+│ ┌──────────────────────────────────┐ ┌───────────────────────────────┐ │
+│ │ 🎬 BỘ 1: VIDEO / CỬ CHỈ HÀNH ĐỘNG│ │ 🖼️ BỘ 2: HÌNH ẢNH SỰ VẬT     │ │
+│ │ (Emerald theme)                  │ │ (Amber theme)                 │ │
+│ │                                  │ │                               │ │
+│ │ [Quay Video]       [🎬 Tải Video]│ │ [🖼️ Tải Ảnh Lên] [📸 Giữ Chụp]│ │
+│ │ [📷 Tải Ảnh Lên]   [📸 Giữ Chụp] │ │                               │ │
+│ │                                  │ │                               │ │
+│ │ Gallery: frames từ video 🎬      │ │ Gallery: 3 ảnh hòn đá 🪨       │ │
+│ └──────────────────────────────────┘ └───────────────────────────────┘ │
+└────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### 6.4 clearClassSamples — Hỗ trợ xóa theo loại
@@ -538,37 +593,17 @@ const clearClassSamples = (classId: string, type?: 'object' | 'gesture') => {
 
 **So sánh với `teach-free`:** `teach-free` chỉ có `clearClassSamples(classId)` (không tham số `type`), vì không phân biệt gesture/object.
 
-### 6.5 Mini Playground — Action-to-Image Display
+### 6.5 Mini Playground — Action-to-Image Display (Hiển thị Sự Vật Khi Khớp Hành Động)
 
 Khi `predictionActive === true` và model đã train:
+> *"Sau khi thu xong chỉ cần làm đúng video đã thu trên camera sẽ hiển thị hình ảnh tương đương bên kia đã thu."*
 
-```typescript
-{/* Display uploaded object images */}
-{(() => {
-  // Lọc samples: cùng nhãn dự đoán VÀ là ảnh sự vật (object)
-  const displaySamples = samples.filter(
-    (s) => s.label === predictedLabel && s.sourceType === 'object'
-  );
-  
-  if (displaySamples.length > 0) {
-    return (
-      <div className="bg-white/10 rounded-2xl p-4 mb-4 border border-white/20">
-        <p className="text-xs font-semibold text-violet-300 mb-2">
-          Ảnh sự vật tương ứng:
-        </p>
-        <div className="flex gap-2 overflow-x-auto pb-1">
-          {displaySamples.slice(0, 10).map((s) => (
-            <div key={s.id} className="w-16 h-16 shrink-0 rounded-xl overflow-hidden">
-              <img src={s.thumbnail} alt={s.label} className="w-full h-full object-cover" />
-            </div>
-          ))}
-        </div>
-      </div>
-    );
-  }
-  return null;
-})()}
-```
+- Người dùng làm cử chỉ/hành động trước webcam (VD: giơ nắm đấm ✊).
+- MobileNet nhận diện đúng cử chỉ ✊ Búa (confidence $\ge 65\%$).
+- Hệ thống lập tức **bung ra Hero Card hiển thị lớn hình ảnh sự vật tương đương** (Hòn Đá 🪨) đã thu ở Bộ 2, kèm hiệu ứng phát sáng và thông báo:
+  > `✨ ĐÃ KHỚP HÀNH ĐỘNG: ✊ Búa (98%)`  
+  > `👉 Hình ảnh sự vật tương đương ở Bộ 2: [Ảnh Hòn Đá 🪨 lớn]`
+- Nếu đổi sang cử chỉ khác (VD: ✋ Bao) $\rightarrow$ Ngay lập tức đổi sang ảnh Tờ Giấy 📄!
 
 **Luồng tương tác:**
 
@@ -774,11 +809,35 @@ URL.revokeObjectURL(weightsUrl);
 
 ---
 
+#### [NEW] [`dataset-label-mapping.ts`](file:///d:/HOCTAP/Learn-Hub/client/src/lib/dataset-label-mapping.ts) — Catalog Ánh Xạ Song Ngữ & Từ Điển Nhãn Kiểm Thử
+
+1. Định nghĩa metadata và cấu trúc thư mục của 5 bộ dataset local: Cats & Dogs, Fruit 10 Class, Pest Dataset, PlantVillage, Rock Paper Scissors.
+2. Từ điển song ngữ Anh - Việt cho toàn bộ các lớp (hỗ trợ hoa/thường, có dấu/không dấu, từ đồng nghĩa, emoji).
+3. Hàm `normalizeLabelString(str)` chuẩn hóa chuỗi nhãn.
+4. Hàm `matchLabelToDataset(inputLabel, preferredDatasetId?)` xác định lớp chuẩn từ chuỗi người dùng nhập.
+5. Hàm `detectMatchingDataset(labels[])` tự động nhận diện bộ dataset phù hợp với danh sách nhãn.
+6. Hằng số `TEACHER_DATASET_PRESETS` cung cấp 5 bộ nhãn mẫu tạo nhanh 1-click cho Giáo viên.
+
+---
+
+#### [NEW] [`reference-embeddings.ts`](file:///d:/HOCTAP/Learn-Hub/client/src/lib/reference-embeddings.ts) — AI Reference Embeddings & Zero-Shot Cross-Check
+
+1. Chứa các vector trọng tâm (Centroid 1024D) được tính trước từ các lớp chuẩn của 5 bộ dataset.
+2. Hàm `checkMisclassification(sampleFeatures, activeClassLabel, threshold)`:
+   - Tính Cosine similarity / khoảng cách L2 với các Centroid.
+   - Phát hiện xung đột ngữ nghĩa (VD: ảnh Chó tải vào nhãn Mèo) ngay cả khi tên file là ký tự ngẫu nhiên.
+3. Trả về kết quả `{ isSuspect: boolean, suspectedClass?: string, similarityExpected: number, similaritySuspect: number }`.
+
+---
+
 #### [NEW] [`teach-free/page.tsx`](file:///d:/HOCTAP/Learn-Hub/client/src/app/(private)/teacher/training/teach-free/page.tsx) — Phân Loại Ảnh Tự Do (1283 dòng)
 
 1. 23 `useState` + 6 `useRef` quản lý toàn bộ vòng đời
 2. **Class management**: `addClass()` (class_free_* prefix), `removeClass()`, `clearClassSamples()`
-3. **Data collection**: `captureSample()` (Camera → MobileNet → assessQuality → sample), `handleFileUpload()` (File → base64 → MobileNet → sample), Hold-to-Record (300ms interval)
+3. **Data collection & Validation**:
+   - `captureSample()`: Camera → MobileNet → assessQuality → Zero-Shot Cross-Check → sample
+   - `handleFileUpload()`: File → base64 → MobileNet → **Zero-Shot Cross-Check (AI Reference Embeddings)** → cảnh báo sai nhãn nếu có xung đột → sample
+   - Hold-to-Record (300ms interval)
 4. **Training**: `handleTrain()` với TfTrainer + hyperparameters tuỳ chỉnh
 5. **Prediction**: `requestAnimationFrame` loop + OOD detection kép (confidence + KNN distance) + auto-stop sau 10 frame
 6. **Test ảnh tĩnh**: `handlePredictUpload()` + OOD check cho ảnh upload
@@ -792,13 +851,14 @@ URL.revokeObjectURL(weightsUrl);
 
 1. **Dual-modality data collection**: `captureSample(type)` và `handleFileUpload(e, type)` nhận tham số `'gesture' | 'object'`
 2. **Split UI**: 2 khu vực thu thập riêng biệt (Amber: Object, Emerald: Gesture) với 2 file input ref riêng
-3. **`clearClassSamples(classId, type?)`**: Hỗ trợ xóa theo loại (chỉ xóa gesture hoặc chỉ xóa object)
-4. **`capturingType: 'gesture' | 'object' | null`**: State hold-to-record phân biệt đang chụp loại nào
-5. **Mini Playground** (khi prediction active):
+3. **Zero-Shot Cross-Check**: Kiểm tra tính hợp lệ của ảnh sự vật (Object) tải lên
+4. **`clearClassSamples(classId, type?)`**: Hỗ trợ xóa theo loại (chỉ xóa gesture hoặc chỉ xóa object)
+5. **`capturingType: 'gesture' | 'object' | null`**: State hold-to-record phân biệt đang chụp loại nào
+6. **Mini Playground** (khi prediction active):
    - Confidence bars cho tất cả nhãn
    - **Object gallery**: Lọc `samples.filter(s => s.label === predictedLabel && s.sourceType === 'object')` → hiển thị ảnh sự vật
    - **Sliding indicator dot**: Vị trí = `(topIdx / (classes.length - 1)) * 100%`
-6. Phần còn lại (training, OOD, self-eval, submit, export) **GIỐNG** teach-free
+7. Phần còn lại (training, OOD, self-eval, submit, export) **GIỐNG** teach-free
 
 ---
 
@@ -910,7 +970,7 @@ flowchart TD
 > Các bộ dữ liệu bên dưới được chọn lọc từ Kaggle, phù hợp để **demo tính năng `teach-free` và `teach-action`** cho Giáo viên. Tiêu chí chọn:
 > - Kích thước nhỏ (< 100MB), tải nhanh
 > - Ảnh rõ ràng, dễ phân biệt bằng mắt thường
-> - Phân loại nhị phân (2 lớp) hoặc đa lớp đơn giản (3–5 lớp)
+> - Phân loại 2 lớp cơ bản hoặc đa lớp (3–5 lớp)
 > - Phù hợp lứa tuổi học sinh (chủ đề thân thiện, không nhạy cảm)
 
 ### 13.1 Dataset cho `teach-free` — Phân loại ảnh tự do
@@ -925,7 +985,7 @@ flowchart TD
 | **Số ảnh** | ~816 ảnh (500 chó + 316 mèo) |
 | **Cấu trúc** | `cats_set/` (316 ảnh) và `dogs_set/` (500 ảnh) |
 | **Thư mục local** | `D:\HOCTAP\Learn-Hub\dataset\Cats_And_Dogs_Mini_Dataset\` |
-| **Độ khó** | ⭐ Rất dễ — Nhị phân, ảnh rõ ràng |
+| **Độ khó** | ⭐ Rất dễ — 2 lớp cơ bản, ảnh trực quan rõ ràng |
 
 **Cách dùng trên `teach-free`:**
 1. Tạo nhãn `Chó 🐶` và `Mèo 🐱`
@@ -1132,8 +1192,139 @@ Kết quả mong đợi:
   ✅ OOD khi giơ cử chỉ lạ (VD: giơ 4 ngón) → tự tắt nhận diện
 ```
 
+#### Kịch bản D: "Bắt lỗi sai nhãn bằng AI Reference Embeddings khi file có tên ngẫu nhiên" (teach-free)
+
+```
+Mục tiêu: Đảm bảo hệ thống phát hiện chính xác ảnh Chó bị tải vào nhãn Mèo ngay cả khi tên file là chuỗi ngẫu nhiên (ví dụ: IMG_98231.jpg, a1b2c3d4.png).
+
+Bước 1: Mở /teacher/training/teach-free
+Bước 2: Tạo nhãn "Mèo 🐱"
+Bước 3: Lấy 1 ảnh từ dataset\Cats_And_Dogs_Mini_Dataset\dogs_set\, đổi tên thành "random_name_999.jpg"
+Bước 4: Bấm "Tải ảnh lên" và chọn file "random_name_999.jpg"
+Bước 5: MobileNet trích xuất 1024D vector → so sánh với Reference Centroids (Chó vs Mèo)
+Bước 6: Hệ thống nhận diện khoảng cách vector gần với Centroid Chó hơn Centroid Mèo
+
+Kết quả mong đợi:
+  ✅ Bật ngay thông báo: "⚠️ Nghi vấn sai nhãn: Ảnh này giống 'Chó 🐶' (89%) hơn là 'Mèo 🐱' (41%)"
+  ✅ Cho phép Giáo viên chọn loại bỏ hoặc tiếp tục
+  ✅ Hoàn toàn không phụ thuộc vào tên file "random_name_999.jpg"
+```
+
+---
+
+### 13.5 AI Reference Embeddings & Cơ chế Đối Soát Đúng/Sai Tự Động
+
+Để phục vụ **Zero-Shot Cross-Check**, các vector trọng tâm (Reference Centroids) $C_k \in \mathbb{R}^{1024}$ được tính toán trước bằng cách lấy trung bình vector MobileNet của các mẫu chuẩn từ 5 bộ dataset local:
+
+1. **`Cats_And_Dogs_Mini_Dataset`**: Trích xuất 100 ảnh Chó & 100 ảnh Mèo → Tính $C_{dog}$ và $C_{cat}$.
+2. **`Fruit_Classification_10_Class`**: Trích xuất 30 ảnh mỗi loại quả (Táo, Chuối, Cam, Bơ, Dưa hấu...) → Tính $C_{fruit\_k}$.
+3. **`Pest_Dataset`**: Trích xuất 30 ảnh mỗi loài (Bọ cánh cứng, Châu chấu, Rệp, Sâu...) → Tính $C_{pest\_k}$.
+4. **`Plant_Village`**: Trích xuất 50 ảnh lá sạch vs 50 ảnh lá có đốm → Tính $C_{healthy}$ và $C_{diseased}$.
+5. **`Rock_Paper_Scissors_Images`**: Trích xuất 50 ảnh Búa, Bao, Kéo → Tính $C_{rock}$, $C_{paper}$, $C_{scissors}$.
+
+Các Centroid này được đóng gói nhỏ gọn trong [`reference-embeddings.ts`](file:///d:/HOCTAP/Learn-Hub/client/src/lib/reference-embeddings.ts) và ánh xạ với [`dataset-label-mapping.ts`](file:///d:/HOCTAP/Learn-Hub/client/src/lib/dataset-label-mapping.ts) giúp trình duyệt kiểm tra ngay lập tức với chi phí tính toán cực nhẹ (chỉ một phép nhân ma trận - vector dot product trong vài mili-giây).
+
 > [!IMPORTANT]
-> **Lưu ý quan trọng:** Các dataset Kaggle này **KHÔNG được nhúng vào source code** của Learn-Hub. Chúng chỉ được sử dụng làm **dữ liệu kiểm thử thủ công** — Giáo viên tải về máy tính, rồi upload lên giao diện `teach-free`/`teach-action` qua nút "Tải ảnh từ máy tính".
+> **Lưu ý quan trọng:** Các dataset Kaggle đầy đủ (hàng ngàn ảnh) **KHÔNG được commit vào git repository** (đã cấu hình trong `.gitignore`). Chúng được lưu tại `dataset/` cục bộ trên máy để giáo viên/học sinh dùng để kiểm thử hoặc huấn luyện. Chỉ có **các vector centroid rút gọn** được lưu trong code để phục vụ đối soát tự động.
+
+---
+
+### 13.6 Kịch bản Chuẩn Kết Hợp Chéo Liên Bộ Dữ Liệu (Multi-Class Logical Scenarios)
+
+Để hỗ trợ giáo viên giải quyết bài toán huấn luyện AI sư phạm $\ge 3$ nhãn khi các bộ dữ liệu gốc như `Cats_And_Dogs` hoặc `Plant_Village` vốn chỉ gồm 2 lớp đối ứng, Learn-Hub thiết lập 3 kịch bản logic chuẩn cùng tính năng **1-Click Quick Preset**:
+
+#### 1. Kịch bản "Bác sĩ Nông nghiệp" 🌿 (Teach-Free)
+- **Ý nghĩa thực tiễn**: AI trợ thủ nông dân chẩn đoán sức khỏe cây trồng và nhận diện sinh vật gây hại trên đồng ruộng.
+- **3 Nhãn kết hợp**:
+  1. `Lá Khỏe Mạnh 🌿`: Mẫu từ `dataset/Plant_Village/train/Tomato___healthy`
+  2. `Lá Có Đốm Bệnh 🍂`: Mẫu từ `dataset/Plant_Village/train/Tomato___Early_blight`
+  3. `Côn Trùng Gây Hại 🪲`: Mẫu từ `dataset/Pest_Dataset/train/beetle` (hoặc `grasshopper`, `armyworm`)
+- **Cơ chế Cross-Check**: Centroid `beetle`, `healthy_leaf`, `diseased_leaf` kiểm tra chéo, cảnh báo tức thì nếu giáo viên tải nhầm lá bệnh vào nhãn sâu bọ hoặc ngược lại.
+
+#### 2. Kịch bản "Thế giới Động vật" 🐾 (Teach-Free)
+- **Ý nghĩa thực tiễn**: AI phân loại động vật đa dạng sinh học (thú cưng & côn trùng tự nhiên).
+- **3 Nhãn kết hợp**:
+  1. `Chó 🐶`: Mẫu từ `dataset/Cats_And_Dogs_Mini_Dataset/dogs_set`
+  2. `Mèo 🐱`: Mẫu từ `dataset/Cats_And_Dogs_Mini_Dataset/cats_set`
+  3. `Bọ Cánh Cứng 🪲`: Mẫu từ `dataset/Pest_Dataset/train/beetle`
+- **Cơ chế Cross-Check**: MobileNet feature vector phân biệt rõ ràng giữa Chó, Mèo và Côn trùng; triệt tiêu hoàn toàn lỗi nhầm lẫn Bọ cánh cứng thành Chó.
+
+#### 3. Kịch bản "Oẳn Tù Tì" ✊✋✌️ (Teach-Action)
+- **Ý nghĩa thực tiễn**: Trò chơi tương tác thời gian thực — AI học cử chỉ tay và liên kết với hình ảnh vật thể tương ứng.
+- **3 Nhãn kết hợp**:
+  1. `Búa / Đá ✊`: Cử chỉ nắm đấm + Ảnh hòn đá từ `dataset/Rock_Paper_Scissors_Images/rock`
+  2. `Bao / Giấy ✋`: Cử chỉ mở lòng bàn tay + Ảnh tờ giấy từ `dataset/Rock_Paper_Scissors_Images/paper`
+  3. `Kéo ✌️`: Cử chỉ 2 ngón tay + Ảnh kéo từ `dataset/Rock_Paper_Scissors_Images/scissors`
+- **Tích hợp UI Playground**: Khi người dùng giơ cử chỉ tay trước webcam, Playground nhận diện và bung ra ảnh thẻ tương ứng kèm sliding dot mượt mà.
+
+#### 4. Nút bấm 1-Click Preset trên Giao diện Giáo Viên
+- Cả 2 trang `/teacher/training/teach-free` và `/teacher/training/teach-action` đều tích hợp các nút chip chọn nhanh kịch bản:
+  - Bấm chọn sẽ tự động tạo đủ các nhãn chuẩn, gán icon và màu sắc phù hợp.
+  - Tự động kích hoạt đối soát AI Reference Embeddings chuẩn xác cho từng kịch bản.
+
+### 13.7 Kiến trúc Phân loại Tùy biến $\ge 3$ Nhãn Tự Do & Cơ chế Zero-Shot Cross-Check 2 Tầng
+
+Nhằm đảm bảo tính minh bạch sư phạm và quyền tự do sư phạm của giáo viên, hệ thống **không áp đặt kịch bản cứng**:
+- Giáo viên có thể tự do kết hợp **bất kỳ 3 nhãn nào** (hoặc $N$ nhãn) từ 5 bộ dataset hoặc nhãn tùy ý tự đặt tên (VD: Chó 🐶 + Mèo 🐱 + Sâu đục quả 🐛, hoặc Táo 🍎 + Châu chấu 🦗 + Kéo ✌️, hoặc nhãn hoàn toàn mới).
+- Các nút Preset chỉ đóng vai trò **Gợi ý nhanh 1-Click** để hỗ trợ thao tác nhanh.
+- **Thư viện Reference Centroid 26 Lớp Chuẩn**:
+  - Cats & Dogs (2 lớp): `dog`, `cat`
+  - Rock-Paper-Scissors (3 lớp): `rock`, `paper`, `scissors`
+  - Plant Village (2 lớp): `healthy_leaf`, `diseased_leaf`
+  - Fruit Classification (10 lớp): `apple`, `banana`, `orange`, `avocado`, `cherry`, `kiwi`, `mango`, `pineapple`, `strawberries`, `watermelon`
+  - Pest Classification (9 lớp): `beetle`, `grasshopper`, `armyworm`, `aphids`, `bollworm`, `mites`, `mosquito`, `sawfly`, `stem_borer`
+- **Thuật toán Universal Zero-Shot Cross-Check 2 Tầng**:
+  1. **Tầng 1 (Context Conflict Check - Ưu tiên cao nhất)**: Đối soát ảnh với các nhãn khác đang có mặt trong bài tập. Nếu ảnh nạp vào một nhãn nhưng có đặc trưng lệch rõ rệt sang một nhãn khác trong cùng bài tập, lập tức báo động:
+     `⚠️ Nghi vấn sai nhãn: Ảnh có đặc trưng giống [Nhãn khác] (%), phù hợp với nhãn '[Nhãn khác]' đang có trong bài tập hơn là [Nhãn hiện tại]!`
+  2. **Tầng 2 (Global Reference Library Check)**: Đối soát với toàn bộ 26 lớp chuẩn. Cảnh báo khi ảnh khớp mạnh với một lớp khác trong thư viện chuẩn.
+- **Quy tắc Thu thập Mẫu**:
+  - Mỗi nhãn hiển thị tiến trình $0/10$ mẫu (ít nhất 3 mẫu mỗi nhãn mới được huấn luyện).
+  - Khi ảnh bị phát hiện sai nhãn (`isSuspect: true`), ảnh **không được tính vào khung mẫu** ($0/10$), bảo vệ chất lượng dữ liệu huấn luyện.
+
+### 13.8 Quy Trình Huấn Luyện Ngầm Trước Bằng TensorFlow.js (Offline Pre-training) & Cơ Chế Đối Soát Khi Xóa Nhãn
+
+Nhằm giải quyết triệt để tính minh bạch và độ tin cậy trong thẩm định nhãn, Learn-Hub vận hành mô hình 2 pha (**Offline Pre-training $\rightarrow$ Online Inference**):
+
+#### 1. Pha 1: Huấn luyện ngầm trước bằng TensorFlow.js (Offline Pre-training Pipeline)
+- **Script thực thi**:
+  - [`scripts/generate-reference-embeddings.js`](file:///d:/HOCTAP/Learn-Hub/scripts/generate-reference-embeddings.js): Trích xuất vector đặc trưng 1280D từ MobileNet v2 cho 26 lớp chuẩn.
+  - [`scripts/train-full-tfjs-dataset.js`](file:///d:/HOCTAP/Learn-Hub/scripts/train-full-tfjs-dataset.js): Huấn luyện mạng nơ-ron đa tầng (Sequential Neural Network) TensorFlow.js:
+    $$\text{Input (1280D)} \rightarrow \text{Dense}(128, \text{relu}) \rightarrow \text{Dropout}(0.15) \rightarrow \text{Dense}(64, \text{relu}) \rightarrow \text{Dense}(26, \text{softmax})$$
+    Optimizer: Adam ($lr = 0.003$), Loss: Categorical Crossentropy, Epochs: 25. Độ chính xác đạt $100\%$ khi hội tụ.
+- **Dữ liệu huấn luyện**: Sử dụng toàn bộ đặc trưng đại diện từ 5 bộ dataset local với tổng cộng 66,205 ảnh thực tế (1,000 ảnh Cats & Dogs, 4,376 ảnh Kéo-Búa-Bao, 54,305 ảnh Lá cây PlantVillage, 3,374 ảnh Trái cây, 3,150 ảnh Sâu bọ):
+  1. `dataset/Cats_And_Dogs_Mini_Dataset` (`dog`, `cat`)
+  2. `dataset/Rock_Paper_Scissors_Images` (`rock`, `paper`, `scissors`)
+  3. `dataset/Plant_Village` (`healthy_leaf`, `diseased_leaf`)
+  4. `dataset/Fruit_Classification_10_Class` (10 loại trái cây: táo, chuối, cam, bơ, cherry, kiwi, xoài, dứa, dâu, dưa hấu)
+  5. `dataset/Pest_Dataset` (9 loài sâu bọ hại nông nghiệp: bọ cánh cứng, châu chấu, sâu keo, rệp, sâu đục quả, bọ ve, muỗi, ong cắn lá, sâu đục thân)
+- **Mô hình TensorFlow.js Artifacts hoàn chỉnh**:
+  - `client/public/models/dataset_classifier/model.json` (4,160 bytes - Topology & Weights manifest)
+  - `client/public/models/dataset_classifier/weights.bin` (695,656 bytes ~ 680 KB - Trọng số nhị phân)
+  - `client/public/models/dataset_classifier/class_names.json` (26 lớp chuẩn)
+  - `client/src/lib/reference_centroids.json` (Ma trận trọng tâm 1280D của 26 lớp)
+
+#### 2. Pha 2: Cơ chế Đối soát Toàn cục khi Giáo viên Xóa Nhãn
+Khi giáo viên thực hiện kịch bản kiểm thử:
+1. Bắt đầu với kịch bản *Thế giới Động vật* (gồm: Chó 🐶, Mèo 🐱, Bọ cánh cứng 🪲).
+2. **Xóa hoàn toàn nhãn "Chó 🐶"** khỏi bài tập $\rightarrow$ bài tập hiện chỉ còn: *Mèo 🐱* và *Sâu đục quả 🐛*.
+3. Tải ảnh Chó vào nhãn "Sâu đục quả 🐛".
+
+**Kết quả đối soát của hệ thống:**
+- **Tầng 1 (Context Conflict)**: Kiểm tra các nhãn còn lại trong bài tập (chỉ có *Mèo* và *Sâu đục quả*). Không có nhãn Chó trong bài $\rightarrow$ chuyển tiếp sang Tầng 2.
+- **Tầng 2 (Global Reference Library)**: Kích hoạt đối soát ma trận tri thức 26 lớp của TensorFlow.js:
+  - $\text{Cosine}(\vec{x}_{\text{dog}}, \mathbf{w}_{\text{bollworm}}) \approx 74.82\%$
+  - $\text{Cosine}(\vec{x}_{\text{dog}}, \mathbf{w}_{\text{dog}}) \approx 100.00\%$
+  - Chênh lệch $\Delta = 100\% - 74.82\% = +25.18\% \gg 2.5\%$ (vượt xa ngưỡng cảnh báo).
+- **Phản hồi của giao diện (Không kèm text rườm rà)**:
+  - Kích hoạt cảnh báo Toast tự nhiên, chuẩn mực:
+    > `⚠️ Nghi vấn sai nhãn: Ảnh có đặc trưng giống Chó 🐶 (100%) hơn là Sâu Đục Quả 🐛 (75%).`
+  - Ảnh Chó bị **loại trừ hoàn toàn, không tính vào khung mẫu $0/10$** của nhãn "Sâu đục quả".
+  - **Kết luận**: Kể cả khi bài tập của giáo viên không có nhãn Chó, bộ não AI vẫn nhận diện được ảnh Chó nhờ tri thức 26 lớp đã được TensorFlow.js huấn luyện trước!
+
+#### 3. Công thức tính xác suất Softmax (`predictTopClasses`)
+Để suy luận phân phối xác suất trên toàn bộ 26 lớp, hệ thống sử dụng Cosine Softmax với Temperature Scaling $\tau = 20.0$:
+$$z_k = \tau \cdot (\vec{x} \cdot \mathbf{w}_k), \quad P(\text{class}_k) = \frac{e^{z_k - \max(z)}}{\sum_{j=1}^{26} e^{z_j - \max(z)}}$$
+Đảm bảo độ phân tách cao: ảnh Chó đạt xác suất $> 96\%$ cho lớp `dog`, xác suất cho lớp `bollworm` $< 0.1\%$.
 
 ---
 
@@ -1166,27 +1357,32 @@ cd client && npm run build       # Next.js production build
 14. **Export:** Bấm "Tải Model về máy" → tải model.json + weights.bin thành công
 15. **Submit:** Bấm "Lưu & Xuất bản Template" → ảnh + model upload Cloudinary → toast thành công
 
+#### Zero-Shot Cross-Check (AI Reference Embeddings)
+16. **Phát hiện sai nhãn tên ngẫu nhiên:** Đổi tên ảnh chó thành `random_abc_123.jpg`, upload vào nhãn "Mèo 🐱" → Hệ thống kích hoạt cảnh báo phát hiện đặc trưng giống Chó.
+17. **Chấp nhận ảnh đúng:** Upload ảnh đúng mèo (dù tên file là `random_xyz_456.jpg`) → Hệ thống thêm bình thường không cảnh báo sai.
+18. **Tùy chọn người dùng:** Khi có cảnh báo sai nhãn, bấm "Bỏ qua" → ảnh không được đưa vào tập train; bấm "Vẫn thêm" → ảnh được lưu kèm cờ nghi vấn.
+
 #### Teach-Free với Dataset (đã tải về local)
-16. **Chó/Mèo:** Upload 10 ảnh từ `dataset\Cats_And_Dogs_Mini_Dataset\dogs_set\` + 10 ảnh từ `cats_set\` → Train → Accuracy ≥ 85%
-17. **Táo Khoẻ/Bệnh:** Upload 15 ảnh từ `dataset\Plant_Village\train\Apple___healthy\` + 15 ảnh từ `Apple___Apple_scab\` → AI phân biệt lá có đốm vs lá sạch
-18. **Cà chua Khoẻ/Bệnh:** Upload 15 ảnh từ `Tomato___healthy\` + 15 ảnh từ `Tomato___Early_blight\` → Accuracy ≥ 85%
-19. **Côn trùng:** Upload 10 ảnh từ `dataset\Pest_Dataset\train\beetle\` + 10 ảnh từ `grasshopper\` → AI phân biệt 2 loài
-20. **Trái cây 10 loại:** Upload 15 ảnh Chuối từ `dataset\Fruit_Classification_10_Class\MY_data\train\Banana\` + 15 ảnh Cam từ `orange\` + 15 ảnh Dưa hấu từ `watermelon\` → Train 3 lớp → Test trên ảnh từ thư mục `test\`
+19. **Chó/Mèo:** Upload 10 ảnh từ `dataset\Cats_And_Dogs_Mini_Dataset\dogs_set\` + 10 ảnh từ `cats_set\` → Train → Accuracy ≥ 85%
+20. **Táo Khoẻ/Bệnh:** Upload 15 ảnh từ `dataset\Plant_Village\train\Apple___healthy\` + 15 ảnh từ `Apple___Apple_scab\` → AI phân biệt lá có đốm vs lá sạch
+21. **Cà chua Khoẻ/Bệnh:** Upload 15 ảnh từ `Tomato___healthy\` + 15 ảnh từ `Tomato___Early_blight\` → Accuracy ≥ 85%
+22. **Côn trùng:** Upload 10 ảnh từ `dataset\Pest_Dataset\train\beetle\` + 10 ảnh từ `grasshopper\` → AI phân biệt 2 loài
+23. **Trái cây 10 loại:** Upload 15 ảnh Chuối từ `dataset\Fruit_Classification_10_Class\MY_data\train\Banana\` + 15 ảnh Cam từ `orange\` + 15 ảnh Dưa hấu từ `watermelon\` → Train 3 lớp → Test trên ảnh từ thư mục `test\`
 
 #### Teach-Action
-21. **Dual capture:** Tạo nhãn "Chó 🐶", chụp 10 ảnh cử chỉ (sourceType=gesture), upload 3 ảnh chó (sourceType=object)
-22. **Gallery phân đôi:** Tab Object hiện 3 ảnh chó, tab Gesture hiện 10 ảnh cử chỉ
-23. **Clear theo loại:** Bấm xóa gesture → chỉ xóa 10 ảnh cử chỉ, 3 ảnh chó vẫn còn
-24. **Train dual:** Train trên cả 13 ảnh (gesture + object) → model hiểu cả 2 modality
-25. **Mini Playground:** Giơ tay trái trước camera → AI nhận "Chó" → hiện 3 ảnh chó trong gallery + sliding indicator dot di chuyển
-26. **Submit:** `api.createDataset('teach-action', ...)` thành công, Cloudinary có ảnh
+24. **Dual capture:** Tạo nhãn "Chó 🐶", chụp 10 ảnh cử chỉ (sourceType=gesture), upload 3 ảnh chó (sourceType=object)
+25. **Gallery phân đôi:** Tab Object hiện 3 ảnh chó, tab Gesture hiện 10 ảnh cử chỉ
+26. **Clear theo loại:** Bấm xóa gesture → chỉ xóa 10 ảnh cử chỉ, 3 ảnh chó vẫn còn
+27. **Train dual:** Train trên cả 13 ảnh (gesture + object) → model hiểu cả 2 modality
+28. **Mini Playground:** Giơ tay trái trước camera → AI nhận "Chó" → hiện 3 ảnh chó trong gallery + sliding indicator dot di chuyển
+29. **Submit:** `api.createDataset('teach-action', ...)` thành công, Cloudinary có ảnh
 
 #### Teach-Action với Dataset (đã tải về local)
-27. **Kéo Búa Bao:** Dùng ảnh từ `dataset\Rock_Paper_Scissors_Images\`: gesture tải 15 ảnh từ `rock/`, `paper/`, `scissors/`, object tải ảnh tương ứng → Train → Playground nhận diện mượt mà
+30. **Kéo Búa Bao:** Dùng ảnh từ `dataset\Rock_Paper_Scissors_Images\`: gesture tải 15 ảnh từ `rock/`, `paper/`, `scissors/`, object tải ảnh tương ứng → Train → Playground nhận diện mượt mà
 
 #### Không ảnh hưởng bài khác
-28. **teach:** Mở `/teacher/training/teach` → vẫn hoạt động bình thường với MediaPipe + Golden Dataset
-29. **teach-gestures:** Mở → vẫn hoạt động, không import MobileNet
-30. **teach-face:** Mở → vẫn hoạt động bình thường
-31. **teach-two-hands:** class_3, class_4 vẫn dùng được, không bị xung đột
-32. **Dashboard:** 3 section hiện đúng: Bài Tập Cơ Bản (4 card) + Thể Dục (1 card) + Tạo Nhãn Tự Do (2 card)
+31. **teach:** Mở `/teacher/training/teach` → vẫn hoạt động bình thường với MediaPipe + Golden Dataset
+32. **teach-gestures:** Mở → vẫn hoạt động, không import MobileNet
+33. **teach-face:** Mở → vẫn hoạt động bình thường
+34. **teach-two-hands:** class_3, class_4 vẫn dùng được, không bị xung đột
+35. **Dashboard:** 3 section hiện đúng: Bài Tập Cơ Bản (4 card) + Thể Dục (1 card) + Tạo Nhãn Tự Do (2 card)

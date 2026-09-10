@@ -1,7 +1,20 @@
 'use client';
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { ArrowLeft, Brain, HelpCircle, Camera, Trash2, ImagePlus, Eye, EyeOff } from 'lucide-react';
+import {
+  ArrowLeft,
+  Brain,
+  HelpCircle,
+  Camera,
+  Trash2,
+  ImagePlus,
+  Eye,
+  EyeOff,
+  Plus,
+  X,
+  Sparkles,
+  Settings,
+} from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
@@ -20,15 +33,34 @@ import { useMobilenet } from '@/hooks/useMobilenet';
 import { TfTrainer } from '@/lib/tf-trainer';
 import { assessQuality } from '@/lib/image-quality';
 import { checkMisclassification, REFERENCE_CENTROIDS, cosineSimilarity } from '@/lib/reference-embeddings';
-import { matchLabelToDataset, cleanClassLabel } from '@/lib/dataset-label-mapping';
+import {
+  matchLabelToDataset,
+  cleanClassLabel,
+  TEACHER_DATASET_PRESETS,
+} from '@/lib/dataset-label-mapping';
 
 // ── Constants ──────────────────────────────────────────
 /** Số mẫu tối thiểu mỗi nhãn để có thể huấn luyện (ít nhất 3 mẫu) */
 const MIN_SAMPLES_PER_CLASS = 3;
+
+/** Số nhãn tối đa cho phép */
+const MAX_CLASSES = 10;
+
 /** Mục tiêu số mẫu thu thập mỗi nhãn (10 mẫu) */
 const TARGET_SAMPLES_PER_CLASS = 10;
+
+/**
+ * OOD (Out-of-Distribution) Detection:
+ * Nếu confidence < ngưỡng HOẶC khoảng cách KNN quá lớn → "Không nhận diện được"
+ */
 const OOD_CONFIDENCE_THRESHOLD = 65;
 const OOD_MAX_KNN_DISTANCE = 1.2;
+
+/** Nhãn mặc định ban đầu cho học sinh */
+const DEFAULT_INITIAL_CLASSES = [
+  { id: 'class_free_1', label: 'Chó', emoji: '🐶' },
+  { id: 'class_free_2', label: 'Mèo', emoji: '🐱' },
+];
 
 // ── Helpers ────────────────────────────────────────────
 function fileToBase64(file: File): Promise<string> {
@@ -43,20 +75,31 @@ function fileToBase64(file: File): Promise<string> {
 export default function StudentTeachFreePage() {
   const router = useRouter();
 
-  // ── Template ────────────────────────────────────────
+  // ── Custom Classes (Nhãn tự do như Giáo viên) ────────
+  const [classes, setClasses] = useState<{ id: string; label: string; emoji: string }[]>(DEFAULT_INITIAL_CLASSES);
+  const [activeClass, setActiveClass] = useState<string>('class_free_1');
+  const [newLabelInput, setNewLabelInput] = useState('');
+  const [newEmojiInput, setNewEmojiInput] = useState('✨');
+  const classIdCounterRef = useRef(2);
+
+  // ── Template từ Thầy/Cô (Gợi ý tùy chọn, không chặn) ─
   const [teacherTemplate, setTeacherTemplate] = useState<DatasetResponse | null>(null);
   const [templateLoading, setTemplateLoading] = useState(true);
-  const [classes, setClasses] = useState<{ id: string; label: string; emoji?: string }[]>([]);
 
   // ── Data Collection ─────────────────────────────────
   const [samples, setSamples] = useState<StoredSample[]>([]);
-  const [activeClass, setActiveClass] = useState<string>('');
 
   // ── Training ────────────────────────────────────────
   const [isTraining, setIsTraining] = useState(false);
   const [isTrained, setIsTrained] = useState(false);
   const [trainingProgress, setTrainingProgress] = useState(0);
   const [trainingLogs, setTrainingLogs] = useState<{ epoch: number; loss: number; acc: number }[]>([]);
+
+  // ── Hyperparameters (Cài đặt nâng cao: Under the Hood) ─
+  const [hpEpochs, setHpEpochs] = useState(50);
+  const [hpBatchSize, setHpBatchSize] = useState(32);
+  const [hpLearningRate, setHpLearningRate] = useState(0.005);
+  const [showSettings, setShowSettings] = useState(false);
 
   // ── Prediction ──────────────────────────────────────
   const [predictedLabel, setPredictedLabel] = useState('Chưa nhận diện... 🤔');
@@ -69,13 +112,19 @@ export default function StudentTeachFreePage() {
   const idleStreakRef = useRef<number>(0);
   const isDetectedRef = useRef<boolean>(false);
 
-  // ── Hold-to-Record ──────────────────────────────────
+  // ── Hold-to-Record (Giữ nút chụp liên tục) ───────────
   const [isCapturing, setIsCapturing] = useState(false);
   const captureIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
-  // ── Static Image Test ───────────────────────────────
+  // ── Static Image Test (Test ảnh với OOD Detection) ──
   const [predictImage, setPredictImage] = useState<string | null>(null);
-  const [predictResult, setPredictResult] = useState<{ label: string; confidence: number; confidences: Record<string, number>; isOOD: boolean; reason?: string } | null>(null);
+  const [predictResult, setPredictResult] = useState<{
+    label: string;
+    confidence: number;
+    confidences: Record<string, number>;
+    isOOD: boolean;
+    reason?: string;
+  } | null>(null);
   const [isPredicting, setIsPredicting] = useState(false);
   const predictFileRef = useRef<HTMLInputElement | null>(null);
 
@@ -90,7 +139,7 @@ export default function StudentTeachFreePage() {
   const [uploadProgress, setUploadProgress] = useState('');
   const [createdModelId, setCreatedModelId] = useState<string | null>(null);
 
-  // ── View Teacher Samples ────────────────────────────
+  // ── View Teacher Samples ────────────────────
   const [showTeacherSamples, setShowTeacherSamples] = useState(false);
 
   // ── UI ──────────────────────────────────────────────
@@ -116,7 +165,75 @@ export default function StudentTeachFreePage() {
     toastTimeoutRef.current = setTimeout(() => setValidationToast(null), 4000);
   }, []);
 
-  // ── Fetch Teacher Template ──────────────────────────
+  // ── Class Management (Thêm / Xóa nhãn như Giáo viên) ─
+  const addClass = useCallback(() => {
+    const rawLabel = newLabelInput.trim();
+    if (!rawLabel) return;
+    const label = cleanClassLabel(rawLabel, newEmojiInput) || rawLabel;
+    if (classes.length >= MAX_CLASSES) {
+      showToast(`⚠️ Tối đa ${MAX_CLASSES} nhãn!`);
+      return;
+    }
+    if (classes.some((c) => c.label.toLowerCase() === label.toLowerCase())) {
+      showToast('⚠️ Nhãn này đã tồn tại!');
+      return;
+    }
+
+    const newId = `class_free_${++classIdCounterRef.current}`;
+    const newClass = { id: newId, label, emoji: newEmojiInput || '✨' };
+    setClasses((prev) => [...prev, newClass]);
+    setNewLabelInput('');
+    setActiveClass(newId);
+    playClickSound();
+  }, [newLabelInput, newEmojiInput, classes, showToast]);
+
+  const removeClass = useCallback((classId: string) => {
+    if (classes.length <= 2) {
+      showToast('⚠️ Cần giữ lại ít nhất 2 nhãn để AI phân loại!');
+      return;
+    }
+    setClasses((prev) => prev.filter((c) => c.id !== classId));
+    setSamples((prev) => prev.filter((s) => s.sourceId !== classId));
+    setIsTrained(false);
+    setActiveClass((prev) => (prev === classId ? classes.find((c) => c.id !== classId)?.id || '' : prev));
+    playClickSound();
+  }, [classes, showToast]);
+
+  const applyPreset = useCallback((presetId: string) => {
+    const preset = TEACHER_DATASET_PRESETS.find((p) => p.id === presetId);
+    if (!preset) return;
+    const newClasses = preset.classes.map((c) => ({
+      id: `class_free_${++classIdCounterRef.current}`,
+      label: cleanClassLabel(c.label, c.emoji) || c.label,
+      emoji: c.emoji,
+    }));
+    setClasses(newClasses);
+    setActiveClass(newClasses[0]?.id || '');
+    setSamples([]);
+    setIsTrained(false);
+    playSuccessSound();
+    showToast(`Đã nạp kịch bản: ${preset.title}! Hãy thêm ảnh cho từng nhãn nhé 📸`);
+  }, [showToast]);
+
+  // ── Load Template from Teacher (Tùy chọn) ────────────
+  const loadTeacherTemplate = useCallback(() => {
+    if (!teacherTemplate) return;
+    if (teacherTemplate.customClasses && teacherTemplate.customClasses.length > 0) {
+      const templateClasses = teacherTemplate.customClasses.map((c: { id: string; label: string; emoji?: string }) => ({
+        id: c.id,
+        label: cleanClassLabel(c.label, c.emoji) || c.label,
+        emoji: c.emoji || '✨',
+      }));
+      setClasses(templateClasses);
+      setActiveClass(templateClasses[0]?.id || '');
+      setSamples([]);
+      setIsTrained(false);
+      playSuccessSound();
+      showToast(`🎓 Đã nạp ${templateClasses.length} nhãn từ bài tập của Thầy/Cô!`);
+    }
+  }, [teacherTemplate, showToast]);
+
+  // ── Fetch Teacher Template (Background Check) ────────
   useEffect(() => {
     let ignore = false;
     api.getTemplates('teach-free')
@@ -132,14 +249,6 @@ export default function StudentTeachFreePage() {
           }
           if (ignore) return;
           setTeacherTemplate(template);
-          if (template.customClasses && template.customClasses.length > 0) {
-            setClasses(template.customClasses.map((c: { id: string; label: string; emoji?: string }) => ({
-              id: c.id,
-              label: cleanClassLabel(c.label, c.emoji) || c.label,
-              emoji: c.emoji || '✨'
-            })));
-            setActiveClass(template.customClasses[0].id);
-          }
         }
         setTemplateLoading(false);
       })
@@ -180,7 +289,8 @@ export default function StudentTeachFreePage() {
     const vW = video.videoWidth || 640;
     const vH = video.videoHeight || 480;
     const cv = document.createElement('canvas');
-    cv.width = vW; cv.height = vH;
+    cv.width = vW;
+    cv.height = vH;
     const ctx = cv.getContext('2d');
     if (ctx) ctx.drawImage(video, 0, 0, vW, vH);
     const thumbnail = cv.toDataURL('image/jpeg', 0.8);
@@ -191,18 +301,17 @@ export default function StudentTeachFreePage() {
     const activeClassLabel = classes.find((c) => c.id === activeClass)?.label || 'Không tên';
 
     // Zero-Shot Cross-Check: bắt buộc ảnh phải có thể thuộc nhãn đó
-    // Nếu khác tên nhãn hoặc là ảnh lạ (OOD) -> vẫn đưa vào Thư viện ảnh nhưng chỉ cảnh báo viền đỏ ảnh lạ thôi, trên khung tên nhãn thì không tính cộng ảnh vào
+    // Nếu khác tên nhãn hoặc là ảnh lạ (OOD) -> vẫn đưa vào Thư viện ảnh nhưng cảnh báo viền đỏ, không tính vào số mẫu
     const mischeck = checkMisclassification(
       features,
       activeClassLabel,
       classes.map((c) => c.label)
     );
 
-    // Ảnh chỉ hợp lệ khi đạt chất lượng và không có dấu hiệu sai nhãn / ảnh lạ
     const isValid = isQualityOk && !mischeck.isSuspect;
 
     if (!isQualityOk && quality) {
-      const msg = quality.isDark ? 'Ảnh hơi tối! 🌙' : 'Ảnh hơi mờ! 📸';
+      const msg = quality.isDark ? 'Ảnh hơi tối! Hãy tìm chỗ sáng hơn 🌙' : 'Ảnh hơi mờ! Hãy giữ yên camera 📸';
       showToast(`⚠️ ${msg}`);
     } else if (mischeck.isSuspect) {
       showToast(mischeck.message || '⚠️ Ảnh vừa chụp có dấu hiệu sai nhãn hoặc là ảnh lạ (đã đánh dấu viền đỏ trong Thư viện, không tính vào số mẫu)!');
@@ -226,7 +335,7 @@ export default function StudentTeachFreePage() {
     playClickSound();
   }, [modelStatus, videoRef, activeClass, classes, extractFeaturesFromVideo, showToast]);
 
-  // ── Hold-to-Record ──────────────────────────────────
+  // ── Hold-to-Record (Giữ để chụp liên tục) ────────────
   const startCapturing = useCallback(() => {
     if (modelStatus !== 'ready' || !activeClass) return;
     playClickSound();
@@ -247,7 +356,7 @@ export default function StudentTeachFreePage() {
     return () => {
       if (captureIntervalRef.current) clearInterval(captureIntervalRef.current);
     };
-  }, []);
+  }, [activeClass]);
 
   // ── File Upload (batch) ─────────────────────────────
   const handleFileUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -273,8 +382,6 @@ export default function StudentTeachFreePage() {
         const base64 = await fileToBase64(file);
         const features = await extractFeaturesFromBase64(base64);
         if (features) {
-          // Zero-Shot Cross-Check: bắt buộc ảnh phải có thể thuộc nhãn đó
-          // Nếu khác tên nhãn hoặc là ảnh lạ (OOD) -> vẫn đưa vào Thư viện ảnh nhưng chỉ cảnh báo viền đỏ ảnh lạ thôi, trên khung tên nhãn thì không tính cộng ảnh vào
           const mischeck = checkMisclassification(
             features,
             activeClassLabel,
@@ -328,25 +435,35 @@ export default function StudentTeachFreePage() {
 
   // ── Clear samples ───────────────────────────────────
   const clearClassSamples = useCallback((classId: string) => {
+    playClickSound();
     setSamples((prev) => prev.filter((s) => s.sourceId !== classId));
     setIsTrained(false);
   }, []);
+
+  // ── Sample counts per class (chỉ tính ảnh hợp lệ) ───
+  const classCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    classes.forEach((c) => {
+      counts[c.id] = samples.filter(
+        (s) => s.isValid !== false && !s.isQuestionable && s.sourceId === c.id
+      ).length;
+    });
+    return counts;
+  }, [classes, samples]);
 
   // ── Can Train check ─────────────────────────────────
   const canTrain = useMemo(() => {
     if (classes.length < 2 || modelStatus !== 'ready') return false;
     return classes.every((c) => {
-      const count = samples.filter(
-        (s) => s.isValid !== false && !s.isQuestionable && s.sourceId === c.id
-      ).length;
+      const count = classCounts[c.id] || 0;
       return count >= MIN_SAMPLES_PER_CLASS;
     });
-  }, [classes, samples, modelStatus]);
+  }, [classes, classCounts, modelStatus]);
 
   // ── Training ────────────────────────────────────────
   const handleTrain = useCallback(async () => {
     if (!canTrain) {
-      showToast(`⚠️ Cần ít nhất ${MIN_SAMPLES_PER_CLASS} ảnh hợp lệ cho mỗi nhãn (mục tiêu ${TARGET_SAMPLES_PER_CLASS} mẫu)!`);
+      showToast(`⚠️ Cần ít nhất ${MIN_SAMPLES_PER_CLASS} ảnh hợp lệ cho mỗi nhãn để huấn luyện!`);
       return;
     }
 
@@ -379,7 +496,6 @@ export default function StudentTeachFreePage() {
         }
       }
 
-      const autoParams = calculateAutoHyperparameters(validSamples.length);
       if (trainerRef.current) {
         await trainerRef.current.train(
           trainingDatasetSamples,
@@ -387,19 +503,19 @@ export default function StudentTeachFreePage() {
             setTrainingProgress(progress);
             setTrainingLogs((prev) => [...prev, { epoch: _epoch, loss, acc }]);
           },
-          { epochs: autoParams.epochs, batchSize: autoParams.batchSize, learningRate: autoParams.learningRate }
+          { epochs: hpEpochs, batchSize: hpBatchSize, learningRate: hpLearningRate }
         );
         setIsTraining(false);
         setIsTrained(true);
         playSuccessSound();
-        speakEnglish('Learning complete!');
+        speakEnglish('Learning complete. Let us test!');
       }
     } catch (err) {
       console.error('Training failed:', err);
       setIsTraining(false);
       showToast('❌ Huấn luyện thất bại. Hãy kiểm tra dữ liệu và thử lại.');
     }
-  }, [canTrain, samples, classes, showToast]);
+  }, [canTrain, samples, classes, hpEpochs, hpBatchSize, hpLearningRate, showToast]);
 
   // ── Prediction loop — chỉ chạy khi user bật predictionActive ──
   useEffect(() => {
@@ -418,7 +534,7 @@ export default function StudentTeachFreePage() {
         if (features) {
           const result = await trainerRef.current.predict(features);
 
-          // Đối soát chặt chẽ với Thư viện ảnh để loại bỏ phông nền/rác (OOD):
+          // Đối soát chặt chẽ với Thư viện ảnh để loại bỏ phông nền/rác (OOD)
           const cSamples = validSamples.filter((s) => s.label === result?.label);
           let maxSimInClass = -1;
           for (const s of cSamples) {
@@ -466,7 +582,7 @@ export default function StudentTeachFreePage() {
                 setConfidences(zeroConf);
               }
 
-              // Tự động tắt nhận diện sau đúng 10s không có đối tượng trong Thư viện ảnh (chạy ngầm)
+              // Tự động tắt nhận diện sau đúng 10s không có đối tượng trong Thư viện ảnh
               const idleMs = Date.now() - lastActiveTimeRef.current;
               if (idleMs >= 10000) {
                 setPredictionActive(false);
@@ -569,9 +685,7 @@ export default function StudentTeachFreePage() {
         (maxOtherCentroidSim >= 0.65 && maxOtherCentroidSim > maxActiveSim);
 
       const lowAbsoluteSimilarity = maxActiveSim < 0.54;
-
       const ambiguousLowMargin = classes.length >= 2 && maxActiveSim < 0.65 && margin < 0.035;
-
       const lowConfidence = result.confidence < 60 && maxActiveSim < 0.60;
 
       const isOOD = belongsToOtherDatasetClass || lowAbsoluteSimilarity || ambiguousLowMargin || lowConfidence;
@@ -594,10 +708,24 @@ export default function StudentTeachFreePage() {
           reason,
         });
       } else {
+        const targetLabel = matchedLabel || result.label;
+        const confidences: Record<string, number> = {};
+        let sumExp = 0;
+        for (const c of classes) {
+          const s = Math.max(0.1, classSims[c.label] || 0.2);
+          const expVal = Math.exp((s - maxActiveSim) * 10);
+          confidences[c.label] = expVal;
+          sumExp += expVal;
+        }
+        for (const c of classes) {
+          confidences[c.label] = Number(((confidences[c.label] || 0) / sumExp).toFixed(2));
+        }
+        const topConfidence = Math.min(100, Math.max(result.confidence, Math.round((confidences[targetLabel] || 0.85) * 100)));
+
         setPredictResult({
-          label: result.label,
-          confidence: result.confidence,
-          confidences: result.confidences || {},
+          label: targetLabel,
+          confidence: topConfidence,
+          confidences,
           isOOD: false,
         });
       }
@@ -626,7 +754,10 @@ export default function StudentTeachFreePage() {
 
   // ── Submit Flow ─────────────────────────────────────
   const handleTrainComplete = useCallback(() => {
-    if (!isTrained) { showToast('⚠️ Hãy huấn luyện mô hình trước!'); return; }
+    if (!isTrained) {
+      showToast('⚠️ Hãy huấn luyện mô hình trước!');
+      return;
+    }
     setSubmitScore(selfAccuracy ?? 100);
     setShowSubmitModal(true);
     playClickSound();
@@ -637,24 +768,36 @@ export default function StudentTeachFreePage() {
     try {
       setIsSubmitting(true);
 
-      let processedSamples = samples;
+      let processedSamples = samples.filter((s) => s.isValid !== false && !s.isQuestionable);
       if (isCloudinaryConfigured()) {
         setUploadProgress('Đang tải ảnh lên Cloud...');
         processedSamples = await uploadSamplesToCloudinary(
-          samples, 'teach-free',
+          processedSamples,
+          'teach-free',
           (uploaded, total) => setUploadProgress(`Tải ảnh ${uploaded}/${total}...`)
         );
         setUploadProgress('Đang lưu bài...');
       }
 
-      const created = await api.createDataset('teach-free', processedSamples, submitScore, `${reflectionAnswer} | Lời nhắn: ${teacherMessage}`);
+      const created = await api.createDataset(
+        'teach-free',
+        processedSamples,
+        submitScore,
+        `${reflectionAnswer} | Lời nhắn: ${teacherMessage}`,
+        false,
+        '',
+        false,
+        'camera',
+        classes
+      );
+
       if (created?.model?.id) {
         setCreatedModelId(created.model.id);
 
         await api.updateModelArtifacts(created.model.id, {
           algorithm: 'neural_network',
           testScore: submitScore,
-          hyperparameters: calculateAutoHyperparameters(processedSamples.length),
+          hyperparameters: { epochs: hpEpochs, batchSize: hpBatchSize, learningRate: hpLearningRate },
         }).catch(() => {});
 
         // Upload model blobs
@@ -676,7 +819,12 @@ export default function StudentTeachFreePage() {
         await runEvaluation(processedSamples, created.model.id);
       }
 
-      await api.submitAssignment(submitScore, { samples: processedSamples }, `${reflectionAnswer} | Lời nhắn: ${teacherMessage}`, 'teach-free');
+      await api.submitAssignment(
+        submitScore,
+        { samples: processedSamples },
+        `${reflectionAnswer} | Lời nhắn: ${teacherMessage}`,
+        'teach-free'
+      );
       await api.saveProgress('teach-free', submitScore);
 
       setUploadProgress('');
@@ -690,7 +838,7 @@ export default function StudentTeachFreePage() {
     } finally {
       setIsSubmitting(false);
     }
-  }, [submitScore, samples, reflectionAnswer, teacherMessage, runEvaluation]);
+  }, [submitScore, samples, classes, reflectionAnswer, teacherMessage, hpEpochs, hpBatchSize, hpLearningRate, runEvaluation]);
 
   const handleRevise = useCallback(() => {
     setShowReportCard(false);
@@ -731,7 +879,7 @@ export default function StudentTeachFreePage() {
 
         if (eval_?.confusionMatrix) {
           const cm = eval_.confusionMatrix;
-          const minAcc = Math.min(...Object.values(cm.perClassAccuracy) as number[]);
+          const minAcc = Math.min(...(Object.values(cm.perClassAccuracy) as number[]));
           debuggingScore = minAcc;
         }
 
@@ -760,7 +908,7 @@ export default function StudentTeachFreePage() {
           version: m.version || 1,
           testScore: m.testScore,
           sampleCount: m.evaluation?.datasetHealth?.sampleCount || 0,
-          classSummary: m.evaluation?.datasetHealth?.classSummary || {}
+          classSummary: m.evaluation?.datasetHealth?.classSummary || {},
         }));
 
         await api.upsertAssessment({
@@ -770,7 +918,7 @@ export default function StudentTeachFreePage() {
           debuggingScore,
           improvementScore,
           overallScore,
-          narrative: { summary, strengths, improvements }
+          narrative: { summary, strengths, improvements },
         });
       }
 
@@ -785,52 +933,18 @@ export default function StudentTeachFreePage() {
     }
   }, []);
 
-  // ════════════════════════════════════════════════════
-  //  JSX
-  // ════════════════════════════════════════════════════
-
-  // Loading state
-  if (templateLoading) {
-    return (
-      <div className="min-h-screen bg-gradient-to-b from-teal-50 via-cyan-50 to-indigo-100 flex items-center justify-center">
-        <div className="text-center space-y-4">
-          <div className="text-6xl animate-bounce">🧪</div>
-          <p className="text-lg font-bold text-teal-700">Đang tải bài tập...</p>
-        </div>
-      </div>
-    );
-  }
-
-  // No template
-  if (!teacherTemplate || classes.length === 0) {
-    return (
-      <div className="min-h-screen bg-gradient-to-b from-teal-50 via-cyan-50 to-indigo-100 flex items-center justify-center px-4">
-        <div className="bg-white rounded-3xl p-8 max-w-md w-full text-center border-4 border-teal-200 shadow-xl">
-          <span className="text-6xl">📭</span>
-          <h2 className="text-2xl font-black text-slate-800 mt-4 mb-2">Chưa Có Bài Tập</h2>
-          <p className="text-slate-600 font-medium mb-6">
-            Thầy/Cô giáo chưa tạo bài tập phân loại ảnh tạo nhãn tự do. Hãy quay lại sau nhé!
-          </p>
-          <Link
-            href="/home"
-            className="inline-flex items-center gap-2 px-6 py-3 bg-teal-500 text-white font-bold rounded-full hover:bg-teal-600 transition-transform hover:scale-105"
-          >
-            <ArrowLeft className="w-5 h-5" /> Về Trang Chủ
-          </Link>
-        </div>
-      </div>
-    );
-  }
-
-  const activeClassLabel = classes.find((c) => c.id === activeClass)?.label || '';
-  const totalSamples = samples.length;
+  const activeClassObj = classes.find((c) => c.id === activeClass);
+  const activeClassLabel = activeClassObj?.label || '';
+  const totalValidSamples = useMemo(() => {
+    return samples.filter((s) => s.isValid !== false && !s.isQuestionable).length;
+  }, [samples]);
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-teal-50 via-cyan-50 to-indigo-100 py-8 px-4 select-none">
-      <div className="max-w-[1600px] w-[98%] mx-auto">
+      <div className="max-w-[1600px] w-[98%] mx-auto space-y-6">
 
-        {/* Navigation / Header */}
-        <div className="flex flex-col sm:flex-row items-center justify-between mb-8 gap-4">
+        {/* ── HEADER ── */}
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
           <Link
             href="/home"
             onClick={playClickSound}
@@ -841,111 +955,235 @@ export default function StudentTeachFreePage() {
           </Link>
           <div className="flex items-center gap-3">
             <span className="text-3xl">🧪🧠</span>
-            <h1 className="text-2xl md:text-3xl font-black text-teal-900">Bé Tập Phân Loại Ảnh Tạo Nhãn Tự Do</h1>
+            <h1 className="text-2xl md:text-3xl font-black text-teal-900">
+              Bé Tập Phân Loại Ảnh Tạo Nhãn Tự Do
+            </h1>
           </div>
         </div>
 
-        {/* Main content — conditional render */}
+        {/* ── TEACHER TEMPLATE BANNER (Nếu có bài tập từ Thầy/Cô) ── */}
+        {teacherTemplate && (
+          <div className="bg-white rounded-2xl p-4 border-2 border-indigo-200 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-3 animate-in fade-in">
+            <div className="flex items-start gap-3">
+              <span className="text-2xl">🎓</span>
+              <div>
+                <span className="font-black text-indigo-900 text-sm">
+                  Thầy/Cô đã giao bài tập mẫu: Phân loại ảnh tạo nhãn tự do
+                </span>
+                {teacherTemplate.teacherNotes && (
+                  <p className="text-xs text-indigo-600 mt-0.5 font-medium">
+                    📝 {teacherTemplate.teacherNotes}
+                  </p>
+                )}
+              </div>
+            </div>
+            <button
+              onClick={loadTeacherTemplate}
+              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-all shadow-sm flex items-center gap-1.5 self-start md:self-auto shrink-0"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+              Nạp bài từ Thầy Cô
+            </button>
+          </div>
+        )}
+
+        {/* ── MAIN CONTENT ── */}
         {!showSubmitModal && !showReportCard && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
-            {/* ══ LEFT: Controls ══ */}
-            <div className="flex flex-col gap-4">
+            {/* ══ LEFT: Class Management & Sample Gallery ══ */}
+            <div className="bg-white rounded-3xl p-6 shadow-xl border-4 border-teal-200 flex flex-col">
 
               {/* MobileNet Status */}
-              <div className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl text-sm font-bold ${
+              <div className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs font-bold mb-4 ${
                 modelStatus === 'ready' ? 'bg-emerald-50 text-emerald-700 border-2 border-emerald-200' :
                 modelStatus === 'error' ? 'bg-red-50 text-red-700 border-2 border-red-200' :
                 'bg-amber-50 text-amber-700 border-2 border-amber-200 animate-pulse'
               }`}>
                 <span>{modelStatus === 'ready' ? '🟢' : modelStatus === 'error' ? '🔴' : '🟡'}</span>
-                {modelStatus === 'ready' ? 'MobileNet sẵn sàng' : modelStatus === 'error' ? 'Lỗi tải MobileNet' : 'Đang tải MobileNet...'}
+                {modelStatus === 'ready' ? 'MobileNet sẵn sàng nhận diện' : modelStatus === 'error' ? 'Lỗi tải MobileNet' : 'Đang tải MobileNet...'}
               </div>
 
-              {/* Teacher Info */}
-              {teacherTemplate?.teacherNotes && (
-                <div className="bg-blue-50 border-2 border-blue-200 rounded-2xl p-3 text-sm">
-                  <span className="font-bold text-blue-700">📝 Ghi chú từ Thầy/Cô:</span>
-                  <p className="text-blue-600 mt-1">{teacherTemplate.teacherNotes}</p>
-                </div>
-              )}
-
-              {/* Class Selector (readonly) */}
-              <div className="bg-white rounded-2xl p-4 border-2 border-teal-200 shadow-sm">
-                <h3 className="text-sm font-black text-slate-700 mb-3">🏷️ Nhãn bài tập (từ Thầy/Cô)</h3>
-                <div className="flex flex-wrap gap-2">
-                  {classes.map((c) => {
-                    const count = samples.filter((s) => s.sourceId === c.id).length;
-                    const validCount = samples.filter((s) => s.sourceId === c.id && s.isValid !== false && !s.isQuestionable).length;
-                    const hasTarget = validCount >= TARGET_SAMPLES_PER_CLASS;
-                    const canTrainClass = validCount >= MIN_SAMPLES_PER_CLASS;
-
-                    return (
-                      <button
-                        key={c.id}
-                        onClick={() => { setActiveClass(c.id); playClickSound(); }}
-                        className={`px-4 py-2.5 rounded-xl font-bold text-sm transition-all flex items-center gap-2 ${
-                          activeClass === c.id
-                            ? 'bg-teal-500 text-white border-2 border-teal-600 shadow-md scale-105'
-                            : 'bg-gray-100 text-gray-700 border-2 border-gray-200 hover:border-teal-300'
-                        }`}
-                      >
-                        <span>{c.emoji || '✨'}</span>
-                        <span>{c.label}</span>
-                        <span className={`text-xs px-2 py-0.5 rounded-full font-black ${
-                          hasTarget
-                            ? 'bg-emerald-100 text-emerald-800'
-                            : canTrainClass
-                            ? 'bg-indigo-100 text-indigo-800'
-                            : 'bg-amber-100 text-amber-800'
-                        }`}>
-                          {validCount}/{TARGET_SAMPLES_PER_CLASS}
-                        </span>
-                        {hasTarget ? (
-                          <span className="text-[10px] text-emerald-600 font-bold hidden sm:inline">✅ Đủ</span>
-                        ) : canTrainClass ? (
-                          <span className="text-[10px] text-indigo-600 font-bold hidden sm:inline">✅ Có thể dạy</span>
-                        ) : (
-                          <span className="text-[10px] text-amber-600 font-bold hidden sm:inline">⚠️ Thiếu {MIN_SAMPLES_PER_CLASS - validCount}</span>
-                        )}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Capture buttons */}
-              {activeClass && (
-                <div className="bg-white rounded-2xl p-4 border-2 border-teal-200 shadow-sm space-y-3">
-                  <h3 className="text-sm font-black text-slate-700">
-                    📷 Thu thập ảnh cho: {activeClassLabel} {classes.find((c) => c.id === activeClass)?.emoji || ''}
-                  </h3>
-
-                  <div className="grid grid-cols-2 gap-2">
-                    <button
-                      onPointerDown={startCapturing}
-                      onPointerUp={stopCapturing}
-                      onPointerLeave={stopCapturing}
-                      disabled={modelStatus !== 'ready'}
-                      className={`py-3 rounded-xl font-bold text-sm flex items-center justify-center gap-1.5 transition-all ${
-                        isCapturing
-                          ? 'bg-red-500 text-white border-2 border-red-600 animate-pulse'
-                          : 'bg-teal-500 text-white border-2 border-teal-600 hover:bg-teal-600'
-                      } disabled:bg-gray-300 disabled:border-gray-400`}
-                    >
-                      <Camera className="w-4 h-4" />
-                      {isCapturing ? 'Đang chụp...' : 'Giữ để chụp'}
-                    </button>
-
-                    <button
-                      onClick={() => fileInputRef.current?.click()}
-                      disabled={modelStatus !== 'ready'}
-                      className="py-3 rounded-xl font-bold text-sm bg-indigo-500 text-white border-2 border-indigo-600 hover:bg-indigo-600 flex items-center justify-center gap-1.5 disabled:bg-gray-300 disabled:border-gray-400"
-                    >
-                      <ImagePlus className="w-4 h-4" />
-                      Tải ảnh lên
-                    </button>
+              {/* Quick Presets 1-Click (Gợi ý kịch bản mẫu) */}
+              <div className="mb-4 bg-teal-50/70 border-2 border-dashed border-teal-300 rounded-2xl p-3">
+                <div className="flex items-center justify-between mb-1.5">
+                  <div className="text-[11px] font-black text-teal-800 uppercase tracking-wider flex items-center gap-1.5">
+                    <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                    Gợi ý mẫu nhanh 1-Click
                   </div>
+                </div>
+                <p className="text-[11px] text-teal-700 mb-2 leading-relaxed">
+                  Bé có thể chọn kịch bản mẫu có sẵn hoặc tự gõ nhãn mới ở ô bên dưới nhé!
+                </p>
+                <div className="flex flex-wrap gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => applyPreset('agri-doctor')}
+                    className="text-xs font-bold px-2.5 py-1.5 rounded-xl bg-emerald-50 text-emerald-800 border border-emerald-300 hover:bg-emerald-100 hover:scale-105 active:scale-95 transition-all shadow-sm flex items-center gap-1"
+                    title="Lá Khỏe, Lá Bệnh, Bọ Cánh Cứng"
+                  >
+                    🌿 Bác sĩ Nông nghiệp
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => applyPreset('animal-world')}
+                    className="text-xs font-bold px-2.5 py-1.5 rounded-xl bg-amber-50 text-amber-800 border border-amber-300 hover:bg-amber-100 hover:scale-105 active:scale-95 transition-all shadow-sm flex items-center gap-1"
+                    title="Chó, Mèo, Bọ Cánh Cứng"
+                  >
+                    🐾 Thế giới Động vật
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => applyPreset('fruit-garden')}
+                    className="text-xs font-bold px-2.5 py-1.5 rounded-xl bg-rose-50 text-rose-800 border border-rose-300 hover:bg-rose-100 hover:scale-105 active:scale-95 transition-all shadow-sm flex items-center gap-1"
+                    title="Táo, Chuối, Cam"
+                  >
+                    🍎 Vườn Trái Cây
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => applyPreset('rock-paper-scissors')}
+                    className="text-xs font-bold px-2.5 py-1.5 rounded-xl bg-indigo-50 text-indigo-800 border border-indigo-300 hover:bg-indigo-100 hover:scale-105 active:scale-95 transition-all shadow-sm flex items-center gap-1"
+                    title="Búa, Bao, Kéo"
+                  >
+                    ✊ Oẳn tù tì
+                  </button>
+                </div>
+              </div>
+
+              {/* Add New Label Input (Học sinh tự tạo nhãn tùy ý) */}
+              <div className="mb-4 space-y-2">
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={newLabelInput}
+                    onChange={(e) => setNewLabelInput(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && addClass()}
+                    placeholder="Nhập tên nhãn (VD: Chó, Mèo...)"
+                    className="flex-1 bg-slate-50 border-2 border-slate-200 rounded-xl px-3 py-2.5 text-sm font-bold text-slate-700 focus:outline-none focus:border-teal-500 transition-colors"
+                  />
+                  <input
+                    type="text"
+                    value={newEmojiInput}
+                    onChange={(e) => setNewEmojiInput(e.target.value)}
+                    className="w-14 bg-slate-50 border-2 border-slate-200 rounded-xl px-2 py-2.5 text-center text-lg focus:outline-none focus:border-teal-500 transition-colors"
+                    placeholder="🐶"
+                  />
+                  <button
+                    onClick={addClass}
+                    disabled={!newLabelInput.trim() || classes.length >= MAX_CLASSES}
+                    className="bg-teal-600 hover:bg-teal-700 disabled:bg-slate-300 text-white font-bold py-2.5 px-3 rounded-xl text-sm transition-colors flex items-center gap-1 shadow-sm"
+                  >
+                    <Plus className="w-4 h-4" />
+                    Thêm
+                  </button>
+                </div>
+                {classes.length < 2 && (
+                  <p className="text-xs text-amber-600 font-semibold">
+                    💡 Hãy thêm ít nhất 2 nhãn để AI có thể phân loại nhé!
+                  </p>
+                )}
+              </div>
+
+              {/* Class List */}
+              <div className="flex flex-col gap-2.5 mb-4 max-h-[300px] overflow-y-auto pr-1">
+                {classes.map((c) => {
+                  const count = classCounts[c.id] || 0;
+                  const isActive = activeClass === c.id;
+                  const progress = Math.min(100, (count / MIN_SAMPLES_PER_CLASS) * 100);
+                  const canTrainClass = count >= MIN_SAMPLES_PER_CLASS;
+
+                  return (
+                    <div
+                      key={c.id}
+                      onClick={() => {
+                        playClickSound();
+                        setActiveClass(c.id);
+                      }}
+                      className={`relative overflow-hidden p-3.5 rounded-2xl border-2 transition-all cursor-pointer ${
+                        isActive
+                          ? 'border-teal-500 bg-teal-50 shadow-md scale-[1.02]'
+                          : 'border-slate-100 bg-white hover:border-teal-200 hover:bg-slate-50'
+                      }`}
+                    >
+                      <div className="flex justify-between items-center relative z-10">
+                        <div>
+                          <div className={`font-black text-base ${isActive ? 'text-teal-900' : 'text-slate-700'}`}>
+                            {c.emoji} {c.label}
+                          </div>
+                          <div className={`text-xs font-bold flex items-center gap-1.5 mt-0.5 ${
+                            canTrainClass ? 'text-emerald-600' : 'text-amber-600'
+                          }`}>
+                            <span>{count} mẫu</span>
+                            {canTrainClass ? (
+                              <span className="bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded-full text-[10px] font-black">
+                                ✅ Sẵn sàng
+                              </span>
+                            ) : (
+                              <span className="bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded-full text-[10px] font-black">
+                                ⚠️ Thiếu {MIN_SAMPLES_PER_CLASS - count}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-1">
+                          {count > 0 && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                clearClassSamples(c.id);
+                              }}
+                              className="p-1.5 text-slate-300 hover:text-amber-500 hover:bg-amber-50 rounded-xl transition-colors"
+                              title="Xóa mẫu nhãn này"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (confirm(`Bé có chắc muốn xóa nhãn "${c.label}" và toàn bộ ảnh không?`)) {
+                                removeClass(c.id);
+                              }
+                            }}
+                            className="p-1.5 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-xl transition-colors"
+                            title="Xóa nhãn này"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Mini Progress Bar */}
+                      <div
+                        className="absolute bottom-0 left-0 h-1 bg-teal-500 transition-all duration-300"
+                        style={{ width: `${progress}%` }}
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Action Buttons: Hold-to-Record & Upload */}
+              {activeClass && (
+                <div className="space-y-2 mb-4">
+                  <button
+                    onPointerDown={startCapturing}
+                    onPointerUp={stopCapturing}
+                    onPointerLeave={stopCapturing}
+                    disabled={modelStatus !== 'ready'}
+                    className={`w-full font-extrabold py-3 px-4 rounded-2xl shadow-md transition-all flex items-center justify-center gap-2 text-sm border-b-4 select-none ${
+                      isCapturing
+                        ? 'bg-red-500 hover:bg-red-600 border-red-700 text-white animate-pulse'
+                        : 'bg-teal-600 hover:bg-teal-700 border-teal-800 text-white active:scale-95'
+                    } disabled:bg-gray-300 disabled:border-gray-400`}
+                  >
+                    <Camera className="w-5 h-5" />
+                    {isCapturing ? 'ĐANG CHỤP... THẢ ĐỂ DỪNG 🔴' : 'GIỮ ĐỂ CHỤP LIÊN TỤC 📸'}
+                  </button>
 
                   <input
                     ref={fileInputRef}
@@ -955,6 +1193,14 @@ export default function StudentTeachFreePage() {
                     onChange={handleFileUpload}
                     className="hidden"
                   />
+                  <button
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={modelStatus !== 'ready'}
+                    className="w-full font-extrabold py-2.5 px-4 rounded-2xl shadow-sm transition-all flex items-center justify-center gap-2 text-sm border-b-4 bg-white hover:bg-slate-50 border-slate-200 text-teal-700 active:scale-95 disabled:bg-gray-100 disabled:text-gray-400"
+                  >
+                    <ImagePlus className="w-4 h-4" />
+                    Tải ảnh từ máy tính
+                  </button>
                 </div>
               )}
 
@@ -962,60 +1208,123 @@ export default function StudentTeachFreePage() {
               {activeClass && (
                 <SampleGallery
                   samples={samples.filter((s) => s.sourceId === activeClass)}
-                  onDeleteSample={(id) => { setSamples((prev) => prev.filter((s) => s.id !== id)); setIsTrained(false); }}
+                  onDeleteSample={(id) => {
+                    setSamples((prev) => prev.filter((s) => s.id !== id));
+                    setIsTrained(false);
+                  }}
                   onClearAll={() => clearClassSamples(activeClass)}
                   isTrained={isTrained}
                 />
               )}
 
-              {/* View Teacher Samples */}
+              {/* View Teacher Samples Preview (nếu template có mẫu) */}
               {teacherTemplate?.samples && teacherTemplate.samples.length > 0 && (
-                <button
-                  onClick={() => setShowTeacherSamples(!showTeacherSamples)}
-                  className="w-full text-xs font-bold text-slate-400 hover:text-teal-600 flex items-center justify-center gap-1 py-1 transition-colors"
-                >
-                  {showTeacherSamples ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                  {showTeacherSamples ? 'Ẩn ảnh mẫu từ Thầy/Cô ▲' : 'Xem ảnh mẫu từ Thầy/Cô ▼'}
-                </button>
-              )}
+                <div className="mt-3">
+                  <button
+                    onClick={() => setShowTeacherSamples(!showTeacherSamples)}
+                    className="w-full text-xs font-bold text-slate-400 hover:text-teal-600 flex items-center justify-center gap-1 py-1 transition-colors"
+                  >
+                    {showTeacherSamples ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                    {showTeacherSamples ? 'Ẩn ảnh mẫu từ Thầy/Cô ▲' : 'Xem ảnh mẫu từ Thầy/Cô ▼'}
+                  </button>
 
-              {showTeacherSamples && teacherTemplate?.samples && (
-                <div className="bg-blue-50 rounded-2xl p-3 border-2 border-blue-200">
-                  <h4 className="text-xs font-black text-blue-700 mb-2">📋 Ảnh mẫu từ Thầy/Cô ({teacherTemplate.samples.length} ảnh)</h4>
-                  {classes.map((c) => {
-                    const classSamples = teacherTemplate.samples?.filter((s: StoredSample) => s.sourceId === c.id || s.label === c.label) || [];
-                    if (classSamples.length === 0) return null;
-                    return (
-                      <div key={c.id} className="mb-2">
-                        <span className="text-[10px] font-bold text-blue-600">{c.emoji || '✨'} {c.label} ({classSamples.length} ảnh)</span>
-                        <div className="flex gap-1 overflow-x-auto py-1">
-                          {classSamples.slice(0, 8).map((s: StoredSample, idx: number) => (
-                            <div key={idx} className="w-12 h-12 shrink-0 rounded-lg overflow-hidden border border-blue-200">
-                              {s.thumbnail && <img src={s.thumbnail} alt={c.label} className="w-full h-full object-cover" />}
+                  {showTeacherSamples && (
+                    <div className="bg-blue-50 rounded-2xl p-3 border-2 border-blue-200 mt-2">
+                      <h4 className="text-xs font-black text-blue-700 mb-2">
+                        📋 Ảnh mẫu từ Thầy/Cô ({teacherTemplate.samples.length} ảnh)
+                      </h4>
+                      {classes.map((c) => {
+                        const classSamples = teacherTemplate.samples?.filter((s: StoredSample) => s.sourceId === c.id || s.label === c.label) || [];
+                        if (classSamples.length === 0) return null;
+                        return (
+                          <div key={c.id} className="mb-2">
+                            <span className="text-[10px] font-bold text-blue-600">{c.emoji} {c.label} ({classSamples.length} ảnh)</span>
+                            <div className="flex gap-1 overflow-x-auto py-1">
+                              {classSamples.slice(0, 8).map((s: StoredSample, idx: number) => (
+                                <div key={idx} className="w-12 h-12 shrink-0 rounded-lg overflow-hidden border border-blue-200">
+                                  {s.thumbnail && <img src={s.thumbnail} alt={c.label} className="w-full h-full object-cover" />}
+                                </div>
+                              ))}
+                              {classSamples.length > 8 && (
+                                <div className="w-12 h-12 shrink-0 rounded-lg bg-blue-100 flex items-center justify-center text-[10px] font-bold text-blue-600">
+                                  +{classSamples.length - 8}
+                                </div>
+                              )}
                             </div>
-                          ))}
-                          {classSamples.length > 8 && (
-                            <div className="w-12 h-12 shrink-0 rounded-lg bg-blue-100 flex items-center justify-center text-[10px] font-bold text-blue-600">
-                              +{classSamples.length - 8}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
               )}
 
               {/* Toast */}
               {validationToast && (
-                <div className="p-3 bg-yellow-50 border-2 border-yellow-400 rounded-2xl text-sm font-bold text-yellow-700 flex items-center gap-2 animate-bounce shadow-lg">
-                  <span className="text-xl">⚠️</span>
+                <div className="mt-3 p-3 bg-yellow-50 border-2 border-yellow-400 rounded-2xl text-xs font-bold text-yellow-800 flex items-center gap-2 animate-bounce shadow-lg">
+                  <span className="text-lg">⚠️</span>
                   <span>{validationToast}</span>
                 </div>
               )}
 
-              {/* Train + Submit */}
+              {/* Hyperparameters panel (Under the Hood) */}
               <div className="mt-auto pt-4 space-y-2">
+                <button
+                  onClick={() => setShowSettings(!showSettings)}
+                  className="w-full text-xs font-bold text-slate-400 hover:text-teal-600 flex items-center justify-center gap-1 py-1 transition-colors"
+                >
+                  <Settings className="w-3.5 h-3.5" />
+                  {showSettings ? 'Ẩn cài đặt nâng cao ▲' : 'Cài đặt nâng cao (Under the Hood) ▼'}
+                </button>
+
+                {showSettings && (
+                  <div className="bg-slate-50 rounded-2xl p-3.5 border-2 border-slate-200 space-y-3 text-xs">
+                    <h4 className="font-black text-slate-700 text-xs flex items-center gap-1.5">
+                      ⚙️ Cài Đặt Tham Số Huấn Luyện
+                    </h4>
+                    {/* Epochs */}
+                    <div>
+                      <div className="flex justify-between mb-1">
+                        <span className="font-bold text-slate-600">Epochs (Số vòng học)</span>
+                        <span className="font-black text-teal-700">{hpEpochs}</span>
+                      </div>
+                      <input
+                        type="range" min={10} max={200} step={10} value={hpEpochs}
+                        onChange={(e) => setHpEpochs(Number(e.target.value))}
+                        className="w-full accent-teal-600"
+                      />
+                      <div className="flex justify-between text-[10px] text-slate-400"><span>10</span><span>200</span></div>
+                    </div>
+                    {/* Batch Size */}
+                    <div>
+                      <div className="flex justify-between mb-1">
+                        <span className="font-bold text-slate-600">Batch Size</span>
+                        <span className="font-black text-teal-700">{hpBatchSize}</span>
+                      </div>
+                      <input
+                        type="range" min={8} max={128} step={8} value={hpBatchSize}
+                        onChange={(e) => setHpBatchSize(Number(e.target.value))}
+                        className="w-full accent-teal-600"
+                      />
+                      <div className="flex justify-between text-[10px] text-slate-400"><span>8</span><span>128</span></div>
+                    </div>
+                    {/* Learning Rate */}
+                    <div>
+                      <div className="flex justify-between mb-1">
+                        <span className="font-bold text-slate-600">Learning Rate</span>
+                        <span className="font-black text-teal-700">{hpLearningRate}</span>
+                      </div>
+                      <input
+                        type="range" min={0.0001} max={0.01} step={0.0001} value={hpLearningRate}
+                        onChange={(e) => setHpLearningRate(Number(e.target.value))}
+                        className="w-full accent-teal-600"
+                      />
+                      <div className="flex justify-between text-[10px] text-slate-400"><span>0.0001</span><span>0.01</span></div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Train + Submit */}
                 {isTraining ? (
                   <div className="bg-teal-50 rounded-2xl p-4 border border-teal-100 animate-pulse">
                     <div className="flex items-center justify-between mb-2">
@@ -1039,7 +1348,7 @@ export default function StudentTeachFreePage() {
                       disabled={!canTrain}
                       className={`w-full font-extrabold py-3.5 px-6 rounded-2xl shadow-lg border-b-4 flex items-center justify-center gap-2 text-lg transition-all ${
                         canTrain
-                          ? 'bg-emerald-500 hover:bg-emerald-600 border-emerald-700 text-white'
+                          ? 'bg-emerald-500 hover:bg-emerald-600 border-emerald-700 text-white active:scale-95'
                           : 'bg-gray-300 border-gray-400 text-gray-500 cursor-not-allowed'
                       }`}
                     >
@@ -1050,7 +1359,7 @@ export default function StudentTeachFreePage() {
                     {isTrained && (
                       <button
                         onClick={handleTrainComplete}
-                        className="w-full font-extrabold py-3 px-6 rounded-2xl shadow-md border-b-4 bg-purple-500 hover:bg-purple-600 border-purple-700 text-white flex items-center justify-center gap-2 text-base transition-all"
+                        className="w-full font-extrabold py-3 px-6 rounded-2xl shadow-md border-b-4 bg-purple-500 hover:bg-purple-600 border-purple-700 text-white flex items-center justify-center gap-2 text-base transition-all active:scale-95"
                       >
                         📤 NỘP BÀI CHO THẦY CÔ
                       </button>
@@ -1058,16 +1367,18 @@ export default function StudentTeachFreePage() {
                   </>
                 )}
 
-                {!canTrain && classes.length > 0 && (
-                  <p className="text-xs text-center text-slate-400 font-semibold">
+                {!canTrain && classes.length >= 2 && (
+                  <p className="text-xs text-center text-slate-500 font-semibold">
                     📌 Cần ít nhất {MIN_SAMPLES_PER_CLASS} ảnh hợp lệ cho mỗi nhãn (mục tiêu {TARGET_SAMPLES_PER_CLASS} mẫu)
                   </p>
                 )}
               </div>
+
             </div>
 
-            {/* ══ CENTER + RIGHT: Camera & Prediction ══ */}
+            {/* ══ CENTER + RIGHT: Camera & Real-time / Static Prediction ══ */}
             <div className="lg:col-span-2 flex flex-col gap-6">
+
               {/* Camera View */}
               <div className="bg-white rounded-3xl overflow-hidden border-4 border-teal-200 shadow-lg">
                 <CameraView
@@ -1141,8 +1452,8 @@ export default function StudentTeachFreePage() {
                     </div>
                   )}
 
-                  {/* Self-Evaluation */}
-                  {selfAccuracy !== null && totalSamples >= 6 && (
+                  {/* Self-Evaluation Badge */}
+                  {selfAccuracy !== null && totalValidSamples >= 4 && (
                     <div className="mt-4 bg-white/10 rounded-xl p-3 flex items-center justify-between">
                       <span className="text-xs font-bold">🎯 Tự đánh giá (LOO-KNN):</span>
                       <span className={`text-sm font-black ${selfAccuracy >= 80 ? 'text-emerald-300' : selfAccuracy >= 60 ? 'text-amber-300' : 'text-red-300'}`}>
@@ -1151,7 +1462,7 @@ export default function StudentTeachFreePage() {
                     </div>
                   )}
 
-                  {/* Static Image Test */}
+                  {/* Static Image Test (Test ảnh upload) */}
                   <div className="mt-4 border-t border-white/20 pt-4">
                     <h4 className="text-sm font-bold mb-2">📷 Test ảnh upload</h4>
                     <input ref={predictFileRef} type="file" accept="image/*" onChange={handlePredictUpload} className="hidden" />
@@ -1215,11 +1526,12 @@ export default function StudentTeachFreePage() {
                   </div>
                 </div>
               )}
+
             </div>
           </div>
         )}
 
-        {/* ReportCard Modal */}
+        {/* ── REPORT CARD MODAL ── */}
         {showReportCard && evaluation && (
           <ReportCard
             isOpen={showReportCard}
@@ -1232,7 +1544,7 @@ export default function StudentTeachFreePage() {
           />
         )}
 
-        {/* Submission Modal */}
+        {/* ── SUBMISSION MODAL ── */}
         {showSubmitModal && (
           <div className="flex justify-center animate-in fade-in zoom-in duration-300">
             <div className="bg-white rounded-3xl max-w-lg w-full p-6 border-4 border-teal-400 shadow-2xl relative overflow-hidden">
@@ -1241,7 +1553,7 @@ export default function StudentTeachFreePage() {
                   <span className="text-7xl">🏆🎉</span>
                   <h3 className="text-2xl font-black text-teal-900 mt-4">Nộp Bài Hoàn Tất!</h3>
                   <p className="text-gray-600 font-semibold mt-2">
-                    Tuyệt vời! Bé đã dạy AI phân loại ảnh thành công! Bé có thể tiếp tục thử nghiệm thêm hoặc quay về trang chủ.
+                    Tuyệt vời! Bé đã dạy AI phân loại ảnh tạo nhãn tự do thành công! Bé có thể tiếp tục thử nghiệm thêm hoặc quay về trang chủ.
                   </p>
                   <div className="flex gap-3 mt-6 justify-center">
                     <button

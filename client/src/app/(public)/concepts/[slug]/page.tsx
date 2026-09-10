@@ -86,7 +86,27 @@ const CONCEPTS_DATA = {
       nextUrl: '/challenge/teach-body',
       btnText: 'Tập Thể Dục Nào!',
     }
-  }
+  },
+  'free-label': {
+    slides: [
+      {
+        title: 'Phân Loại Ảnh Bằng Transfer Learning',
+        content: 'Bé đã biết AI nhận diện bàn tay bằng bộ khung xương rồi đúng không? Nhưng nếu muốn AI phân biệt chó và mèo thì sao? Bàn tay thì có ngón, nhưng chó mèo thì không có bộ khung xương giống nhau! Vì vậy, các nhà khoa học đã tạo ra một AI siêu thông minh tên là MobileNet — bạn ấy đã xem hơn 1 triệu bức ảnh và biết cách nhìn hình dạng, màu sắc, kết cấu của mọi thứ. Bé chỉ cần cho MobileNet xem thêm vài ảnh nữa là bạn ấy biết phân biệt ngay! Kỹ thuật "học thêm" này gọi là Transfer Learning đấy.',
+        image: '🧪',
+        color: 'from-teal-400 to-cyan-500',
+        borderColor: 'border-teal-400',
+      },
+    ],
+    quiz: {
+      question: 'Theo bé, AI cần gì để học phân biệt chó và mèo?',
+      options: ['Chỉ cần 1 ảnh duy nhất', 'Thật nhiều ảnh đa dạng từ nhiều góc khác nhau'],
+      correct: 1,
+      successMsg: 'Tuyệt vời! AI cần xem thật nhiều ảnh đa dạng để hiểu được sự khác biệt.',
+      failMsg: 'Chưa đúng rồi, bé hãy nghĩ xem — giống như bé cần xem nhiều con chó khác nhau mới nhận ra tất cả các chú chó, AI cũng vậy!',
+      nextUrl: '/challenge/teach-free',
+      btnText: 'Vào Sandbox Phân Loại Ảnh',
+    }
+  },
 };
 
 export default function ConceptSlugPage() {

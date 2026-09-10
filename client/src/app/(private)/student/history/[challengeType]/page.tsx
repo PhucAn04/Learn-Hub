@@ -13,7 +13,7 @@ const CHALLENGE_LABELS: Record<string, string> = {
   'teach-face': 'Dạy AI nhận biết cảm xúc 😀',
   'teach-gestures': 'Dạy AI nhận biết cử chỉ 🤟',
   'teach-two-hands': 'Dạy AI nhận diện 2 bàn tay 👐',
-  'teach-free': 'Phân loại ảnh tự do 🧪',
+  'teach-free': 'Phân loại ảnh tạo nhãn tự do 🧪',
   'teach-action': 'Gán nhãn bằng hành động 🎭',
 };
 

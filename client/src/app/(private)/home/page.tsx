@@ -159,6 +159,32 @@ export default function Home() {
             </div>
             <div className="absolute left-0 bottom-0 w-64 h-64 bg-gradient-to-tr from-amber-100 to-transparent rounded-tr-full opacity-50 pointer-events-none" />
           </div>
+
+          {/* STORY 5: Free Label Classification */}
+          <div className="bg-white rounded-[2rem] p-8 md:p-12 shadow-xl border-4 border-teal-100 flex flex-col md:flex-row items-center gap-8 relative overflow-hidden hover:border-teal-300 transition-colors">
+            <div className="w-32 h-32 md:w-48 md:h-48 shrink-0 bg-teal-50 rounded-full flex items-center justify-center border-4 border-white shadow-inner z-10">
+              <span className="text-7xl">🧪</span>
+            </div>
+            <div className="flex-1 text-center md:text-left z-10">
+              <div className="inline-block px-4 py-1.5 bg-teal-100 text-teal-800 font-bold rounded-xl text-sm mb-3">
+                Khám phá: Phân loại ảnh bằng Transfer Learning
+              </div>
+              <h3 className="text-2xl md:text-3xl font-black text-slate-800 mb-4">
+                Chương 5: Nhà Khoa Học Ảnh Nhí
+              </h3>
+              <p className="text-slate-600 text-lg mb-6 leading-relaxed">
+                Bé đã biết dạy AI nhận biết bàn tay và khuôn mặt rồi, giờ hãy thử thách AI với bất cứ thứ gì! Chó hay mèo? Táo hay lê? Bé hãy chụp ảnh và dạy AI phân biệt mọi thứ xung quanh nhé. Công nghệ Transfer Learning sẽ giúp AI học nhanh lắm đấy!
+              </p>
+              <Link
+                href="/concepts/free-label"
+                onClick={playClickSound}
+                className="inline-flex items-center justify-center gap-2 bg-teal-500 hover:bg-teal-600 text-white px-8 py-4 rounded-full font-bold text-lg transition-transform hover:scale-105 active:scale-95 shadow-lg shadow-teal-500/30"
+              >
+                Khám Phá Ngay <ArrowRight className="w-5 h-5" />
+              </Link>
+            </div>
+            <div className="absolute right-0 bottom-0 w-64 h-64 bg-gradient-to-tl from-teal-100 to-transparent rounded-tl-full opacity-50 pointer-events-none" />
+          </div>
         </div>
         
         <div className="mt-20 text-center text-slate-400 font-medium pb-8">

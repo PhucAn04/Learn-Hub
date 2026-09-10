@@ -45,4 +45,23 @@ export class User {
 
   @UpdateDateColumn()
   updatedAt: Date;
+
+  // ── Admin Management Fields ──
+  @Column({ default: true })
+  isActive: boolean;
+
+  @Column({ type: 'timestamp', nullable: true })
+  lastLoginAt?: Date;
+
+  @Column({ nullable: true })
+  deactivatedBy?: string;
+
+  @Column({ type: 'timestamp', nullable: true })
+  deactivatedAt?: Date;
+
+  @Column({ nullable: true })
+  roleChangedBy?: string;
+
+  @Column({ type: 'timestamp', nullable: true })
+  roleChangedAt?: Date;
 }

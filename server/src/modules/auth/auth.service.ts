@@ -62,6 +62,10 @@ export class AuthService {
     // Remove password before returning
     delete user.password;
 
+    // Update last login
+    await this.usersService.updateLastLogin(user.id);
+    user.lastLoginAt = new Date();
+
     const accessToken = this.generateToken(user.id);
 
     return { user, accessToken };
@@ -108,12 +112,13 @@ export class AuthService {
       }
     }
 
-    // Always update tokens
+    // Always update tokens and last login
     await this.usersService.updateGoogleTokens(
       user.id,
       accessToken,
       refreshToken,
     );
+    await this.usersService.updateLastLogin(user.id);
 
     // Refresh user object to return
     const updatedUser = (await this.usersService.findById(user.id)) || user;

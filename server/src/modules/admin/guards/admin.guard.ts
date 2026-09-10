@@ -20,7 +20,9 @@ export class AdminGuard implements CanActivate {
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    const request = context.switchToHttp().getRequest<Request & { user?: User }>();
+    const request = context
+      .switchToHttp()
+      .getRequest<Request & { user?: User }>();
     const authHeader = request.headers.authorization;
 
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -30,7 +32,9 @@ export class AdminGuard implements CanActivate {
     const token = authHeader.split(' ')[1];
 
     try {
-      const payload = this.jwtService.verify(token) as { sub: string };
+      const payload = this.jwtService.verify(token) as unknown as {
+        sub: string;
+      };
       const user = await this.userRepository.findOne({
         where: { id: payload.sub },
       });
@@ -49,7 +53,7 @@ export class AdminGuard implements CanActivate {
 
       request.user = user;
       return true;
-    } catch (err: unknown) {
+    } catch {
       throw new UnauthorizedException('Token không hợp lệ hoặc đã hết hạn');
     }
   }

@@ -9,22 +9,22 @@ import {
 @Entity('users')
 export class User {
   @PrimaryGeneratedColumn('uuid')
-  id: string;
+  id!: string;
 
   @Column()
-  username: string;
+  username!: string;
 
   @Column({ unique: true })
-  email: string;
+  email!: string;
 
   @Column({ select: false, nullable: true })
   password?: string;
 
   @Column({ default: '🦁' })
-  avatar: string;
+  avatar!: string;
 
   @Column({ default: 'student' })
-  role: string;
+  role!: string;
 
   // ── Google OAuth Fields ──
 
@@ -41,14 +41,14 @@ export class User {
   avatarUrl?: string;
 
   @CreateDateColumn()
-  createdAt: Date;
+  createdAt!: Date;
 
   @UpdateDateColumn()
-  updatedAt: Date;
+  updatedAt!: Date;
 
   // ── Admin Management Fields ──
   @Column({ default: true })
-  isActive: boolean;
+  isActive!: boolean;
 
   @Column({ type: 'timestamp', nullable: true })
   lastLoginAt?: Date;

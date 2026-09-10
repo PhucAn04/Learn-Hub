@@ -13,11 +13,11 @@ import { Type } from 'class-transformer';
 export class AdminLoginDto {
   @IsEmail()
   @IsNotEmpty()
-  email: string;
+  email!: string;
 
   @IsString()
   @IsNotEmpty()
-  password: string;
+  password!: string;
 }
 
 export class AdminUserQueryDto {
@@ -50,11 +50,11 @@ export class AdminUserQueryDto {
 export class ChangeRoleDto {
   @IsEnum(['student', 'teacher'])
   @IsNotEmpty()
-  role: string;
+  role!: string;
 }
 
 export class ToggleStatusDto {
   @IsBoolean()
   @IsNotEmpty()
-  isActive: boolean;
+  isActive!: boolean;
 }

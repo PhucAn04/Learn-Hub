@@ -14,7 +14,15 @@ import {
   X,
   Sparkles,
   Settings,
+  Video,
   Film,
+  Play,
+  Pause,
+  Zap,
+  Square,
+  ChevronLeft,
+  ChevronRight,
+  Layers,
 } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -28,11 +36,7 @@ import { getStarRatingInfo } from '@/lib/scoring';
 import ReportCard from '@/components/journey/ReportCard';
 import CameraView from '@/components/CameraView';
 import SampleGallery from '@/components/SampleGallery';
-import ImageAIFeedbackModal from '@/components/journey/ImageAIFeedbackModal';
-import {
-  validateStudentWithTeacherTemplate,
-  ImageValidationResult,
-} from '@/lib/teacher-image-validator';
+import ActionAIFeedbackModal from '@/components/journey/ActionAIFeedbackModal';
 import { useCamera } from '@/hooks/useCamera';
 import { useMobilenet } from '@/hooks/useMobilenet';
 import { TfTrainer } from '@/lib/tf-trainer';
@@ -43,24 +47,20 @@ import {
   cleanClassLabel,
   TEACHER_DATASET_PRESETS,
 } from '@/lib/dataset-label-mapping';
+import {
+  validateStudentActionWithTeacherTemplate,
+  ActionValidationResult,
+} from '@/lib/teacher-action-validator';
 
 // ── Constants ──────────────────────────────────────────
-/** Số mẫu tối thiểu mỗi nhãn để có thể huấn luyện (ít nhất 3 mẫu) */
 const MIN_SAMPLES_PER_CLASS = 3;
-
-/** Số nhãn tối đa cho phép */
 const MAX_CLASSES = 10;
 
-/** Mục tiêu số mẫu thu thập mỗi nhãn (10 mẫu) */
-const TARGET_SAMPLES_PER_CLASS = 10;
-
-/** Nhãn mặc định ban đầu cho học sinh */
 const DEFAULT_INITIAL_CLASSES = [
-  { id: 'class_free_1', label: 'Chó', emoji: '🐶' },
-  { id: 'class_free_2', label: 'Mèo', emoji: '🐱' },
+  { id: 'class_action_1', label: 'Chó', emoji: '🐶' },
+  { id: 'class_action_2', label: 'Mèo', emoji: '🐱' },
 ];
 
-// ── Helpers ────────────────────────────────────────────
 function fileToBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -70,51 +70,74 @@ function fileToBase64(file: File): Promise<string> {
   });
 }
 
-export default function StudentTeachFreePage() {
+export default function StudentTeachActionPage() {
   const router = useRouter();
 
-  // ── Custom Classes (Nhãn tự do như Giáo viên) ────────
+  // ── Custom Classes ───────────────────────────────────
   const [classes, setClasses] = useState<{ id: string; label: string; emoji: string }[]>(DEFAULT_INITIAL_CLASSES);
-  const [activeClass, setActiveClass] = useState<string>('class_free_1');
+  const [activeClass, setActiveClass] = useState<string>('class_action_1');
   const [newLabelInput, setNewLabelInput] = useState('');
   const [newEmojiInput, setNewEmojiInput] = useState('✨');
   const classIdCounterRef = useRef(2);
 
-  // ── Template từ Thầy/Cô (Gợi ý tùy chọn, không chặn) ─
+  // ── Collection Mode Tab per class: Object vs Gesture ──
+  const [dataCollectionTab, setDataCollectionTab] = useState<'object' | 'gesture'>('object');
+
+  // ── Template from Teacher ────────────────────────────
   const [teacherTemplate, setTeacherTemplate] = useState<DatasetResponse | null>(null);
   const [templateLoading, setTemplateLoading] = useState(true);
 
-  // ── Data Collection ─────────────────────────────────
+  // ── Data Collection ──────────────────────────────────
   const [samples, setSamples] = useState<StoredSample[]>([]);
 
-  // ── Training ────────────────────────────────────────
+  // ── Training ─────────────────────────────────────────
   const [isTraining, setIsTraining] = useState(false);
   const [isTrained, setIsTrained] = useState(false);
   const [trainingProgress, setTrainingProgress] = useState(0);
   const [trainingLogs, setTrainingLogs] = useState<{ epoch: number; loss: number; acc: number }[]>([]);
 
-  // ── Hyperparameters (Cài đặt nâng cao: Under the Hood) ─
+  // ── Hyperparameters (Under the Hood) ─────────────────
   const [hpEpochs, setHpEpochs] = useState(50);
   const [hpBatchSize, setHpBatchSize] = useState(32);
   const [hpLearningRate, setHpLearningRate] = useState(0.005);
   const [showSettings, setShowSettings] = useState(false);
 
-  // ── Prediction ──────────────────────────────────────
+  // ── Prediction ───────────────────────────────────────
   const [predictedLabel, setPredictedLabel] = useState('Chưa nhận diện... 🤔');
   const [confidence, setConfidence] = useState(0);
   const [confidences, setConfidences] = useState<Record<string, number>>({});
   const [predictionActive, setPredictionActive] = useState(false);
   const [isDetectedInLibrary, setIsDetectedInLibrary] = useState(false);
-  const lastActiveTimeRef = useRef<number>(0);
-  const activeStreakRef = useRef<number>(0);
-  const idleStreakRef = useRef<number>(0);
-  const isDetectedRef = useRef<boolean>(false);
+  const activeStreakRef = useRef(0);
+  const idleStreakRef = useRef(0);
+  const lastActiveTimeRef = useRef(0);
+  const isDetectedRef = useRef(false);
 
-  // ── Hold-to-Record (Giữ nút chụp liên tục) ───────────
-  const [isCapturing, setIsCapturing] = useState(false);
+  // ── Hold-to-Record ───────────────────────────────────
+  const [capturingType, setCapturingType] = useState<'gesture' | 'object' | null>(null);
   const captureIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
-  // ── Static Image Test (Test ảnh với OOD Detection) ──
+  // ── Video Recording & Motion Tracking (3s countdown + 5s/10s auto record @ 120ms) ──
+  const [videoRecordingState, setVideoRecordingState] = useState<'idle' | 'countdown' | 'recording' | 'processing'>('idle');
+  const [countdownSec, setCountdownSec] = useState(3);
+  const [recordingDurationSec, setRecordingDurationSec] = useState<5 | 10>(10);
+  const [recordingSecLeft, setRecordingSecLeft] = useState(10);
+  const [recordingProgress, setRecordingProgress] = useState(0);
+  const [liveMotionScore, setLiveMotionScore] = useState(0);
+  const [recordedFramesCount, setRecordedFramesCount] = useState(0);
+  const [isExtractingVideo, setIsExtractingVideo] = useState(false);
+  const fileInputVideoRef = useRef<HTMLInputElement | null>(null);
+  const countdownIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const recordingProgressIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const finishRecordingEarlyRef = useRef<(() => void) | null>(null);
+
+  // ── Motion Sequence Flipbook Player ──────────────────
+  const [showMotionPlayer, setShowMotionPlayer] = useState(false);
+  const [motionPlayerIdx, setMotionPlayerIdx] = useState(0);
+  const [isMotionPlaying, setIsMotionPlaying] = useState(false);
+  const motionPlayerIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  // ── Static Image Test (4-Tier Bulletproof OOD) ───────
   const [predictImage, setPredictImage] = useState<string | null>(null);
   const [predictResult, setPredictResult] = useState<{
     label: string;
@@ -126,47 +149,73 @@ export default function StudentTeachFreePage() {
   const [isPredicting, setIsPredicting] = useState(false);
   const predictFileRef = useRef<HTMLInputElement | null>(null);
 
-  // ── Submission ──────────────────────────────────────
+  // ── Teacher Validation Modal (Sau khi Dạy AI) ────────
+  const [validationResult, setValidationResult] = useState<ActionValidationResult | null>(null);
+  const [showValidationModal, setShowValidationModal] = useState(false);
+
+  // ── Submission & Evaluation ──────────────────────────
   const [showSubmitModal, setShowSubmitModal] = useState(false);
   const [showReportCard, setShowReportCard] = useState(false);
-  const [validationResult, setValidationResult] = useState<ImageValidationResult | null>(null);
-  const [showValidationModal, setShowValidationModal] = useState(false);
   const [submitSuccess, setSubmitSuccess] = useState(false);
-  const [reflectionAnswer, setReflectionAnswer] = useState('Chụp ảnh rõ nét từ nhiều góc khác nhau');
+  const [reflectionAnswer, setReflectionAnswer] = useState('Chụp ảnh rõ nét kết hợp quay cử chỉ đều tay');
   const [teacherMessage, setTeacherMessage] = useState('');
   const [submitScore, setSubmitScore] = useState<number | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [uploadProgress, setUploadProgress] = useState('');
   const [createdModelId, setCreatedModelId] = useState<string | null>(null);
 
-  // ── View Teacher Samples ────────────────────
+  // ── View Teacher Samples ─────────────────────────────
   const [showTeacherSamples, setShowTeacherSamples] = useState(false);
 
-  // ── UI ──────────────────────────────────────────────
+  // ── UI ───────────────────────────────────────────────
   const [validationToast, setValidationToast] = useState<string | null>(null);
   const toastTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  // ── Refs ────────────────────────────────────────────
+  // ── Refs ─────────────────────────────────────────────
   const trainerRef = useRef<TfTrainer | null>(null);
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const fileInputObjectRef = useRef<HTMLInputElement | null>(null);
+  const fileInputGestureRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     trainerRef.current = new TfTrainer();
     lastActiveTimeRef.current = Date.now();
+    return () => {
+      if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
+      if (recordingProgressIntervalRef.current) clearInterval(recordingProgressIntervalRef.current);
+      if (motionPlayerIntervalRef.current) clearInterval(motionPlayerIntervalRef.current);
+    };
   }, []);
 
-  // ── Camera & MobileNet ──────────────────────────────
+  // ── Motion Player Loop (Flipbook @ 8.3 FPS / 120ms) ──
+  useEffect(() => {
+    if (!showMotionPlayer || !isMotionPlaying) {
+      if (motionPlayerIntervalRef.current) clearInterval(motionPlayerIntervalRef.current);
+      return;
+    }
+    const gestureFrames = samples.filter((s) => s.sourceId === activeClass && s.sourceType === 'gesture');
+    if (gestureFrames.length === 0) return;
+
+    motionPlayerIntervalRef.current = setInterval(() => {
+      setMotionPlayerIdx((prev) => (prev + 1) % gestureFrames.length);
+    }, 120);
+
+    return () => {
+      if (motionPlayerIntervalRef.current) clearInterval(motionPlayerIntervalRef.current);
+    };
+  }, [showMotionPlayer, isMotionPlaying, samples, activeClass]);
+
+  // ── Camera & MobileNet ───────────────────────────────
   const { videoRef, canvasRef, cameraError, retryCamera } = useCamera({ width: 640, height: 480 });
   const { modelStatus, extractFeaturesFromVideo, extractFeaturesFromBase64 } = useMobilenet();
 
-  // ── Toast helper ────────────────────────────────────
+  // ── Toast helper ─────────────────────────────────────
   const showToast = useCallback((msg: string) => {
     if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
     setValidationToast(msg);
     toastTimeoutRef.current = setTimeout(() => setValidationToast(null), 4000);
   }, []);
 
-  // ── Class Management (Thêm / Xóa nhãn như Giáo viên) ─
+  // ── Class Management ─────────────────────────────────
   const addClass = useCallback(() => {
     const rawLabel = newLabelInput.trim();
     if (!rawLabel) return;
@@ -180,7 +229,7 @@ export default function StudentTeachFreePage() {
       return;
     }
 
-    const newId = `class_free_${++classIdCounterRef.current}`;
+    const newId = `class_action_${++classIdCounterRef.current}`;
     const newClass = { id: newId, label, emoji: newEmojiInput || '✨' };
     setClasses((prev) => [...prev, newClass]);
     setNewLabelInput('');
@@ -204,7 +253,7 @@ export default function StudentTeachFreePage() {
     const preset = TEACHER_DATASET_PRESETS.find((p) => p.id === presetId);
     if (!preset) return;
     const newClasses = preset.classes.map((c) => ({
-      id: `class_free_${++classIdCounterRef.current}`,
+      id: `class_action_${++classIdCounterRef.current}`,
       label: cleanClassLabel(c.label, c.emoji) || c.label,
       emoji: c.emoji,
     }));
@@ -213,10 +262,36 @@ export default function StudentTeachFreePage() {
     setSamples([]);
     setIsTrained(false);
     playSuccessSound();
-    showToast(`Đã nạp kịch bản: ${preset.title}! Hãy thêm ảnh cho từng nhãn nhé 📸`);
+    showToast(`Đã nạp kịch bản: ${preset.title}! Hãy quay cử chỉ hoặc chụp ảnh nhé 🎬`);
   }, [showToast]);
 
-  // ── Load Template from Teacher (Tùy chọn) ────────────
+  // ── Fetch Teacher Template for teach-action ──────────
+  useEffect(() => {
+    let ignore = false;
+    api.getTemplates('teach-action')
+      .then(async (res) => {
+        if (ignore) return;
+        if (res && res.length > 0) {
+          const template = res[0];
+          try {
+            const fileData = await api.getDatasetFile(template.id);
+            template.samples = fileData.samples || (Array.isArray(fileData) ? fileData : []);
+          } catch (e) {
+            console.error('Failed to load teach-action template samples', e);
+          }
+          if (ignore) return;
+          setTeacherTemplate(template);
+        }
+        setTemplateLoading(false);
+      })
+      .catch((err) => {
+        if (ignore) return;
+        console.error('Failed to load teach-action template', err);
+        setTemplateLoading(false);
+      });
+    return () => { ignore = true; };
+  }, []);
+
   const loadTeacherTemplate = useCallback(() => {
     if (!teacherTemplate) return;
     if (teacherTemplate.customClasses && teacherTemplate.customClasses.length > 0) {
@@ -234,34 +309,7 @@ export default function StudentTeachFreePage() {
     }
   }, [teacherTemplate, showToast]);
 
-  // ── Fetch Teacher Template (Background Check) ────────
-  useEffect(() => {
-    let ignore = false;
-    api.getTemplates('teach-free')
-      .then(async (res) => {
-        if (ignore) return;
-        if (res && res.length > 0) {
-          const template = res[0];
-          try {
-            const fileData = await api.getDatasetFile(template.id);
-            template.samples = fileData.samples || (Array.isArray(fileData) ? fileData : []);
-          } catch (e) {
-            console.error('Failed to load template samples', e);
-          }
-          if (ignore) return;
-          setTeacherTemplate(template);
-        }
-        setTemplateLoading(false);
-      })
-      .catch((err) => {
-        if (ignore) return;
-        console.error('Failed to load template', err);
-        setTemplateLoading(false);
-      });
-    return () => { ignore = true; };
-  }, []);
-
-  // ── Evaluation Hook ─────────────────────────────────
+  // ── Evaluation Hook ──────────────────────────────────
   const {
     evaluation,
     previousEvaluation,
@@ -269,23 +317,20 @@ export default function StudentTeachFreePage() {
     isEvaluating,
     runEvaluation,
   } = useModelEvaluation({
-    challengeType: 'teach-free',
+    challengeType: 'teach-action',
     classes,
     goldenDataset: [],
     dynamicDataset: [],
     teacherSamples: teacherTemplate?.samples,
   });
 
-  // ── Capture from camera ─────────────────────────────
-  const captureSample = useCallback(() => {
+  // ── Helper: Capture single frame (Object or Gesture) ─
+  const captureFrame = useCallback((sourceType: 'object' | 'gesture' = 'object') => {
     if (modelStatus !== 'ready' || !videoRef.current || !activeClass) return;
 
     const video = videoRef.current;
     const features = extractFeaturesFromVideo(video);
-    if (!features) {
-      showToast('⚠️ Không thể trích xuất đặc trưng. Hãy thử lại!');
-      return;
-    }
+    if (!features) return;
 
     const vW = video.videoWidth || 640;
     const vH = video.videoHeight || 480;
@@ -298,11 +343,8 @@ export default function StudentTeachFreePage() {
 
     const quality = ctx ? assessQuality(cv) : undefined;
     const isQualityOk = !(quality?.isDark || quality?.isBlurry);
-
     const activeClassLabel = classes.find((c) => c.id === activeClass)?.label || 'Không tên';
 
-    // Zero-Shot Cross-Check: bắt buộc ảnh phải có thể thuộc nhãn đó
-    // Nếu khác tên nhãn hoặc là ảnh lạ (OOD) -> vẫn đưa vào Thư viện ảnh nhưng cảnh báo viền đỏ, không tính vào số mẫu
     const mischeck = checkMisclassification(
       features,
       activeClassLabel,
@@ -311,19 +353,13 @@ export default function StudentTeachFreePage() {
 
     const isValid = isQualityOk && !mischeck.isSuspect;
 
-    if (!isQualityOk && quality) {
-      const msg = quality.isDark ? 'Ảnh hơi tối! Hãy tìm chỗ sáng hơn 🌙' : 'Ảnh hơi mờ! Hãy giữ yên camera 📸';
-      showToast(`⚠️ ${msg}`);
-    } else if (mischeck.isSuspect) {
-      showToast(mischeck.message || '⚠️ Ảnh vừa chụp có dấu hiệu sai nhãn hoặc là ảnh lạ (đã đánh dấu viền đỏ trong Thư viện, không tính vào số mẫu)!');
-    }
-
     setSamples((prev) => [
       ...prev,
       {
         id: crypto.randomUUID(),
         label: activeClassLabel,
         sourceId: activeClass,
+        sourceType,
         features,
         thumbnail,
         rawThumbnail: thumbnail,
@@ -333,20 +369,23 @@ export default function StudentTeachFreePage() {
         quality,
       },
     ]);
-    playClickSound();
-  }, [modelStatus, videoRef, activeClass, classes, extractFeaturesFromVideo, showToast]);
 
-  // ── Hold-to-Record (Giữ để chụp liên tục) ────────────
-  const startCapturing = useCallback(() => {
+    playClickSound();
+  }, [modelStatus, videoRef, activeClass, classes, extractFeaturesFromVideo]);
+
+  // ── Hold-to-Record ───────────────────────────────────
+  const startCapturing = useCallback((type: 'gesture' | 'object') => {
     if (modelStatus !== 'ready' || !activeClass) return;
     playClickSound();
-    setIsCapturing(true);
-    captureSample();
-    captureIntervalRef.current = setInterval(captureSample, 300);
-  }, [modelStatus, activeClass, captureSample]);
+    setCapturingType(type);
+    captureFrame(type);
+    // Gesture quay nhanh hơn (120ms), Object chụp bình thường (300ms)
+    const intervalMs = type === 'gesture' ? 120 : 300;
+    captureIntervalRef.current = setInterval(() => captureFrame(type), intervalMs);
+  }, [modelStatus, activeClass, captureFrame]);
 
   const stopCapturing = useCallback(() => {
-    setIsCapturing(false);
+    setCapturingType(null);
     if (captureIntervalRef.current) {
       clearInterval(captureIntervalRef.current);
       captureIntervalRef.current = null;
@@ -359,8 +398,100 @@ export default function StudentTeachFreePage() {
     };
   }, [activeClass]);
 
-  // ── File Upload (batch) ─────────────────────────────
-  const handleFileUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+  // ── Auto Motion Recording (Countdown 3s + 5s/10s Motion Tracking @ 120ms) ──
+  const startMotionRecording = useCallback(() => {
+    if (modelStatus !== 'ready' || !activeClass || videoRecordingState !== 'idle') return;
+
+    playClickSound();
+    setVideoRecordingState('countdown');
+    setCountdownSec(3);
+
+    let cd = 3;
+    countdownIntervalRef.current = setInterval(() => {
+      cd--;
+      setCountdownSec(cd);
+      if (cd <= 0) {
+        clearInterval(countdownIntervalRef.current!);
+        countdownIntervalRef.current = null;
+
+        // Bắt đầu ghi hình
+        setVideoRecordingState('recording');
+        playSuccessSound();
+        speakEnglish('Start action!');
+
+        const totalDurationMs = recordingDurationSec * 1000;
+        const intervalMs = 120; // 8.3 FPS
+        const startTime = Date.now();
+        let framesCaptured = 0;
+        let prevImageData: ImageData | null = null;
+
+        setRecordingSecLeft(recordingDurationSec);
+        setRecordingProgress(0);
+        setRecordedFramesCount(0);
+
+        const recordInterval = setInterval(() => {
+          const elapsed = Date.now() - startTime;
+          const progress = Math.min(100, Math.round((elapsed / totalDurationMs) * 100));
+          const secLeft = Math.max(0, Math.ceil((totalDurationMs - elapsed) / 1000));
+          setRecordingProgress(progress);
+          setRecordingSecLeft(secLeft);
+
+          if (videoRef.current) {
+            const video = videoRef.current;
+            const cv = document.createElement('canvas');
+            cv.width = 160;
+            cv.height = 120;
+            const ctx = cv.getContext('2d');
+            if (ctx) {
+              ctx.drawImage(video, 0, 0, 160, 120);
+              const currData = ctx.getImageData(0, 0, 160, 120);
+
+              let motion = 0;
+              if (prevImageData) {
+                let diffSum = 0;
+                for (let i = 0; i < currData.data.length; i += 4) {
+                  diffSum += Math.abs(currData.data[i] - prevImageData.data[i]);
+                }
+                motion = Math.round((diffSum / (160 * 120)) * 10) / 10;
+              }
+              prevImageData = currData;
+              setLiveMotionScore(motion);
+
+              // Lưu frame
+              captureFrame('gesture');
+              framesCaptured++;
+              setRecordedFramesCount(framesCaptured);
+            }
+          }
+
+          if (elapsed >= totalDurationMs) {
+            clearInterval(recordInterval);
+            recordingProgressIntervalRef.current = null;
+            setVideoRecordingState('idle');
+            playSuccessSound();
+            speakEnglish('Recording complete!');
+            showToast(`✅ Đã thu thành công ${framesCaptured} khung hình cử chỉ!`);
+          }
+        }, intervalMs);
+
+        recordingProgressIntervalRef.current = recordInterval;
+
+        finishRecordingEarlyRef.current = () => {
+          clearInterval(recordInterval);
+          recordingProgressIntervalRef.current = null;
+          setVideoRecordingState('idle');
+          playSuccessSound();
+          showToast(`⏹ Đã dừng quay sớm. Đã thu ${framesCaptured} khung hình!`);
+        };
+      }
+    }, 1000);
+  }, [modelStatus, activeClass, videoRecordingState, recordingDurationSec, captureFrame, showToast, videoRef]);
+
+  // ── Batch File Upload (Object or Gesture) ─────────────
+  const handleBatchUpload = useCallback(async (
+    e: React.ChangeEvent<HTMLInputElement>,
+    sourceType: 'object' | 'gesture'
+  ) => {
     const files = e.target.files;
     if (!files || files.length === 0 || !activeClass) return;
 
@@ -376,7 +507,6 @@ export default function StudentTeachFreePage() {
     const activeClassLabel = classes.find((c) => c.id === activeClass)?.label || 'Không tên';
     const newSamples: StoredSample[] = [];
     let misclassifiedCount = 0;
-    let firstSuspectMsg = '';
 
     for (const file of imageFiles) {
       try {
@@ -388,18 +518,13 @@ export default function StudentTeachFreePage() {
             activeClassLabel,
             classes.map((c) => c.label)
           );
-
-          if (mischeck.isSuspect) {
-            misclassifiedCount++;
-            if (!firstSuspectMsg) {
-              firstSuspectMsg = mischeck.message || '';
-            }
-          }
+          if (mischeck.isSuspect) misclassifiedCount++;
 
           newSamples.push({
             id: crypto.randomUUID(),
             label: activeClassLabel,
             sourceId: activeClass,
+            sourceType,
             features,
             thumbnail: base64,
             rawThumbnail: base64,
@@ -409,62 +534,43 @@ export default function StudentTeachFreePage() {
           });
         }
       } catch {
-        // skip failed files
+        // skip failed
       }
     }
 
     if (newSamples.length > 0) {
       setSamples((prev) => [...prev, ...newSamples]);
       setIsTrained(false);
-      const validAddedCount = newSamples.filter((s) => s.isValid !== false && !s.isQuestionable).length;
-      if (misclassifiedCount > 0) {
-        showToast(
-          firstSuspectMsg
-            ? `${firstSuspectMsg} (Đã thêm vào Thư viện với viền đỏ cảnh báo, không tính vào số mẫu!)`
-            : `⚠️ Phát hiện ${misclassifiedCount} ảnh lạ / sai nhãn (đã thêm vào Thư viện với viền đỏ cảnh báo, không tính vào số mẫu)!`
-        );
-      } else {
-        showToast(`✅ Đã thêm ${validAddedCount} ảnh hợp lệ cho "${activeClassLabel}"!`);
-      }
       playClickSound();
-    } else {
-      showToast('⚠️ Không thể trích xuất đặc trưng từ ảnh đã chọn!');
+      showToast(`✅ Đã thêm ${newSamples.length} ảnh (${sourceType === 'gesture' ? 'Cử chỉ' : 'Đối tượng'}) cho "${activeClassLabel}"!`);
     }
 
-    if (fileInputRef.current) fileInputRef.current.value = '';
+    e.target.value = '';
   }, [activeClass, classes, extractFeaturesFromBase64, showToast]);
 
-  // ── Clear samples ───────────────────────────────────
-  const clearClassSamples = useCallback((classId: string) => {
-    playClickSound();
-    setSamples((prev) => prev.filter((s) => s.sourceId !== classId));
-    setIsTrained(false);
-  }, []);
-
-  // ── Sample counts per class (chỉ tính ảnh hợp lệ) ───
+  // ── Sample Counts ────────────────────────────────────
   const classCounts = useMemo(() => {
-    const counts: Record<string, number> = {};
+    const counts: Record<string, { total: number; object: number; gesture: number }> = {};
     classes.forEach((c) => {
-      counts[c.id] = samples.filter(
-        (s) => s.isValid !== false && !s.isQuestionable && s.sourceId === c.id
-      ).length;
+      const classSamples = samples.filter((s) => s.isValid !== false && !s.isQuestionable && s.sourceId === c.id);
+      counts[c.id] = {
+        total: classSamples.length,
+        object: classSamples.filter((s) => s.sourceType === 'object' || !s.sourceType).length,
+        gesture: classSamples.filter((s) => s.sourceType === 'gesture').length,
+      };
     });
     return counts;
   }, [classes, samples]);
 
-  // ── Can Train check ─────────────────────────────────
   const canTrain = useMemo(() => {
     if (classes.length < 2 || modelStatus !== 'ready') return false;
-    return classes.every((c) => {
-      const count = classCounts[c.id] || 0;
-      return count >= MIN_SAMPLES_PER_CLASS;
-    });
+    return classes.every((c) => (classCounts[c.id]?.total || 0) >= MIN_SAMPLES_PER_CLASS);
   }, [classes, classCounts, modelStatus]);
 
-  // ── Training ────────────────────────────────────────
+  // ── Training with Teacher Template Validation ────────
   const handleTrain = useCallback(async () => {
     if (!canTrain) {
-      showToast(`⚠️ Cần ít nhất ${MIN_SAMPLES_PER_CLASS} ảnh hợp lệ cho mỗi nhãn để huấn luyện!`);
+      showToast(`⚠️ Cần ít nhất ${MIN_SAMPLES_PER_CLASS} mẫu hợp lệ cho mỗi nhãn để huấn luyện!`);
       return;
     }
 
@@ -475,9 +581,9 @@ export default function StudentTeachFreePage() {
 
     try {
       const validSamples = samples.filter((s) => s.isValid !== false && !s.isQuestionable);
-
-      // Tích hợp dữ liệu đặc trưng chuẩn từ Thư viện ảnh (Dataset Prototypes) cho các nhãn tương ứng (Chó, Mèo, Bọ Cánh Cứng...)
       const trainingDatasetSamples: StoredSample[] = [...validSamples];
+
+      // Dataset Prototypes
       for (const c of classes) {
         const match = matchLabelToDataset(c.label);
         if (match.matched && match.classMapping && REFERENCE_CENTROIDS[match.classMapping.key]) {
@@ -506,13 +612,14 @@ export default function StudentTeachFreePage() {
           },
           { epochs: hpEpochs, batchSize: hpBatchSize, learningRate: hpLearningRate }
         );
+
         setIsTraining(false);
         setIsTrained(true);
         playSuccessSound();
-        speakEnglish('Learning complete. Let us test!');
+        speakEnglish('Learning complete!');
 
-        // ── BƯỚC XÁC THỰC VỚI BỘ MẪU GIÁO VIÊN ──
-        const valResult = await validateStudentWithTeacherTemplate(
+        // ── BƯỚC XÁC THỰC VỚI BỘ MẪU GIÁO VIÊN (Chuyên biệt Hành động & Đối tượng) ──
+        const valResult = await validateStudentActionWithTeacherTemplate(
           validSamples,
           classes,
           teacherTemplate?.samples,
@@ -523,9 +630,9 @@ export default function StudentTeachFreePage() {
         setShowValidationModal(true);
 
         if (valResult.hasTeacherTemplate) {
-          showToast(`🎓 Đã đối soát với bài mẫu Thầy/Cô: Khớp ${valResult.studentAccuracyScore}%!`);
+          showToast(`🎓 Đã đối soát bài mẫu Thầy/Cô: Vật thể ${valResult.objectAccuracyScore}%, Cử chỉ ${valResult.gestureAccuracyScore}%!`);
         } else {
-          showToast(`✅ Đã hoàn tất huấn luyện! Độ nhất quán dữ liệu: ${valResult.studentAccuracyScore}%`);
+          showToast(`✅ Đã hoàn tất huấn luyện! Độ chuẩn xác: ${valResult.overallAccuracyScore}%`);
         }
       }
     } catch (err) {
@@ -535,7 +642,7 @@ export default function StudentTeachFreePage() {
     }
   }, [canTrain, samples, classes, hpEpochs, hpBatchSize, hpLearningRate, teacherTemplate, showToast]);
 
-  // ── Prediction loop — chỉ chạy khi user bật predictionActive ──
+  // ── Real-time Prediction Loop ────────────────────────
   useEffect(() => {
     if (!predictionActive || !isTrained || modelStatus !== 'ready' || !trainerRef.current) return;
     lastActiveTimeRef.current = Date.now();
@@ -553,7 +660,6 @@ export default function StudentTeachFreePage() {
         if (features) {
           const result = await trainerRef.current.predict(features);
 
-          // Đối soát chặt chẽ với Thư viện ảnh để loại bỏ phông nền/rác (OOD)
           const cSamples = validSamples.filter((s) => s.label === result?.label);
           let maxSimInClass = -1;
           for (const s of cSamples) {
@@ -567,7 +673,6 @@ export default function StudentTeachFreePage() {
             if (cSim > maxSimInClass) maxSimInClass = cSim;
           }
 
-          // Khung hình thuộc Thư viện ảnh khi: NN tự tin >= 65% VÀ khớp mẫu thư viện (sim >= 0.65)
           const isFrameInLibrary = result && result.confidence >= 65 && maxSimInClass >= 0.65;
 
           if (isFrameInLibrary) {
@@ -582,9 +687,7 @@ export default function StudentTeachFreePage() {
               }
               setConfidence(result.confidence);
               setPredictedLabel(result.label);
-              if (result.confidences) {
-                setConfidences(result.confidences);
-              }
+              if (result.confidences) setConfidences(result.confidences);
             }
           } else {
             idleStreakRef.current++;
@@ -595,20 +698,19 @@ export default function StudentTeachFreePage() {
                 isDetectedRef.current = false;
                 setIsDetectedInLibrary(false);
                 setConfidence(0);
-                setPredictedLabel('Đang chờ đối tượng... 💤');
+                setPredictedLabel('Đang chờ hành động / đối tượng... 💤');
                 const zeroConf: Record<string, number> = {};
                 classes.forEach((c) => { zeroConf[c.label] = 0; });
                 setConfidences(zeroConf);
               }
 
-              // Tự động tắt nhận diện sau đúng 10s không có đối tượng trong Thư viện ảnh
               const idleMs = Date.now() - lastActiveTimeRef.current;
               if (idleMs >= 10000) {
                 setPredictionActive(false);
                 setIsDetectedInLibrary(false);
                 isDetectedRef.current = false;
                 playClickSound();
-                showToast('💤 Đã tự động tắt nhận diện do không có đối tượng trong Thư viện ảnh.');
+                showToast('💤 Đã tự động tắt nhận diện do không có hoạt động.');
                 return;
               }
             }
@@ -624,7 +726,7 @@ export default function StudentTeachFreePage() {
     return () => cancelAnimationFrame(rafId);
   }, [predictionActive, isTrained, modelStatus, samples, classes, extractFeaturesFromVideo, videoRef, showToast]);
 
-  // ── Upload ảnh để dự đoán (Static Test với 4-Tier Bulletproof OOD) ──
+  // ── Static Image Upload Prediction (4-Tier Bulletproof OOD) ──
   const handlePredictUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     const isImage = file && (file.type.startsWith('image/') || /\.(jpe?g|png|webp|bmp|gif)$/i.test(file.name));
@@ -643,10 +745,8 @@ export default function StudentTeachFreePage() {
         return;
       }
 
-      // 1. Chạy qua Mạng Nơ-ron (NN) đã học
       const result = await trainerRef.current.predict(features);
 
-      // 2. Thu thập các key centroid của các nhãn đang dạy (Active Classes)
       const activeCentroidKeys = new Set<string>();
       const activeClassMap: Record<string, string> = {};
       for (const c of classes) {
@@ -657,7 +757,6 @@ export default function StudentTeachFreePage() {
         }
       }
 
-      // 3. Tính độ tương đồng với từng lớp đang dạy (Active Classes)
       let maxActiveSim = -1;
       let matchedLabel: string | null = null;
       const classSims: Record<string, number> = {};
@@ -685,7 +784,6 @@ export default function StudentTeachFreePage() {
       const runnerUpSim = sortedSims.length > 1 ? sortedSims[1] : 0;
       const margin = maxActiveSim - runnerUpSim;
 
-      // 4. Đối soát với TẤT CẢ các lớp centroid KHÁC (Inactive Centroids) trong toàn bộ 5 dataset
       let maxOtherCentroidSim = -1;
       let bestOtherKey = '';
       for (const [key, centroidVec] of Object.entries(REFERENCE_CENTROIDS)) {
@@ -698,7 +796,6 @@ export default function StudentTeachFreePage() {
         }
       }
 
-      // 5. Các quy tắc REJECT OOD (Loại trừ ảnh lạ):
       const belongsToOtherDatasetClass =
         maxOtherCentroidSim > maxActiveSim + 0.03 ||
         (maxOtherCentroidSim >= 0.65 && maxOtherCentroidSim > maxActiveSim);
@@ -716,7 +813,7 @@ export default function StudentTeachFreePage() {
         } else if (lowAbsoluteSimilarity) {
           reason = 'Độ tương đồng quá thấp, ảnh không nằm trong bộ dữ liệu hoặc Thư viện ảnh.';
         } else if (ambiguousLowMargin) {
-          reason = 'Không phân biệt rõ ràng với các nhãn đã dạy (ảnh mờ hoặc vật thể không xác định).';
+          reason = 'Không phân biệt rõ ràng với các nhãn đã dạy.';
         }
 
         setPredictResult({
@@ -756,7 +853,7 @@ export default function StudentTeachFreePage() {
     }
   }, [classes, samples, showToast]);
 
-  // ── Self-Evaluation (LOO-KNN) ───────────────────────
+  // ── Self-Evaluation (LOO-KNN) ────────────────────────
   const selfAccuracy = useMemo(() => {
     const validSamples = samples.filter((s) => s.isValid !== false && !s.isQuestionable);
     if (validSamples.length < 4) return null;
@@ -771,7 +868,7 @@ export default function StudentTeachFreePage() {
     return Math.round((correct / validSamples.length) * 100);
   }, [samples]);
 
-  // ── Submit Flow ─────────────────────────────────────
+  // ── Submission Flow ──────────────────────────────────
   const handleTrainComplete = useCallback(() => {
     if (!isTrained) {
       showToast('⚠️ Hãy huấn luyện mô hình trước!');
@@ -792,14 +889,14 @@ export default function StudentTeachFreePage() {
         setUploadProgress('Đang tải ảnh lên Cloud...');
         processedSamples = await uploadSamplesToCloudinary(
           processedSamples,
-          'teach-free',
+          'teach-action',
           (uploaded, total) => setUploadProgress(`Tải ảnh ${uploaded}/${total}...`)
         );
         setUploadProgress('Đang lưu bài...');
       }
 
       const created = await api.createDataset(
-        'teach-free',
+        'teach-action',
         processedSamples,
         submitScore,
         `${reflectionAnswer} | Lời nhắn: ${teacherMessage}`,
@@ -819,7 +916,6 @@ export default function StudentTeachFreePage() {
           hyperparameters: { epochs: hpEpochs, batchSize: hpBatchSize, learningRate: hpLearningRate },
         }).catch(() => {});
 
-        // Upload model blobs
         if (trainerRef.current?.isTrained()) {
           setUploadProgress('Đang tải mô hình lên...');
           const blobs = await trainerRef.current.saveToBlobs();
@@ -833,7 +929,6 @@ export default function StudentTeachFreePage() {
           }
         }
 
-        // Run evaluation
         setUploadProgress('Đang đánh giá AI...');
         await runEvaluation(processedSamples, created.model.id);
       }
@@ -842,9 +937,9 @@ export default function StudentTeachFreePage() {
         submitScore,
         { samples: processedSamples },
         `${reflectionAnswer} | Lời nhắn: ${teacherMessage}`,
-        'teach-free'
+        'teach-action'
       );
-      await api.saveProgress('teach-free', submitScore);
+      await api.saveProgress('teach-action', submitScore);
 
       setUploadProgress('');
       setShowSubmitModal(false);
@@ -859,110 +954,18 @@ export default function StudentTeachFreePage() {
     }
   }, [submitScore, samples, classes, reflectionAnswer, teacherMessage, hpEpochs, hpBatchSize, hpLearningRate, runEvaluation]);
 
-  const handleRevise = useCallback(() => {
-    setShowReportCard(false);
-    setShowSubmitModal(false);
-    setSubmitSuccess(false);
-    setCreatedModelId(null);
-    playClickSound();
-  }, []);
-
-  const handleFinalize = useCallback(async () => {
-    try {
-      setUploadProgress('Đang tổng hợp điểm kỹ năng...');
-      setIsSubmitting(true);
-      setShowReportCard(false);
-      setShowSubmitModal(true);
-
-      const chain = await api.getModelChain('teach-free').catch(() => []);
-
-      let dataCurationScore = 0;
-      let debuggingScore = 0;
-      let improvementScore = 0;
-      let overallScore = 0;
-      const strengths: string[] = [];
-      const improvements: string[] = [];
-      let summary = '';
-
-      if (chain.length > 0) {
-        const latest = chain[chain.length - 1];
-        const eval_ = latest.evaluation;
-
-        if (eval_?.datasetHealth) {
-          const dh = eval_.datasetHealth;
-          dataCurationScore = Math.round((dh.qualityScore + dh.balanceRatio * 100) / 2);
-          if (dh.blurrySampleCount > 0) dataCurationScore -= dh.blurrySampleCount * 2;
-          if (dh.darkSampleCount > 0) dataCurationScore -= dh.darkSampleCount * 2;
-          dataCurationScore = Math.max(0, Math.min(100, dataCurationScore));
-        }
-
-        if (eval_?.confusionMatrix) {
-          const cm = eval_.confusionMatrix;
-          const minAcc = Math.min(...(Object.values(cm.perClassAccuracy) as number[]));
-          debuggingScore = minAcc;
-        }
-
-        if (chain.length > 1) {
-          const first = chain[0];
-          const improvement = latest.testScore - first.testScore;
-          improvementScore = Math.max(0, Math.min(100, 50 + improvement));
-        } else {
-          improvementScore = dataCurationScore;
-        }
-
-        overallScore = Math.round((dataCurationScore + debuggingScore + improvementScore) / 3);
-
-        if (overallScore >= 80) summary = 'Bé thể hiện kỹ năng dạy AI xuất sắc!';
-        else if (overallScore >= 60) summary = 'Bé đã biết cách dạy AI, nhưng cần cẩn thận hơn.';
-        else summary = 'Bé cần chú ý chụp ảnh rõ nét và đủ số lượng cho các nhãn nhé.';
-
-        if (dataCurationScore >= 80) strengths.push('Chụp ảnh rõ nét và dữ liệu cân bằng tốt.');
-        else improvements.push('Cần chụp ảnh rõ nét hơn, tránh ảnh bị mờ hoặc tối.');
-
-        if (debuggingScore >= 80) strengths.push('Không có nhãn nào bị yếu quá mức, AI học đều.');
-        else improvements.push(`Cải thiện thêm cho nhãn "${eval_?.confusionMatrix?.weakestLabel || 'nhãn yếu nhất'}".`);
-
-        const formattedChain = chain.map((m: ModelResponse) => ({
-          modelId: m.id,
-          version: m.version || 1,
-          testScore: m.testScore,
-          sampleCount: m.evaluation?.datasetHealth?.sampleCount || 0,
-          classSummary: m.evaluation?.datasetHealth?.classSummary || {},
-        }));
-
-        await api.upsertAssessment({
-          challengeType: 'teach-free',
-          modelChain: formattedChain,
-          dataCurationScore,
-          debuggingScore,
-          improvementScore,
-          overallScore,
-          narrative: { summary, strengths, improvements },
-        });
-      }
-
-      setSubmitSuccess(true);
-      playSuccessSound();
-      speakEnglish('Submission successful!');
-    } catch (err) {
-      console.error('Failed to finalize', err);
-    } finally {
-      setIsSubmitting(false);
-      setUploadProgress('');
-    }
-  }, []);
+  const gestureFramesForActive = useMemo(() => {
+    return samples.filter((s) => s.sourceId === activeClass && s.sourceType === 'gesture');
+  }, [samples, activeClass]);
 
   const activeClassObj = classes.find((c) => c.id === activeClass);
   const activeClassLabel = activeClassObj?.label || '';
-  const totalValidSamples = useMemo(() => {
-    return samples.filter((s) => s.isValid !== false && !s.isQuestionable).length;
-  }, [samples]);
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-teal-50 via-cyan-50 to-indigo-100 py-8 px-4 select-none">
       <div className="max-w-[1600px] w-[98%] mx-auto space-y-6">
 
-        {/* ── HEADER ── */}
+        {/* ── HEADER & NAVIGATION ── */}
         <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <Link
@@ -974,33 +977,34 @@ export default function StudentTeachFreePage() {
               <span>Về Trang Chủ</span>
             </Link>
 
-            {/* Switch to Teach-Action Mode Button */}
+            {/* Switch to Teach-Free Mode Button */}
             <Link
-              href="/challenge/teach-action"
+              href="/challenge/teach-free"
               onClick={playClickSound}
               className="px-4 py-2 bg-white rounded-full border-2 border-indigo-200 text-indigo-700 font-extrabold shadow-sm hover:scale-105 transition-transform flex items-center gap-2 text-sm"
-              title="Chuyển sang chế độ Dạy Hành Động (Teach Action)"
+              title="Chuyển sang Chế Độ Phân Loại Ảnh Tạo Nhãn Tự Do (Teach Free)"
             >
-              <Film className="w-4 h-4 text-indigo-600" />
-              <span>🎬 Chế độ Dạy Hành Động</span>
+              <Layers className="w-4 h-4 text-indigo-600" />
+              <span>🖼️ Chế Độ Phân Loại Ảnh Tạo Nhãn Tự Do</span>
             </Link>
           </div>
+
           <div className="flex items-center gap-3">
-            <span className="text-3xl">🧪🧠</span>
+            <span className="text-3xl">🎬⚡</span>
             <h1 className="text-2xl md:text-3xl font-black text-teal-900">
-              Bé Tập Phân Loại Ảnh Tạo Nhãn Tự Do
+              Bé Tập Dạy AI Hành Động & Đối Tượng
             </h1>
           </div>
         </div>
 
-        {/* ── TEACHER TEMPLATE BANNER (Nếu có bài tập từ Thầy/Cô) ── */}
+        {/* ── TEACHER TEMPLATE BANNER (Nếu có bài tập mẫu từ Thầy/Cô) ── */}
         {teacherTemplate && (
           <div className="bg-white rounded-2xl p-4 border-2 border-indigo-200 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-3 animate-in fade-in">
             <div className="flex items-start gap-3">
               <span className="text-2xl">🎓</span>
               <div>
                 <span className="font-black text-indigo-900 text-sm">
-                  Thầy/Cô đã giao bài tập mẫu: Phân loại ảnh tạo nhãn tự do
+                  Thầy/Cô đã giao bài tập mẫu: Phân loại hành động kết hợp đối tượng
                 </span>
                 {teacherTemplate.teacherNotes && (
                   <p className="text-xs text-indigo-600 mt-0.5 font-medium">
@@ -1023,7 +1027,7 @@ export default function StudentTeachFreePage() {
         {!showSubmitModal && !showReportCard && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
-            {/* ══ LEFT: Class Management & Sample Gallery ══ */}
+            {/* ══ LEFT: Label Management & Data Collection ══ */}
             <div className="bg-white rounded-3xl p-6 shadow-xl border-4 border-teal-200 flex flex-col">
 
               {/* MobileNet Status */}
@@ -1033,57 +1037,51 @@ export default function StudentTeachFreePage() {
                 'bg-amber-50 text-amber-700 border-2 border-amber-200 animate-pulse'
               }`}>
                 <span>{modelStatus === 'ready' ? '🟢' : modelStatus === 'error' ? '🔴' : '🟡'}</span>
-                {modelStatus === 'ready' ? 'MobileNet sẵn sàng nhận diện' : modelStatus === 'error' ? 'Lỗi tải MobileNet' : 'Đang tải MobileNet...'}
+                {modelStatus === 'ready' ? 'MobileNet sẵn sàng nhận diện cử chỉ & ảnh' : modelStatus === 'error' ? 'Lỗi tải MobileNet' : 'Đang tải MobileNet...'}
               </div>
 
-              {/* Quick Presets 1-Click (Gợi ý kịch bản mẫu) */}
+              {/* Quick Presets 1-Click */}
               <div className="mb-4 bg-teal-50/70 border-2 border-dashed border-teal-300 rounded-2xl p-3">
-                <div className="flex items-center justify-between mb-1.5">
-                  <div className="text-[11px] font-black text-teal-800 uppercase tracking-wider flex items-center gap-1.5">
-                    <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-                    Gợi ý mẫu nhanh 1-Click
-                  </div>
+                <div className="text-[11px] font-black text-teal-800 uppercase tracking-wider flex items-center gap-1.5 mb-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                  Gợi ý kịch bản mẫu 1-Click
                 </div>
                 <p className="text-[11px] text-teal-700 mb-2 leading-relaxed">
-                  Bé có thể chọn kịch bản mẫu có sẵn hoặc tự gõ nhãn mới ở ô bên dưới nhé!
+                  Chọn kịch bản có sẵn hoặc tự do gõ nhãn mới ở ô bên dưới!
                 </p>
                 <div className="flex flex-wrap gap-1.5">
                   <button
                     type="button"
                     onClick={() => applyPreset('agri-doctor')}
-                    className="text-xs font-bold px-2.5 py-1.5 rounded-xl bg-emerald-50 text-emerald-800 border border-emerald-300 hover:bg-emerald-100 hover:scale-105 active:scale-95 transition-all shadow-sm flex items-center gap-1"
-                    title="Lá Khỏe, Lá Bệnh, Bọ Cánh Cứng"
+                    className="text-xs font-bold px-2.5 py-1.5 rounded-xl bg-emerald-50 text-emerald-800 border border-emerald-300 hover:bg-emerald-100 hover:scale-105 active:scale-95 transition-all shadow-sm"
                   >
                     🌿 Bác sĩ Nông nghiệp
                   </button>
                   <button
                     type="button"
                     onClick={() => applyPreset('animal-world')}
-                    className="text-xs font-bold px-2.5 py-1.5 rounded-xl bg-amber-50 text-amber-800 border border-amber-300 hover:bg-amber-100 hover:scale-105 active:scale-95 transition-all shadow-sm flex items-center gap-1"
-                    title="Chó, Mèo, Bọ Cánh Cứng"
+                    className="text-xs font-bold px-2.5 py-1.5 rounded-xl bg-amber-50 text-amber-800 border border-amber-300 hover:bg-amber-100 hover:scale-105 active:scale-95 transition-all shadow-sm"
                   >
                     🐾 Thế giới Động vật
                   </button>
                   <button
                     type="button"
                     onClick={() => applyPreset('fruit-garden')}
-                    className="text-xs font-bold px-2.5 py-1.5 rounded-xl bg-rose-50 text-rose-800 border border-rose-300 hover:bg-rose-100 hover:scale-105 active:scale-95 transition-all shadow-sm flex items-center gap-1"
-                    title="Táo, Chuối, Cam"
+                    className="text-xs font-bold px-2.5 py-1.5 rounded-xl bg-rose-50 text-rose-800 border border-rose-300 hover:bg-rose-100 hover:scale-105 active:scale-95 transition-all shadow-sm"
                   >
                     🍎 Vườn Trái Cây
                   </button>
                   <button
                     type="button"
                     onClick={() => applyPreset('rock-paper-scissors')}
-                    className="text-xs font-bold px-2.5 py-1.5 rounded-xl bg-indigo-50 text-indigo-800 border border-indigo-300 hover:bg-indigo-100 hover:scale-105 active:scale-95 transition-all shadow-sm flex items-center gap-1"
-                    title="Búa, Bao, Kéo"
+                    className="text-xs font-bold px-2.5 py-1.5 rounded-xl bg-indigo-50 text-indigo-800 border border-indigo-300 hover:bg-indigo-100 hover:scale-105 active:scale-95 transition-all shadow-sm"
                   >
                     ✊ Oẳn tù tì
                   </button>
                 </div>
               </div>
 
-              {/* Add New Label Input (Học sinh tự tạo nhãn tùy ý) */}
+              {/* Add New Label */}
               <div className="mb-4 space-y-2">
                 <div className="flex gap-2">
                   <input
@@ -1091,7 +1089,7 @@ export default function StudentTeachFreePage() {
                     value={newLabelInput}
                     onChange={(e) => setNewLabelInput(e.target.value)}
                     onKeyDown={(e) => e.key === 'Enter' && addClass()}
-                    placeholder="Nhập tên nhãn (VD: Chó, Mèo...)"
+                    placeholder="Nhập tên hành động/vật (VD: Vẫy tay, Quả táo)"
                     className="flex-1 bg-slate-50 border-2 border-slate-200 rounded-xl px-3 py-2.5 text-sm font-bold text-slate-700 focus:outline-none focus:border-teal-500 transition-colors"
                   />
                   <input
@@ -1099,7 +1097,7 @@ export default function StudentTeachFreePage() {
                     value={newEmojiInput}
                     onChange={(e) => setNewEmojiInput(e.target.value)}
                     className="w-14 bg-slate-50 border-2 border-slate-200 rounded-xl px-2 py-2.5 text-center text-lg focus:outline-none focus:border-teal-500 transition-colors"
-                    placeholder="🐶"
+                    placeholder="👋"
                   />
                   <button
                     onClick={addClass}
@@ -1110,28 +1108,19 @@ export default function StudentTeachFreePage() {
                     Thêm
                   </button>
                 </div>
-                {classes.length < 2 && (
-                  <p className="text-xs text-amber-600 font-semibold">
-                    💡 Hãy thêm ít nhất 2 nhãn để AI có thể phân loại nhé!
-                  </p>
-                )}
               </div>
 
               {/* Class List */}
-              <div className="flex flex-col gap-2.5 mb-4 max-h-[300px] overflow-y-auto pr-1">
+              <div className="flex flex-col gap-2.5 mb-4 max-h-[250px] overflow-y-auto pr-1">
                 {classes.map((c) => {
-                  const count = classCounts[c.id] || 0;
+                  const counts = classCounts[c.id] || { total: 0, object: 0, gesture: 0 };
                   const isActive = activeClass === c.id;
-                  const progress = Math.min(100, (count / MIN_SAMPLES_PER_CLASS) * 100);
-                  const canTrainClass = count >= MIN_SAMPLES_PER_CLASS;
+                  const canTrainClass = counts.total >= MIN_SAMPLES_PER_CLASS;
 
                   return (
                     <div
                       key={c.id}
-                      onClick={() => {
-                        playClickSound();
-                        setActiveClass(c.id);
-                      }}
+                      onClick={() => { playClickSound(); setActiveClass(c.id); }}
                       className={`relative overflow-hidden p-3.5 rounded-2xl border-2 transition-all cursor-pointer ${
                         isActive
                           ? 'border-teal-500 bg-teal-50 shadow-md scale-[1.02]'
@@ -1143,36 +1132,26 @@ export default function StudentTeachFreePage() {
                           <div className={`font-black text-base ${isActive ? 'text-teal-900' : 'text-slate-700'}`}>
                             {c.emoji} {c.label}
                           </div>
-                          <div className={`text-xs font-bold flex items-center gap-1.5 mt-0.5 ${
+                          <div className={`text-xs font-bold flex items-center gap-2 mt-0.5 ${
                             canTrainClass ? 'text-emerald-600' : 'text-amber-600'
                           }`}>
-                            <span>{count} mẫu</span>
+                            <span>Tổng: {counts.total} mẫu</span>
+                            <span className="text-[10px] text-slate-400 font-normal">
+                              ({counts.object} ảnh vật + {counts.gesture} cử chỉ)
+                            </span>
                             {canTrainClass ? (
                               <span className="bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded-full text-[10px] font-black">
                                 ✅ Sẵn sàng
                               </span>
                             ) : (
                               <span className="bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded-full text-[10px] font-black">
-                                ⚠️ Thiếu {MIN_SAMPLES_PER_CLASS - count}
+                                ⚠️ Thiếu {MIN_SAMPLES_PER_CLASS - counts.total}
                               </span>
                             )}
                           </div>
                         </div>
 
                         <div className="flex items-center gap-1">
-                          {count > 0 && (
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                clearClassSamples(c.id);
-                              }}
-                              className="p-1.5 text-slate-300 hover:text-amber-500 hover:bg-amber-50 rounded-xl transition-colors"
-                              title="Xóa mẫu nhãn này"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          )}
                           <button
                             type="button"
                             onClick={(e) => {
@@ -1182,57 +1161,185 @@ export default function StudentTeachFreePage() {
                               }
                             }}
                             className="p-1.5 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-xl transition-colors"
-                            title="Xóa nhãn này"
                           >
                             <X className="w-4 h-4" />
                           </button>
                         </div>
                       </div>
-
-                      {/* Mini Progress Bar */}
-                      <div
-                        className="absolute bottom-0 left-0 h-1 bg-teal-500 transition-all duration-300"
-                        style={{ width: `${progress}%` }}
-                      />
                     </div>
                   );
                 })}
               </div>
 
-              {/* Action Buttons: Hold-to-Record & Upload */}
+              {/* Data Collection Mode Switcher (Object vs Gesture) */}
               {activeClass && (
+                <div className="mb-4 bg-slate-100 p-1.5 rounded-2xl flex gap-1 border border-slate-200">
+                  <button
+                    onClick={() => setDataCollectionTab('object')}
+                    className={`flex-1 py-2 rounded-xl text-xs font-extrabold transition-all flex items-center justify-center gap-1.5 ${
+                      dataCollectionTab === 'object'
+                        ? 'bg-white text-teal-800 shadow-sm'
+                        : 'text-slate-600 hover:text-slate-800'
+                    }`}
+                  >
+                    <span>🖼️ Ảnh Đối Tượng</span>
+                    <span className="text-[10px] bg-slate-200 px-1.5 py-0.2 rounded-full font-bold">
+                      {classCounts[activeClass]?.object || 0}
+                    </span>
+                  </button>
+                  <button
+                    onClick={() => setDataCollectionTab('gesture')}
+                    className={`flex-1 py-2 rounded-xl text-xs font-extrabold transition-all flex items-center justify-center gap-1.5 ${
+                      dataCollectionTab === 'gesture'
+                        ? 'bg-white text-indigo-800 shadow-sm'
+                        : 'text-slate-600 hover:text-slate-800'
+                    }`}
+                  >
+                    <span>🎥 Chuỗi Cử Chỉ</span>
+                    <span className="text-[10px] bg-indigo-100 text-indigo-700 px-1.5 py-0.2 rounded-full font-bold">
+                      {classCounts[activeClass]?.gesture || 0}
+                    </span>
+                  </button>
+                </div>
+              )}
+
+              {/* Active Tab Actions */}
+              {activeClass && dataCollectionTab === 'object' && (
                 <div className="space-y-2 mb-4">
                   <button
-                    onPointerDown={startCapturing}
+                    onPointerDown={() => startCapturing('object')}
                     onPointerUp={stopCapturing}
                     onPointerLeave={stopCapturing}
                     disabled={modelStatus !== 'ready'}
                     className={`w-full font-extrabold py-3 px-4 rounded-2xl shadow-md transition-all flex items-center justify-center gap-2 text-sm border-b-4 select-none ${
-                      isCapturing
+                      capturingType === 'object'
                         ? 'bg-red-500 hover:bg-red-600 border-red-700 text-white animate-pulse'
                         : 'bg-teal-600 hover:bg-teal-700 border-teal-800 text-white active:scale-95'
-                    } disabled:bg-gray-300 disabled:border-gray-400`}
+                    } disabled:bg-gray-300`}
                   >
                     <Camera className="w-5 h-5" />
-                    {isCapturing ? 'ĐANG CHỤP... THẢ ĐỂ DỪNG 🔴' : 'GIỮ ĐỂ CHỤP LIÊN TỤC 📸'}
+                    {capturingType === 'object' ? 'ĐANG CHỤP... THẢ ĐỂ DỪNG 🔴' : 'GIỮ ĐỂ CHỤP LIÊN TỤC 📸'}
                   </button>
 
                   <input
-                    ref={fileInputRef}
+                    ref={fileInputObjectRef}
                     type="file"
                     accept="image/*"
                     multiple
-                    onChange={handleFileUpload}
+                    onChange={(e) => handleBatchUpload(e, 'object')}
                     className="hidden"
                   />
                   <button
-                    onClick={() => fileInputRef.current?.click()}
+                    onClick={() => fileInputObjectRef.current?.click()}
                     disabled={modelStatus !== 'ready'}
-                    className="w-full font-extrabold py-2.5 px-4 rounded-2xl shadow-sm transition-all flex items-center justify-center gap-2 text-sm border-b-4 bg-white hover:bg-slate-50 border-slate-200 text-teal-700 active:scale-95 disabled:bg-gray-100 disabled:text-gray-400"
+                    className="w-full font-extrabold py-2.5 px-4 rounded-2xl shadow-sm transition-all flex items-center justify-center gap-2 text-sm border-b-4 bg-white hover:bg-slate-50 border-slate-200 text-teal-700 active:scale-95 disabled:bg-gray-100"
                   >
                     <ImagePlus className="w-4 h-4" />
-                    Tải ảnh từ máy tính
+                    Tải ảnh đối tượng từ máy tính
                   </button>
+                </div>
+              )}
+
+              {activeClass && dataCollectionTab === 'gesture' && (
+                <div className="space-y-2 mb-4">
+                  {/* Motion Recording Status or Triggers */}
+                  {videoRecordingState === 'countdown' ? (
+                    <div className="bg-amber-100 border-2 border-amber-300 rounded-2xl p-4 text-center animate-bounce">
+                      <span className="text-3xl font-black text-amber-800">{countdownSec}</span>
+                      <p className="text-xs font-bold text-amber-700 mt-1">Chuẩn bị thực hiện cử chỉ nhé!</p>
+                    </div>
+                  ) : videoRecordingState === 'recording' ? (
+                    <div className="bg-rose-500 text-white rounded-2xl p-4 space-y-2 shadow-lg animate-pulse">
+                      <div className="flex justify-between items-center text-xs font-black">
+                        <span className="flex items-center gap-1.5">
+                          <span className="w-2.5 h-2.5 rounded-full bg-white animate-ping" />
+                          ĐANG QUAY CỬ CHỈ... ({recordingSecLeft}s)
+                        </span>
+                        <span>{recordedFramesCount} ảnh</span>
+                      </div>
+                      <div className="w-full bg-black/20 rounded-full h-2 overflow-hidden">
+                        <div className="bg-white h-full transition-all" style={{ width: `${recordingProgress}%` }} />
+                      </div>
+                      <div className="flex justify-between items-center text-[10px] opacity-90">
+                        <span>Chuyển động: {liveMotionScore}px</span>
+                        <button
+                          onClick={() => finishRecordingEarlyRef.current?.()}
+                          className="bg-white text-rose-600 px-2 py-0.5 rounded-full font-bold"
+                        >
+                          Dừng sớm ⏹
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      <button
+                        onPointerDown={() => startCapturing('gesture')}
+                        onPointerUp={stopCapturing}
+                        onPointerLeave={stopCapturing}
+                        disabled={modelStatus !== 'ready'}
+                        className={`w-full font-extrabold py-3 px-4 rounded-2xl shadow-md transition-all flex items-center justify-center gap-2 text-sm border-b-4 select-none ${
+                          capturingType === 'gesture'
+                            ? 'bg-red-500 hover:bg-red-600 border-red-700 text-white animate-pulse'
+                            : 'bg-indigo-600 hover:bg-indigo-700 border-indigo-800 text-white active:scale-95'
+                        } disabled:bg-gray-300`}
+                      >
+                        <Film className="w-5 h-5" />
+                        {capturingType === 'gesture' ? 'ĐANG QUAY CỬ CHỈ... THẢ ĐỂ DỪNG 🔴' : 'GIỮ ĐỂ QUAY CỬ CHỈ 🎥'}
+                      </button>
+
+                      {/* Auto Record 5s/10s */}
+                      <div className="flex gap-2">
+                        <button
+                          onClick={startMotionRecording}
+                          disabled={modelStatus !== 'ready'}
+                          className="flex-1 py-2.5 px-3 bg-amber-500 hover:bg-amber-600 text-white font-extrabold rounded-2xl shadow-sm text-xs border-b-4 border-amber-700 active:scale-95 flex items-center justify-center gap-1"
+                        >
+                          <Zap className="w-4 h-4" />
+                          Tự động thu {recordingDurationSec}s ⏱️
+                        </button>
+                        <button
+                          onClick={() => setRecordingDurationSec((prev) => (prev === 5 ? 10 : 5))}
+                          className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-2xl font-bold text-xs border border-slate-300"
+                          title="Đổi thời gian quay"
+                        >
+                          {recordingDurationSec}s
+                        </button>
+                      </div>
+
+                      {/* Batch Upload Gestures */}
+                      <input
+                        ref={fileInputGestureRef}
+                        type="file"
+                        accept="image/*"
+                        multiple
+                        onChange={(e) => handleBatchUpload(e, 'gesture')}
+                        className="hidden"
+                      />
+                      <button
+                        onClick={() => fileInputGestureRef.current?.click()}
+                        disabled={modelStatus !== 'ready'}
+                        className="w-full font-extrabold py-2 px-4 rounded-2xl shadow-sm transition-all flex items-center justify-center gap-2 text-xs border-b-4 bg-white hover:bg-slate-50 border-slate-200 text-indigo-700 active:scale-95 disabled:bg-gray-100"
+                      >
+                        <ImagePlus className="w-4 h-4" />
+                        Tải ảnh cử chỉ từ máy tính
+                      </button>
+
+                      {/* Flipbook Player Trigger */}
+                      {gestureFramesForActive.length > 0 && (
+                        <button
+                          onClick={() => {
+                            setShowMotionPlayer(true);
+                            setIsMotionPlaying(true);
+                            setMotionPlayerIdx(0);
+                          }}
+                          className="w-full py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-800 font-extrabold rounded-2xl border border-indigo-200 text-xs flex items-center justify-center gap-1.5 transition-all"
+                        >
+                          <Film className="w-4 h-4 text-indigo-600" />
+                          Xem Chuỗi Chuyển Động (Flipbook) 🎞️ ({gestureFramesForActive.length} ảnh)
+                        </button>
+                      )}
+                    </>
+                  )}
                 </div>
               )}
 
@@ -1244,51 +1351,12 @@ export default function StudentTeachFreePage() {
                     setSamples((prev) => prev.filter((s) => s.id !== id));
                     setIsTrained(false);
                   }}
-                  onClearAll={() => clearClassSamples(activeClass)}
+                  onClearAll={() => {
+                    setSamples((prev) => prev.filter((s) => s.sourceId !== activeClass));
+                    setIsTrained(false);
+                  }}
                   isTrained={isTrained}
                 />
-              )}
-
-              {/* View Teacher Samples Preview (nếu template có mẫu) */}
-              {teacherTemplate?.samples && teacherTemplate.samples.length > 0 && (
-                <div className="mt-3">
-                  <button
-                    onClick={() => setShowTeacherSamples(!showTeacherSamples)}
-                    className="w-full text-xs font-bold text-slate-400 hover:text-teal-600 flex items-center justify-center gap-1 py-1 transition-colors"
-                  >
-                    {showTeacherSamples ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                    {showTeacherSamples ? 'Ẩn ảnh mẫu từ Thầy/Cô ▲' : 'Xem ảnh mẫu từ Thầy/Cô ▼'}
-                  </button>
-
-                  {showTeacherSamples && (
-                    <div className="bg-blue-50 rounded-2xl p-3 border-2 border-blue-200 mt-2">
-                      <h4 className="text-xs font-black text-blue-700 mb-2">
-                        📋 Ảnh mẫu từ Thầy/Cô ({teacherTemplate.samples.length} ảnh)
-                      </h4>
-                      {classes.map((c) => {
-                        const classSamples = teacherTemplate.samples?.filter((s: StoredSample) => s.sourceId === c.id || s.label === c.label) || [];
-                        if (classSamples.length === 0) return null;
-                        return (
-                          <div key={c.id} className="mb-2">
-                            <span className="text-[10px] font-bold text-blue-600">{c.emoji} {c.label} ({classSamples.length} ảnh)</span>
-                            <div className="flex gap-1 overflow-x-auto py-1">
-                              {classSamples.slice(0, 8).map((s: StoredSample, idx: number) => (
-                                <div key={idx} className="w-12 h-12 shrink-0 rounded-lg overflow-hidden border border-blue-200">
-                                  {s.thumbnail && <img src={s.thumbnail} alt={c.label} className="w-full h-full object-cover" />}
-                                </div>
-                              ))}
-                              {classSamples.length > 8 && (
-                                <div className="w-12 h-12 shrink-0 rounded-lg bg-blue-100 flex items-center justify-center text-[10px] font-bold text-blue-600">
-                                  +{classSamples.length - 8}
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
               )}
 
               {/* Toast */}
@@ -1299,7 +1367,7 @@ export default function StudentTeachFreePage() {
                 </div>
               )}
 
-              {/* Hyperparameters panel (Under the Hood) */}
+              {/* Hyperparameters panel */}
               <div className="mt-auto pt-4 space-y-2">
                 <button
                   onClick={() => setShowSettings(!showSettings)}
@@ -1311,13 +1379,9 @@ export default function StudentTeachFreePage() {
 
                 {showSettings && (
                   <div className="bg-slate-50 rounded-2xl p-3.5 border-2 border-slate-200 space-y-3 text-xs">
-                    <h4 className="font-black text-slate-700 text-xs flex items-center gap-1.5">
-                      ⚙️ Cài Đặt Tham Số Huấn Luyện
-                    </h4>
-                    {/* Epochs */}
                     <div>
                       <div className="flex justify-between mb-1">
-                        <span className="font-bold text-slate-600">Epochs (Số vòng học)</span>
+                        <span className="font-bold text-slate-600">Epochs</span>
                         <span className="font-black text-teal-700">{hpEpochs}</span>
                       </div>
                       <input
@@ -1325,9 +1389,7 @@ export default function StudentTeachFreePage() {
                         onChange={(e) => setHpEpochs(Number(e.target.value))}
                         className="w-full accent-teal-600"
                       />
-                      <div className="flex justify-between text-[10px] text-slate-400"><span>10</span><span>200</span></div>
                     </div>
-                    {/* Batch Size */}
                     <div>
                       <div className="flex justify-between mb-1">
                         <span className="font-bold text-slate-600">Batch Size</span>
@@ -1338,20 +1400,6 @@ export default function StudentTeachFreePage() {
                         onChange={(e) => setHpBatchSize(Number(e.target.value))}
                         className="w-full accent-teal-600"
                       />
-                      <div className="flex justify-between text-[10px] text-slate-400"><span>8</span><span>128</span></div>
-                    </div>
-                    {/* Learning Rate */}
-                    <div>
-                      <div className="flex justify-between mb-1">
-                        <span className="font-bold text-slate-600">Learning Rate</span>
-                        <span className="font-black text-teal-700">{hpLearningRate}</span>
-                      </div>
-                      <input
-                        type="range" min={0.0001} max={0.01} step={0.0001} value={hpLearningRate}
-                        onChange={(e) => setHpLearningRate(Number(e.target.value))}
-                        className="w-full accent-teal-600"
-                      />
-                      <div className="flex justify-between text-[10px] text-slate-400"><span>0.0001</span><span>0.01</span></div>
                     </div>
                   </div>
                 )}
@@ -1360,18 +1408,12 @@ export default function StudentTeachFreePage() {
                 {isTraining ? (
                   <div className="bg-teal-50 rounded-2xl p-4 border border-teal-100 animate-pulse">
                     <div className="flex items-center justify-between mb-2">
-                      <span className="text-xs font-bold text-teal-700">AI đang học phân loại ảnh... ⚙️</span>
+                      <span className="text-xs font-bold text-teal-700">AI đang học nhận diện hành động... ⚙️</span>
                       <span className="text-xs font-black text-teal-800">{trainingProgress}%</span>
                     </div>
                     <div className="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
                       <div className="bg-teal-600 h-full transition-all duration-150" style={{ width: `${trainingProgress}%` }} />
                     </div>
-                    {trainingLogs.length > 0 && (
-                      <div className="flex gap-4 mt-2 text-[10px] font-bold text-teal-600">
-                        <span>Loss: {trainingLogs[trainingLogs.length - 1].loss.toFixed(4)}</span>
-                        <span>Acc: {(trainingLogs[trainingLogs.length - 1].acc * 100).toFixed(1)}%</span>
-                      </div>
-                    )}
                   </div>
                 ) : (
                   <>
@@ -1411,14 +1453,7 @@ export default function StudentTeachFreePage() {
                     )}
                   </>
                 )}
-
-                {!canTrain && classes.length >= 2 && (
-                  <p className="text-xs text-center text-slate-500 font-semibold">
-                    📌 Cần ít nhất {MIN_SAMPLES_PER_CLASS} ảnh hợp lệ cho mỗi nhãn (mục tiêu {TARGET_SAMPLES_PER_CLASS} mẫu)
-                  </p>
-                )}
               </div>
-
             </div>
 
             {/* ══ CENTER + RIGHT: Camera & Real-time / Static Prediction ══ */}
@@ -1452,7 +1487,7 @@ export default function StudentTeachFreePage() {
                           idleStreakRef.current = 0;
                           isDetectedRef.current = false;
                           setIsDetectedInLibrary(false);
-                          setPredictedLabel('Đang chờ đối tượng... 💤');
+                          setPredictedLabel('Đang chờ hành động / đối tượng... 💤');
                           setConfidence(0);
                           const zeroConf: Record<string, number> = {};
                           classes.forEach((c) => { zeroConf[c.label] = 0; });
@@ -1474,7 +1509,6 @@ export default function StudentTeachFreePage() {
                         <div className="text-sm opacity-80 mt-1">Độ tự tin: {confidence}%</div>
                       </div>
 
-                      {/* Per-class confidence bars — CHỈ HIỆN KHI PHÁT HIỆN ĐỐI TƯỢNG TRONG THƯ VIỆN */}
                       {isDetectedInLibrary && confidence >= 50 && Object.keys(confidences).length > 0 && (
                         <div className="space-y-1.5 mt-4">
                           {classes.map((c) => {
@@ -1498,7 +1532,7 @@ export default function StudentTeachFreePage() {
                   )}
 
                   {/* Self-Evaluation Badge */}
-                  {selfAccuracy !== null && totalValidSamples >= 4 && (
+                  {selfAccuracy !== null && (
                     <div className="mt-4 bg-white/10 rounded-xl p-3 flex items-center justify-between">
                       <span className="text-xs font-bold">🎯 Tự đánh giá (LOO-KNN):</span>
                       <span className={`text-sm font-black ${selfAccuracy >= 80 ? 'text-emerald-300' : selfAccuracy >= 60 ? 'text-amber-300' : 'text-red-300'}`}>
@@ -1507,7 +1541,7 @@ export default function StudentTeachFreePage() {
                     </div>
                   )}
 
-                  {/* Static Image Test (Test ảnh upload) */}
+                  {/* Static Image Test */}
                   <div className="mt-4 border-t border-white/20 pt-4">
                     <h4 className="text-sm font-bold mb-2">📷 Test ảnh upload</h4>
                     <input ref={predictFileRef} type="file" accept="image/*" onChange={handlePredictUpload} className="hidden" />
@@ -1528,16 +1562,16 @@ export default function StudentTeachFreePage() {
                           <div className="flex-1">
                             {predictResult.isOOD ? (
                               <div className="bg-red-500/20 border-2 border-red-400 rounded-xl p-3 text-white">
-                                <p className="font-bold text-red-200 text-sm flex items-center gap-1.5">
+                                <p className="font-bold text-red-200 text-sm">
                                   🚫 Không nhận diện được (Ảnh lạ)
                                 </p>
                                 <p className="text-xs text-red-300 mt-1 font-medium leading-relaxed">
-                                  {predictResult.reason || 'Ảnh này không giống với các nhãn đã học hoặc nằm ngoài bộ dữ liệu.'}
+                                  {predictResult.reason}
                                 </p>
                               </div>
                             ) : (
                               <div>
-                                <div className="text-lg font-black text-emerald-300 flex items-center gap-1.5">
+                                <div className="text-lg font-black text-emerald-300">
                                   ✅ {predictResult.label}
                                 </div>
                                 <div className="text-xs opacity-80 mt-0.5">Độ tự tin: {predictResult.confidence}%</div>
@@ -1545,27 +1579,6 @@ export default function StudentTeachFreePage() {
                             )}
                           </div>
                         </div>
-
-                        {/* Confidence bars — chỉ hiện khi ảnh thuộc Thư viện / Hợp lệ */}
-                        {!predictResult.isOOD && Object.keys(predictResult.confidences).length > 0 && (
-                          <div className="bg-white/10 rounded-xl p-3 space-y-1.5 mt-2">
-                            {classes.map((c) => {
-                              const pct = Math.round((predictResult.confidences[c.label] || 0) * 100);
-                              return (
-                                <div key={c.id} className="flex items-center gap-2">
-                                  <span className="text-xs font-bold w-24 truncate">{c.emoji} {c.label}</span>
-                                  <div className="flex-1 bg-white/10 rounded-full h-2.5 overflow-hidden">
-                                    <div
-                                      className="h-full bg-gradient-to-r from-teal-400 to-emerald-400 rounded-full transition-all duration-200"
-                                      style={{ width: `${pct}%` }}
-                                    />
-                                  </div>
-                                  <span className="text-xs font-bold w-10 text-right">{pct}%</span>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        )}
                       </div>
                     )}
                   </div>
@@ -1576,9 +1589,71 @@ export default function StudentTeachFreePage() {
           </div>
         )}
 
-        {/* ── TEACHER TEMPLATE VALIDATION MODAL ── */}
+        {/* ── FLIPBOOK MOTION PLAYER MODAL ── */}
+        {showMotionPlayer && gestureFramesForActive.length > 0 && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+            <div className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border-4 border-indigo-200">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="font-black text-slate-800 text-base flex items-center gap-2">
+                  <Film className="w-5 h-5 text-indigo-600" />
+                  Xem Chuỗi Cử Chỉ: {activeClassLabel}
+                </h3>
+                <button
+                  onClick={() => {
+                    setShowMotionPlayer(false);
+                    setIsMotionPlaying(false);
+                  }}
+                  className="p-1 hover:bg-slate-100 rounded-full"
+                >
+                  <X className="w-5 h-5 text-slate-500" />
+                </button>
+              </div>
+
+              {/* Player Screen */}
+              <div className="relative aspect-video rounded-2xl overflow-hidden border-2 border-slate-200 bg-black flex items-center justify-center">
+                {gestureFramesForActive[motionPlayerIdx]?.thumbnail ? (
+                  <img
+                    src={gestureFramesForActive[motionPlayerIdx].thumbnail}
+                    alt="motion"
+                    className="w-full h-full object-contain"
+                  />
+                ) : (
+                  <span className="text-white text-xs">Không có ảnh</span>
+                )}
+                <span className="absolute bottom-2 right-2 bg-black/60 text-white text-[10px] font-mono px-2 py-0.5 rounded-md">
+                  {motionPlayerIdx + 1} / {gestureFramesForActive.length} (8.3 FPS)
+                </span>
+              </div>
+
+              {/* Controls */}
+              <div className="flex items-center justify-between mt-4">
+                <button
+                  onClick={() => setMotionPlayerIdx((prev) => (prev > 0 ? prev - 1 : gestureFramesForActive.length - 1))}
+                  className="p-2 hover:bg-slate-100 rounded-xl"
+                >
+                  <ChevronLeft className="w-5 h-5 text-slate-700" />
+                </button>
+                <button
+                  onClick={() => setIsMotionPlaying(!isMotionPlaying)}
+                  className="px-4 py-2 bg-indigo-600 text-white font-bold rounded-xl text-xs flex items-center gap-1.5"
+                >
+                  {isMotionPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
+                  {isMotionPlaying ? 'Tạm dừng' : 'Phát'}
+                </button>
+                <button
+                  onClick={() => setMotionPlayerIdx((prev) => (prev + 1) % gestureFramesForActive.length)}
+                  className="p-2 hover:bg-slate-100 rounded-xl"
+                >
+                  <ChevronRight className="w-5 h-5 text-slate-700" />
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── ACTION TEACHER TEMPLATE VALIDATION MODAL ── */}
         {showValidationModal && validationResult && (
-          <ImageAIFeedbackModal
+          <ActionAIFeedbackModal
             isOpen={showValidationModal}
             onClose={() => setShowValidationModal(false)}
             onProceed={() => setShowValidationModal(false)}
@@ -1596,8 +1671,13 @@ export default function StudentTeachFreePage() {
           <ReportCard
             isOpen={showReportCard}
             onClose={() => setShowReportCard(false)}
-            onRevise={handleRevise}
-            onFinalize={handleFinalize}
+            onRevise={() => {
+              setShowReportCard(false);
+              setShowSubmitModal(false);
+              setSubmitSuccess(false);
+              setCreatedModelId(null);
+            }}
+            onFinalize={() => router.push('/home')}
             evaluation={evaluation}
             version={modelVersion}
             previousEvaluation={previousEvaluation}
@@ -1613,7 +1693,7 @@ export default function StudentTeachFreePage() {
                   <span className="text-7xl">🏆🎉</span>
                   <h3 className="text-2xl font-black text-teal-900 mt-4">Nộp Bài Hoàn Tất!</h3>
                   <p className="text-gray-600 font-semibold mt-2">
-                    Tuyệt vời! Bé đã dạy AI phân loại ảnh tạo nhãn tự do thành công! Bé có thể tiếp tục thử nghiệm thêm hoặc quay về trang chủ.
+                    Bé đã dạy AI phân biệt hành động & đối tượng thành công!
                   </p>
                   <div className="flex gap-3 mt-6 justify-center">
                     <button
@@ -1646,7 +1726,7 @@ export default function StudentTeachFreePage() {
                     return (
                       <div className="bg-teal-50 border-2 border-teal-200 rounded-2xl p-4 flex items-center justify-between mb-6">
                         <div>
-                          <span className="text-xs text-teal-700 font-bold block">Bạn AI đoán đúng bao nhiêu câu:</span>
+                          <span className="text-xs text-teal-700 font-bold block">Độ chuẩn xác nhận diện cử chỉ:</span>
                           <div className="flex items-center gap-2 mt-0.5">
                             <span className="text-lg text-teal-900 font-black">
                               {Math.round(score / 10)}/10 điểm
@@ -1668,21 +1748,21 @@ export default function StudentTeachFreePage() {
                   <div className="mb-4">
                     <label className="text-xs font-black text-gray-700 block mb-1.5 flex items-center gap-1">
                       <HelpCircle className="w-4 h-4 text-teal-600" />
-                      <span>Bé hãy trả lời: Làm sao để AI phân loại ảnh chuẩn nhất?</span>
+                      <span>Bé hãy trả lời: Làm sao để AI nhận diện hành động chuẩn nhất?</span>
                     </label>
                     <select
                       value={reflectionAnswer}
                       onChange={(e) => setReflectionAnswer(e.target.value)}
                       className="w-full p-3 bg-gray-50 border-2 border-gray-200 rounded-xl font-semibold text-sm text-gray-800 focus:outline-none focus:border-teal-400"
                     >
-                      <option value="Chụp ảnh rõ nét từ nhiều góc khác nhau">
-                        Chụp ảnh rõ nét từ nhiều góc, nhiều kích thước khác nhau 📸
+                      <option value="Chụp ảnh rõ nét kết hợp quay cử chỉ đều tay">
+                        Chụp ảnh rõ nét và thực hiện cử chỉ đều tay từ nhiều góc 🎥
                       </option>
-                      <option value="Chỉ cần 1 ảnh duy nhất là đủ">
-                        Chỉ cần chụp 1 ảnh duy nhất là AI hiểu hết rồi 🤪
+                      <option value="Quay thật nhanh để AI hoa mắt">
+                        Lắc tay thật nhanh để AI hoa mắt 🌪️
                       </option>
-                      <option value="Chụp ảnh mờ nhòe và thiếu sáng">
-                        Chụp ảnh mờ nhòe để AI tập trung hơn 🌫️
+                      <option value="Chỉ cần 1 ảnh tĩnh là đủ">
+                        Chỉ cần 1 ảnh tĩnh không cần quay cử chỉ 🛑
                       </option>
                     </select>
                   </div>
@@ -1694,12 +1774,11 @@ export default function StudentTeachFreePage() {
                       rows={2}
                       value={teacherMessage}
                       onChange={(e) => setTeacherMessage(e.target.value)}
-                      placeholder="Con gửi thầy cô bài phân loại ảnh con vừa dạy AI..."
+                      placeholder="Con gửi thầy cô bài dạy AI hành động con vừa làm..."
                       className="w-full p-3 bg-gray-50 border-2 border-gray-200 rounded-xl font-semibold text-sm text-gray-800 focus:outline-none focus:border-teal-400 resize-none"
                     />
                   </div>
 
-                  {/* Submit Actions */}
                   <div className="flex gap-4">
                     <button
                       onClick={() => setShowSubmitModal(false)}

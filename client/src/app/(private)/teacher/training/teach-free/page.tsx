@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState, useMemo } from 'react';
+import { useEffect, useRef, useState, useMemo, useCallback } from 'react';
 import {
   ArrowLeft,
   Brain,
@@ -161,11 +161,11 @@ export default function TeacherTeachFreePage() {
   };
 
   // ── Toast helper ─────────────────────────────────────
-  const showToast = (msg: string) => {
+  const showToast = useCallback((msg: string) => {
     if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
     setValidationToast(msg);
     toastTimeoutRef.current = setTimeout(() => setValidationToast(null), 4000);
-  };
+  }, []);
 
   // ── Capture from camera ──────────────────────────────
   const captureSample = () => {
@@ -459,7 +459,7 @@ export default function TeacherTeachFreePage() {
 
     predict();
     return () => cancelAnimationFrame(rafId);
-  }, [predictionActive, isTrained, modelStatus, samples, extractFeaturesFromVideo, videoRef]);
+  }, [predictionActive, isTrained, modelStatus, samples, extractFeaturesFromVideo, videoRef, showToast]);
 
   // ── Upload ảnh để dự đoán ─────────────────────────────
   const handlePredictUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {

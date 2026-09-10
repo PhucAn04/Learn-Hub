@@ -30,7 +30,7 @@ flowchart LR
 | Cử chỉ tay | `/challenge/teach-gestures` | MediaPipe Hands | `TeachPanel` (mode='gesture') | `api.getTemplates('teach-gestures')` |
 | Biểu cảm mặt | `/challenge/teach-face` | MediaPipe Face | `TeachPanel` (mode='emotion') | `api.getTemplates('teach-face')` |
 | Thể dục | `/challenge/teach-body` | MediaPipe Pose | `BodyTeachPanel` | `api.getTemplates('teach-body-*')` |
-| **Ảnh tự do** | **`/challenge/teach-free`** | **MobileNet v2** | **Trang mới (không dùng TeachPanel)** | **`api.getTemplates('teach-free')`** |
+| **Phân loại ảnh tạo nhãn tự do** | **`/challenge/teach-free`** | **MobileNet v2** | **Trang mới (không dùng TeachPanel)** | **`api.getTemplates('teach-free')`** |
 
 > [!IMPORTANT]
 > **Tại sao KHÔNG tái sử dụng `TeachPanel`?** `TeachPanel` (1816 dòng) được thiết kế chuyên cho MediaPipe — phụ thuộc `useMl5Handpose`, `useMl5FaceMesh`, `drawHandSkeleton`, `normalizeHandKeypoints`... Trang teach-free dùng **MobileNet** (`useMobilenet`), KHÔNG có skeleton/landmark. Cần trang riêng, nhưng tái sử dụng các component con: `SampleGallery`, `AIConfidenceEnergyBars`, `ReportCard`.
@@ -111,7 +111,7 @@ flowchart TD
 
 ## 4. Evaluation — So sánh Student vs Teacher (không có Golden Dataset)
 
-### Vấn đề: Không có Golden Dataset cho ảnh tự do
+### Vấn đề: Không có Golden Dataset cho phân loại ảnh tạo nhãn tự do
 
 Các bài truyền thống (teach, teach-gestures...) có **Golden Test Dataset** cứng — hardcode trong code với feature vectors chuẩn. Bài teach-free **không thể có golden dataset** vì nhãn do Teacher tự tạo (Chó/Mèo hôm nay, Táo/Lê ngày mai).
 

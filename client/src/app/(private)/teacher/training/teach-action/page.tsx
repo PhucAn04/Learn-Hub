@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState, useMemo } from 'react';
+import { useEffect, useRef, useState, useMemo, useCallback } from 'react';
 import {
   ArrowLeft,
   Brain,
@@ -47,8 +47,6 @@ import { TEACHER_DATASET_PRESETS, cleanClassLabel, matchLabelToDataset } from '@
 const MIN_SAMPLES_PER_CLASS = 3;
 
 const MAX_CLASSES = 10;
-const OOD_CONFIDENCE_THRESHOLD = 65;
-const OOD_MAX_KNN_DISTANCE = 1.2;
 
 export default function TeacherTeachActionPage() {
   const router = useRouter();
@@ -82,7 +80,7 @@ export default function TeacherTeachActionPage() {
   const [isDetectedInLibrary, setIsDetectedInLibrary] = useState(false);
   const activeStreakRef = useRef(0);
   const idleStreakRef = useRef(0);
-  const lastActiveTimeRef = useRef(Date.now());
+  const lastActiveTimeRef = useRef(0);
   const isDetectedRef = useRef(false);
 
   // ── Hold-to-Record ─────────────────────────────────────
@@ -134,6 +132,7 @@ export default function TeacherTeachActionPage() {
 
   useEffect(() => {
     trainerRef.current = new TfTrainer();
+    lastActiveTimeRef.current = Date.now();
     return () => {
       if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
       if (recordingProgressIntervalRef.current) clearInterval(recordingProgressIntervalRef.current);
@@ -163,11 +162,11 @@ export default function TeacherTeachActionPage() {
   const { modelStatus, extractFeatures, extractFeaturesFromVideo, extractFeaturesFromBase64 } = useMobilenet();
 
   // ── Toast ──────────────────────────────────────────────
-  const showToast = (msg: string) => {
+  const showToast = useCallback((msg: string) => {
     if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
     setValidationToast(msg);
     toastTimeoutRef.current = setTimeout(() => setValidationToast(null), 4000);
-  };
+  }, []);
 
   // ── Class Management ───────────────────────────────────
   const addClass = () => {
@@ -300,8 +299,92 @@ export default function TeacherTeachActionPage() {
     if (captureIntervalRef.current) { clearInterval(captureIntervalRef.current); captureIntervalRef.current = null; }
   };
 
+  // ── Xử lý lưu các frame thu được từ video live ──
+  const processLiveRecordedFrames = useCallback(
+    async (
+      capturedItems: { canvas: HTMLCanvasElement; motionScore: number; timestamp: number }[]
+    ) => {
+      setVideoRecordingState('processing');
+      const activeClassLabel = classes.find((c) => c.id === activeClass)?.label || 'Không tên';
+
+      try {
+        if (capturedItems.length === 0) {
+          showToast('⚠️ Chưa thu thập được khung hình nào từ camera!');
+          setVideoRecordingState('idle');
+          return;
+        }
+
+        // Tối ưu hóa chuỗi chuyển động chuẩn Teachable Machine:
+        // Ưu tiên giữ lại các frame có chuyển động rõ nét (motionScore >= 8%) và các mốc chuyển tiếp
+        let selectedItems = capturedItems;
+        if (capturedItems.length > 40) {
+          const motionItems = capturedItems.filter((it) => it.motionScore >= 8);
+          if (motionItems.length >= 20) {
+            const stride = Math.max(1, Math.floor(motionItems.length / 35));
+            selectedItems = motionItems.filter((_, idx) => idx % stride === 0);
+            if (!selectedItems.includes(capturedItems[0])) {
+              selectedItems.unshift(capturedItems[0]);
+            }
+          } else {
+            const step = Math.ceil(capturedItems.length / 35);
+            selectedItems = capturedItems.filter((_, idx) => idx % step === 0);
+          }
+        }
+
+        const newSamples: StoredSample[] = [];
+        const totalFrames = selectedItems.length;
+
+        for (let i = 0; i < totalFrames; i++) {
+          const item = selectedItems[i];
+          const features = extractFeatures(item.canvas);
+          if (!features) continue;
+
+          const thumbnail = item.canvas.toDataURL('image/jpeg', 0.8);
+
+          const phaseName =
+            i === 0
+              ? 'Bắt đầu'
+              : i === Math.floor(totalFrames / 2)
+              ? 'Đỉnh cử chỉ'
+              : i === totalFrames - 1
+              ? 'Thu tay'
+              : `Chuyển động #${i + 1}`;
+
+          newSamples.push({
+            id: crypto.randomUUID(),
+            label: activeClassLabel,
+            sourceId: activeClass,
+            sourceType: 'gesture',
+            features,
+            thumbnail,
+            rawThumbnail: thumbnail,
+            isValid: true,
+            isQuestionable: false,
+            questionableReason: `Frame ${i + 1}/${totalFrames} [${phaseName}] (${item.motionScore}% chuyển động)`,
+          });
+        }
+
+        if (newSamples.length > 0) {
+          setSamples((prev) => [...prev, ...newSamples]);
+          playSuccessSound();
+          showToast(`✅ Đã thu nhận chuỗi chuyển động gồm ${newSamples.length} khung hình mượt mà (8 FPS) cho "${activeClassLabel}"!`);
+        } else {
+          showToast('⚠️ Không thể trích xuất khung hình hợp lệ từ video!');
+        }
+      } catch (err) {
+        console.error('Error processing live video:', err);
+        showToast('⚠️ Có lỗi khi xử lý chuỗi chuyển động!');
+      } finally {
+        setVideoRecordingState('idle');
+        setLiveMotionScore(0);
+        setRecordedFramesCount(0);
+      }
+    },
+    [classes, activeClass, extractFeatures, showToast]
+  );
+
   // ── Live Video Recording (3s Countdown + High-Frequency Motion Capture @ 120ms / 8.3 FPS) ──
-  const startLiveVideoRecording = () => {
+  const startLiveVideoRecording = useCallback(() => {
     if (modelStatus !== 'ready' || !videoRef.current || !activeClass || videoRecordingState !== 'idle') return;
     playClickSound();
 
@@ -317,189 +400,114 @@ export default function TeacherTeachActionPage() {
         playClickSound();
       } else {
         if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
-        beginRecordingVideo();
+
+        // Bắt đầu ghi hình trực tiếp trong callback
+        setVideoRecordingState('recording');
+        const totalDurationSec = recordingDurationSec;
+        setRecordingSecLeft(totalDurationSec);
+        setRecordingProgress(0);
+        setLiveMotionScore(0);
+        setRecordedFramesCount(0);
+        playSuccessSound();
+
+        const video = videoRef.current;
+        if (!video) {
+          setVideoRecordingState('idle');
+          return;
+        }
+
+        const DURATION_MS = totalDurationSec * 1000;
+        const startTime = Date.now();
+        const capturedItems: { canvas: HTMLCanvasElement; motionScore: number; timestamp: number }[] = [];
+
+        // Canvas phụ siêu nhẹ (80x60) để tính vi sai chuyển động pixel liên tục (< 0.1ms)
+        const diffCv = document.createElement('canvas');
+        diffCv.width = 80;
+        diffCv.height = 60;
+        const diffCtx = diffCv.getContext('2d', { willReadFrequently: true });
+        let prevPixelData: Uint8ClampedArray | null = null;
+
+        let isFinished = false;
+
+        const finalizeRecording = () => {
+          if (isFinished) return;
+          isFinished = true;
+          clearInterval(frameCaptureInterval);
+          if (recordingProgressIntervalRef.current) clearInterval(recordingProgressIntervalRef.current);
+          finishRecordingEarlyRef.current = null;
+          processLiveRecordedFrames(capturedItems);
+        };
+
+        finishRecordingEarlyRef.current = finalizeRecording;
+
+        // LẤY MẪU CHUYỂN ĐỘNG TẦN SUẤT CAO: Mỗi 120ms (Khoảng 8.3 khung hình/giây chuẩn Teachable Machine)
+        const frameCaptureInterval = setInterval(() => {
+          if (!videoRef.current || isFinished) return;
+          const v = videoRef.current;
+          const vW = v.videoWidth || 640;
+          const vH = v.videoHeight || 480;
+
+          // 1. Đo lường cường độ chuyển động vi sai giữa 2 khung hình liên tiếp
+          let motionPct = 0;
+          if (diffCtx) {
+            diffCtx.drawImage(v, 0, 0, 80, 60);
+            const imgData = diffCtx.getImageData(0, 0, 80, 60);
+            const data = imgData.data;
+            if (prevPixelData) {
+              let totalDiff = 0;
+              const len = data.length;
+              for (let i = 0; i < len; i += 4) {
+                totalDiff += Math.abs(data[i] - prevPixelData[i]) +
+                             Math.abs(data[i + 1] - prevPixelData[i + 1]) +
+                             Math.abs(data[i + 2] - prevPixelData[i + 2]);
+              }
+              const avgDiff = totalDiff / (80 * 60 * 3);
+              motionPct = Math.min(100, Math.round((avgDiff / 25) * 100));
+            }
+            prevPixelData = new Uint8ClampedArray(data);
+            setLiveMotionScore(motionPct);
+          }
+
+          // 2. Chụp khung hình gốc
+          const cv = document.createElement('canvas');
+          cv.width = vW;
+          cv.height = vH;
+          const ctx = cv.getContext('2d');
+          if (ctx) {
+            ctx.drawImage(v, 0, 0, vW, vH);
+            capturedItems.push({
+              canvas: cv,
+              motionScore: motionPct,
+              timestamp: Date.now() - startTime,
+            });
+            setRecordedFramesCount(capturedItems.length);
+          }
+        }, 120);
+
+        // Tiến trình và đếm ngược cập nhật mỗi 100ms
+        if (recordingProgressIntervalRef.current) clearInterval(recordingProgressIntervalRef.current);
+        recordingProgressIntervalRef.current = setInterval(() => {
+          if (isFinished) return;
+          const elapsed = Date.now() - startTime;
+          const remaining = Math.max(0, Math.ceil((DURATION_MS - elapsed) / 1000));
+          const pct = Math.min(100, (elapsed / DURATION_MS) * 100);
+          setRecordingSecLeft(remaining);
+          setRecordingProgress(pct);
+
+          if (elapsed >= DURATION_MS) {
+            finalizeRecording();
+          }
+        }, 100);
       }
     }, 1000);
-  };
-
-  const beginRecordingVideo = () => {
-    setVideoRecordingState('recording');
-    const totalDurationSec = recordingDurationSec;
-    setRecordingSecLeft(totalDurationSec);
-    setRecordingProgress(0);
-    setLiveMotionScore(0);
-    setRecordedFramesCount(0);
-    playSuccessSound();
-
-    const video = videoRef.current;
-    if (!video) {
-      setVideoRecordingState('idle');
-      return;
-    }
-
-    const DURATION_MS = totalDurationSec * 1000;
-    const startTime = Date.now();
-    const capturedItems: { canvas: HTMLCanvasElement; motionScore: number; timestamp: number }[] = [];
-
-    // Canvas phụ siêu nhẹ (80x60) để tính vi sai chuyển động pixel liên tục (< 0.1ms)
-    const diffCv = document.createElement('canvas');
-    diffCv.width = 80;
-    diffCv.height = 60;
-    const diffCtx = diffCv.getContext('2d', { willReadFrequently: true });
-    let prevPixelData: Uint8ClampedArray | null = null;
-
-    let isFinished = false;
-
-    const finalizeRecording = () => {
-      if (isFinished) return;
-      isFinished = true;
-      clearInterval(frameCaptureInterval);
-      if (recordingProgressIntervalRef.current) clearInterval(recordingProgressIntervalRef.current);
-      finishRecordingEarlyRef.current = null;
-      processLiveRecordedFrames(capturedItems);
-    };
-
-    finishRecordingEarlyRef.current = finalizeRecording;
-
-    // LẤY MẪU CHUYỂN ĐỘNG TẦN SUẤT CAO: Mỗi 120ms (Khoảng 8.3 khung hình/giây chuẩn Teachable Machine)
-    const frameCaptureInterval = setInterval(() => {
-      if (!videoRef.current || isFinished) return;
-      const v = videoRef.current;
-      const vW = v.videoWidth || 640;
-      const vH = v.videoHeight || 480;
-
-      // 1. Đo lường cường độ chuyển động vi sai giữa 2 khung hình liên tiếp
-      let motionPct = 0;
-      if (diffCtx) {
-        diffCtx.drawImage(v, 0, 0, 80, 60);
-        const imgData = diffCtx.getImageData(0, 0, 80, 60);
-        const data = imgData.data;
-        if (prevPixelData) {
-          let totalDiff = 0;
-          const len = data.length;
-          for (let i = 0; i < len; i += 4) {
-            totalDiff += Math.abs(data[i] - prevPixelData[i]) +
-                         Math.abs(data[i + 1] - prevPixelData[i + 1]) +
-                         Math.abs(data[i + 2] - prevPixelData[i + 2]);
-          }
-          const avgDiff = totalDiff / (80 * 60 * 3);
-          motionPct = Math.min(100, Math.round((avgDiff / 25) * 100));
-        }
-        prevPixelData = new Uint8ClampedArray(data);
-        setLiveMotionScore(motionPct);
-      }
-
-      // 2. Chụp khung hình gốc
-      const cv = document.createElement('canvas');
-      cv.width = vW;
-      cv.height = vH;
-      const ctx = cv.getContext('2d');
-      if (ctx) {
-        ctx.drawImage(v, 0, 0, vW, vH);
-        capturedItems.push({
-          canvas: cv,
-          motionScore: motionPct,
-          timestamp: Date.now() - startTime,
-        });
-        setRecordedFramesCount(capturedItems.length);
-      }
-    }, 120);
-
-    // Tiến trình và đếm ngược cập nhật mỗi 100ms
-    if (recordingProgressIntervalRef.current) clearInterval(recordingProgressIntervalRef.current);
-    recordingProgressIntervalRef.current = setInterval(() => {
-      if (isFinished) return;
-      const elapsed = Date.now() - startTime;
-      const remaining = Math.max(0, Math.ceil((DURATION_MS - elapsed) / 1000));
-      const pct = Math.min(100, (elapsed / DURATION_MS) * 100);
-      setRecordingSecLeft(remaining);
-      setRecordingProgress(pct);
-
-      if (elapsed >= DURATION_MS) {
-        finalizeRecording();
-      }
-    }, 100);
-  };
-
-  const processLiveRecordedFrames = async (
-    capturedItems: { canvas: HTMLCanvasElement; motionScore: number; timestamp: number }[]
-  ) => {
-    setVideoRecordingState('processing');
-    const activeClassLabel = classes.find((c) => c.id === activeClass)?.label || 'Không tên';
-
-    try {
-      if (capturedItems.length === 0) {
-        showToast('⚠️ Chưa thu thập được khung hình nào từ camera!');
-        setVideoRecordingState('idle');
-        return;
-      }
-
-      // Tối ưu hóa chuỗi chuyển động chuẩn Teachable Machine:
-      // Ưu tiên giữ lại các frame có chuyển động rõ nét (motionScore >= 8%) và các mốc chuyển tiếp
-      let selectedItems = capturedItems;
-      if (capturedItems.length > 40) {
-        const motionItems = capturedItems.filter((it) => it.motionScore >= 8);
-        if (motionItems.length >= 20) {
-          const stride = Math.max(1, Math.floor(motionItems.length / 35));
-          selectedItems = motionItems.filter((_, idx) => idx % stride === 0);
-          if (!selectedItems.includes(capturedItems[0])) {
-            selectedItems.unshift(capturedItems[0]);
-          }
-        } else {
-          const step = Math.ceil(capturedItems.length / 35);
-          selectedItems = capturedItems.filter((_, idx) => idx % step === 0);
-        }
-      }
-
-      const newSamples: StoredSample[] = [];
-      const totalFrames = selectedItems.length;
-
-      for (let i = 0; i < totalFrames; i++) {
-        const item = selectedItems[i];
-        const features = extractFeatures(item.canvas);
-        if (!features) continue;
-
-        const thumbnail = item.canvas.toDataURL('image/jpeg', 0.8);
-
-        const phaseName =
-          i === 0
-            ? 'Bắt đầu'
-            : i === Math.floor(totalFrames / 2)
-            ? 'Đỉnh cử chỉ'
-            : i === totalFrames - 1
-            ? 'Thu tay'
-            : `Chuyển động #${i + 1}`;
-
-        newSamples.push({
-          id: crypto.randomUUID(),
-          label: activeClassLabel,
-          sourceId: activeClass,
-          sourceType: 'gesture',
-          features,
-          thumbnail,
-          rawThumbnail: thumbnail,
-          isValid: true,
-          isQuestionable: false,
-          questionableReason: `Frame ${i + 1}/${totalFrames} [${phaseName}] (${item.motionScore}% chuyển động)`,
-        });
-      }
-
-      if (newSamples.length > 0) {
-        setSamples((prev) => [...prev, ...newSamples]);
-        playSuccessSound();
-        showToast(`✅ Đã thu nhận chuỗi chuyển động gồm ${newSamples.length} khung hình mượt mà (8 FPS) cho "${activeClassLabel}"!`);
-      } else {
-        showToast('⚠️ Không thể trích xuất khung hình hợp lệ từ video!');
-      }
-    } catch (err) {
-      console.error('Error processing live video:', err);
-      showToast('⚠️ Có lỗi khi xử lý chuỗi chuyển động!');
-    } finally {
-      setVideoRecordingState('idle');
-      setLiveMotionScore(0);
-      setRecordedFramesCount(0);
-    }
-  };
+  }, [
+    modelStatus,
+    activeClass,
+    videoRecordingState,
+    recordingDurationSec,
+    processLiveRecordedFrames,
+    videoRef,
+  ]);
 
   // ── Video File Upload & Frame Slicing ─────────────────
   const handleVideoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -814,7 +822,7 @@ export default function TeacherTeachActionPage() {
             }
           }
         }
-      } catch (err) {
+      } catch {
         /* skip frame */
       }
       rafId = requestAnimationFrame(predict);
@@ -822,7 +830,7 @@ export default function TeacherTeachActionPage() {
 
     predict();
     return () => cancelAnimationFrame(rafId);
-  }, [predictionActive, isTrained, modelStatus, samples, classes, extractFeaturesFromVideo, videoRef]);
+  }, [predictionActive, isTrained, modelStatus, samples, classes, extractFeaturesFromVideo, videoRef, showToast]);
 
   // ── Upload predict ─────────────────────────────────────
   const handlePredictUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1459,7 +1467,7 @@ export default function TeacherTeachActionPage() {
                           />
                         </div>
                         <div className="flex justify-between items-center text-[11px] font-bold text-slate-300 mt-1.5">
-                          <span>Tiến độ ghi hình</span>
+                          <span>Tiến độ ghi hình &bull; Chuyển động: <span className="text-emerald-400 font-bold">{liveMotionScore}%</span></span>
                           <span className="text-amber-300 font-mono font-bold">{Math.round(recordingProgress)}%</span>
                         </div>
                       </div>

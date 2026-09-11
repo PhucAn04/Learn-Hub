@@ -207,37 +207,36 @@ export function analyzeBlur(
   const variance = Math.max(0, (laplacianSqSum / activePixels) - (mean * mean));
   const sharpnessRatio = (strongPixels / activePixels) * 100;
   
-  // 3. THRESHOLDS
-  // Variance = chỉ số chính, ổn định cho cả nền trơn và nền có đồ vật.
-  // MaxLaplacian = xác nhận có edge thật (phân biệt ảnh nét vs ảnh mờ toàn phần).
-  // SharpnessRatio = % pixel edge mạnh — KHÔNG đáng tin trên nền trơn (tường)
-  //   vì ROI chứa chủ yếu pixel đồng nhất → tỷ lệ strongPixels luôn thấp.
-  //   → Dùng làm bonus, KHÔNG phải yêu cầu bắt buộc.
-  const brightnessFactor = brightness < 100 ? Math.min(2.0, 100 / Math.max(brightness, 20)) : 1;
+  // 3. THRESHOLDS THÔNG MINH
+  // Độ sáng càng thấp, nhiễu (noise) của camera càng cao làm tăng giả tạo các chỉ số nét (ActiveVar, MaxLap).
+  // Vì vậy, ta cần yêu cầu ngưỡng cao hơn ở môi trường tối, và ngưỡng thấp hơn ở môi trường sáng (nơi chỉ số đáng tin cậy hơn).
+  let lightPenalty = 1.0;
+  if (brightness < 80) lightPenalty = 2.5;
+  else if (brightness < 95) lightPenalty = 1.8;
+  else if (brightness < 110) lightPenalty = 1.2;
+  else lightPenalty = 0.5; // Đủ sáng: ưu tiên chấp nhận kể cả khi webcam lởm tạo ra chỉ số thấp
   
   // Resolution scaling: Ngưỡng tự điều chỉnh theo kích thước ảnh thực tế.
   const actualPixels = w * h;
   const resolutionScale = actualPixels > 307200 ? Math.sqrt(307200 / actualPixels) : 1;
 
-  const minVarianceThreshold = (200 / brightnessFactor) * resolutionScale;
-  const minMaxLapThreshold = 22 * resolutionScale;
+  const minVarianceThreshold = 600 * lightPenalty * resolutionScale;
+  const minMaxLapThreshold = 55 * lightPenalty * resolutionScale;
 
   let isBlurry = true;
   
-  // Bộ lọc motion blur: MaxLap cực cao + Sharp% thấp = motion streak
-  // (viền tay quét nhanh tạo 1 edge cực mạnh, nhưng phần còn lại mờ nhòe)
-  const isMotionArtifact = maxLaplacian > 55 * resolutionScale && sharpnessRatio < 6.0;
+  // Bộ lọc motion/focus blur: MaxLap cực kì cao (có vệt sáng) nhưng Sharp% rất thấp
+  const isMotionArtifact = maxLaplacian > 100 * resolutionScale && sharpnessRatio < 8.0;
   
   if (isMotionArtifact) {
-    // Phát hiện motion blur → giữ isBlurry = true
+    // Phát hiện motion/focus blur rõ rệt → giữ isBlurry = true
   }
-  // Điều kiện 1: Variance tốt + MaxLaplacian xác nhận có edge thật
-  // → Hoạt động cho CẢ nền trơn và nền có đồ vật
+  // Điều kiện 1: Variance và MaxLaplacian đều đạt ngưỡng yêu cầu của môi trường sáng đó
   else if (variance >= minVarianceThreshold && maxLaplacian >= minMaxLapThreshold) {
     isBlurry = false;
   }
-  // Điều kiện 2: Variance hơi thấp nhưng MaxLap cao (edge rõ, low-light fallback)
-  else if (maxLaplacian >= 45 * resolutionScale && variance >= minVarianceThreshold * 0.6) {
+  // Điều kiện 2: Variance hơi thấp nhưng MaxLap rất cao (viền tay nét căng, nền trơn)
+  else if (maxLaplacian >= 100 * resolutionScale && variance >= minVarianceThreshold * 0.7) {
     isBlurry = false;
   }
 

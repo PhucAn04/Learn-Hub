@@ -78,9 +78,23 @@ export default function AIFeedbackModal({
         // ── Display cross-check: dùng localK/safeThreshold (slider bé kéo) ──
         const knn = classifyKNNDetailed(studentSample.features, referenceSamples, localK);
         
-        const matchedClass = resolveClassMatch(knn.label, classes);
-        const bestClassId = matchedClass?.id || knn.label;
-        const bestVotes = (knn.counts as Record<string, number>)[knn.label] || 0;
+        // Recount votes by resolved class ID (not raw text label)
+        // to handle label mismatches (e.g. teacher "Peace ✌️" vs student "Peace")
+        const idCounts: Record<string, number> = {};
+        knn.nearest.forEach((n: NearestNeighbor) => {
+          const nClass = resolveClassMatch(n.label, classes);
+          const nClassId = nClass?.id || n.label;
+          idCounts[nClassId] = (idCounts[nClassId] || 0) + 1;
+        });
+
+        let bestClassId = 'unknown';
+        let bestVotes = 0;
+        for (const cid in idCounts) {
+          if (idCounts[cid] > bestVotes) {
+            bestVotes = idCounts[cid];
+            bestClassId = cid;
+          }
+        }
 
         const finalPredictedClassId = (bestVotes >= safeThreshold) ? bestClassId : 'unclear';
         
@@ -121,9 +135,21 @@ export default function AIFeedbackModal({
 
         if (robustK !== localK || robustThreshold !== safeThreshold) {
           const robustKnn = classifyKNNDetailed(studentSample.features, referenceSamples, robustK);
-          const rMatchedClass = resolveClassMatch(robustKnn.label, classes);
-          const rBestClassId = rMatchedClass?.id || robustKnn.label;
-          const rBestVotes = (robustKnn.counts as Record<string, number>)[robustKnn.label] || 0;
+          // Recount robust votes by class ID too
+          const rIdCounts: Record<string, number> = {};
+          robustKnn.nearest.forEach((n: NearestNeighbor) => {
+            const nClass = resolveClassMatch(n.label, classes);
+            const nClassId = nClass?.id || n.label;
+            rIdCounts[nClassId] = (rIdCounts[nClassId] || 0) + 1;
+          });
+          let rBestClassId = 'unknown';
+          let rBestVotes = 0;
+          for (const cid in rIdCounts) {
+            if (rIdCounts[cid] > rBestVotes) {
+              rBestVotes = rIdCounts[cid];
+              rBestClassId = cid;
+            }
+          }
           const rPredicted = (rBestVotes >= robustThreshold) ? rBestClassId : 'unclear';
           if (rPredicted !== studentClassId) {
             robustIssueCount++;

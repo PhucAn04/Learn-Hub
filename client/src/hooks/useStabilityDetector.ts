@@ -143,11 +143,20 @@ export function useStabilityDetector(
     }
     const avgDisplacement = totalDisplacement / pairCount;
 
-    // Chuẩn hóa theo resolution (baseline = 640px width)
+    // Kích thước video thực tế
     const videoWidth = videoRef.current?.videoWidth || 640;
+    const isHD = videoWidth >= 1000;
+
+    // Chuẩn hóa theo resolution (baseline = 640px width)
     const normalizedDisplacement = avgDisplacement * (640 / videoWidth);
 
-    const isStable = normalizedDisplacement < threshold;
+    // Dynamic Threshold:
+    // Với Giáo viên (SD), giữ nguyên threshold khắt khe.
+    // Với Học sinh (HD), nới lỏng (x2.5) vì điểm ảnh lớn làm nhiễu AI (jitter) lộ rõ,
+    // và trẻ em cầm tay thường rung tự nhiên nhiều hơn.
+    const dynamicThreshold = isHD ? threshold * 2.5 : threshold;
+
+    const isStable = normalizedDisplacement < dynamicThreshold;
 
     setResult(prev => {
       // Tránh re-render nếu không đổi

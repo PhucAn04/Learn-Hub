@@ -325,7 +325,7 @@ export default function TeachPanel({
     },
     videoRef,
     modelStatus === 'ready',
-    { threshold: 12 } // Tăng nhẹ threshold để tránh báo rung sai
+    { threshold: 22 } // Tăng mạnh threshold cho Học sinh (trẻ em tay rung hơn Giáo viên rất nhiều)
   );
 
   // ── Thumbnail helper ────────────────

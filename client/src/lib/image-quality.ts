@@ -207,36 +207,50 @@ export function analyzeBlur(
   const variance = Math.max(0, (laplacianSqSum / activePixels) - (mean * mean));
   const sharpnessRatio = (strongPixels / activePixels) * 100;
   
-  // 3. THRESHOLDS THÔNG MINH
-  // Độ sáng càng thấp, nhiễu (noise) của camera càng cao làm tăng giả tạo các chỉ số nét (ActiveVar, MaxLap).
-  // Vì vậy, ta cần yêu cầu ngưỡng cao hơn ở môi trường tối, và ngưỡng thấp hơn ở môi trường sáng (nơi chỉ số đáng tin cậy hơn).
-  let lightPenalty = 1.0;
-  if (brightness < 80) lightPenalty = 2.5;
-  else if (brightness < 95) lightPenalty = 1.8;
-  else if (brightness < 110) lightPenalty = 1.2;
-  else lightPenalty = 0.5; // Đủ sáng: ưu tiên chấp nhận kể cả khi webcam lởm tạo ra chỉ số thấp
-  
-  // Resolution scaling: Ngưỡng tự điều chỉnh theo kích thước ảnh thực tế.
-  const actualPixels = w * h;
-  const resolutionScale = actualPixels > 307200 ? Math.sqrt(307200 / actualPixels) : 1;
+  // 3. THRESHOLDS THÔNG MINH (Webcam ISP Profile)
+  // Phân biệt phân giải (Học sinh/Giáo viên)
+  const isHD = canvas.width >= 1000;
 
-  const minVarianceThreshold = 600 * lightPenalty * resolutionScale;
-  const minMaxLapThreshold = 55 * lightPenalty * resolutionScale;
+  let minVarianceThreshold = 600;
+  let minMaxLapThreshold = 55;
+
+  if (isHD) {
+      // Camera HD bắt nét mạnh, noise tần số cao lớn. Ảnh mờ vẫn ra ActiveVar ~1400.
+      minVarianceThreshold = 1800;
+      minMaxLapThreshold = 150;
+  } else {
+      // Camera SD (Giáo viên / mặc định) chịu ảnh hưởng nặng của bộ xử lý ảnh (ISP):
+      if (brightness >= 100) {
+          // Sáng tốt: Ít nhiễu, không bị bệt. ActiveVar phản ánh đúng đường nét thực tế.
+          // Webcam lởm chụp nét cũng chỉ được tầm 600-800.
+          minVarianceThreshold = 550;
+          minMaxLapThreshold = 55;
+      } else if (brightness >= 85) {
+          // Ánh sáng vừa (85-100): ISP tăng ISO nhưng chưa bật khử nhiễu (Denoise) mạnh.
+          // Nhiễu hạt (Noise) bơm phồng ActiveVar lên ảo (có thể đạt 1000 dù ảnh mờ).
+          // Cần ngưỡng khắt khe hơn để lọc chính xác ảnh mờ thực sự.
+          minVarianceThreshold = 1050; // Chặn ảnh mờ 994 của user
+          minMaxLapThreshold = 95;
+      } else {
+          // Cực tối (< 85): ISP bật khử nhiễu tối đa, làm bệt ảnh (Smoothing).
+          // Cả nhiễu lẫn đường nét thật đều bị xóa, ActiveVar và MaxLap tụt thê thảm.
+          minVarianceThreshold = 450;  // Cho phép mức 573 của user
+          minMaxLapThreshold = 50;     // Cho phép mức 54 của user
+      }
+  }
 
   let isBlurry = true;
   
-  // Bộ lọc motion/focus blur: MaxLap cực kì cao (có vệt sáng) nhưng Sharp% rất thấp
-  const isMotionArtifact = maxLaplacian > 100 * resolutionScale && sharpnessRatio < 8.0;
+  // Bộ lọc motion/focus blur: vệt sáng di chuyển nhanh (MaxLap cao nhưng Sharp% cực thấp)
+  const isMotionArtifact = maxLaplacian > (isHD ? 200 : 100) && sharpnessRatio < 8.0;
   
   if (isMotionArtifact) {
-    // Phát hiện motion/focus blur rõ rệt → giữ isBlurry = true
-  }
-  // Điều kiện 1: Variance và MaxLaplacian đều đạt ngưỡng yêu cầu của môi trường sáng đó
-  else if (variance >= minVarianceThreshold && maxLaplacian >= minMaxLapThreshold) {
+    // Motion artifact detected → isBlurry = true
+  } else if (variance >= minVarianceThreshold && maxLaplacian >= minMaxLapThreshold) {
+    // Pass cả 2 điều kiện
     isBlurry = false;
-  }
-  // Điều kiện 2: Variance hơi thấp nhưng MaxLap rất cao (viền tay nét căng, nền trơn)
-  else if (maxLaplacian >= 100 * resolutionScale && variance >= minVarianceThreshold * 0.7) {
+  } else if (maxLaplacian >= (isHD ? 250 : 100) && variance >= minVarianceThreshold * 0.7) {
+    // Cứu vớt: Ảnh có cạnh cực nét, nhưng vùng trơn quá lớn kéo Variance xuống
     isBlurry = false;
   }
 

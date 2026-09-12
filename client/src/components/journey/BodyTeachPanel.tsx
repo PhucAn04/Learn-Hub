@@ -97,7 +97,7 @@ export default function BodyTeachPanel({
     () => posesRef.current?.[0]?.keypoints as { x: number; y: number }[] ?? null,
     videoRef,
     modelStatus === 'ready',
-    { threshold: 12 } // Body pose cho phép nhiều chuyển động hơn
+    { threshold: 25 } // Body pose có độ dao động lớn, cộng thêm Học sinh hay nhúc nhích nên nới lỏng mạnh
   );
 
   // ── Drawing loop ────────────────────

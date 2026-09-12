@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import Link from 'next/link';
 import { Brain, Camera, Trash2, FlaskConical, ShieldCheck } from 'lucide-react';
 import { useCamera } from '@/hooks/useCamera';
 import { useMl5Handpose } from '@/hooks/useMl5Handpose';
@@ -1499,6 +1500,17 @@ export default function TeachPanel({
                 </span>
               </button>
               
+              {mode === 'hand-1' && (
+                <Link
+                  href="/challenge/teach-two-hands"
+                  onClick={playClickSound}
+                  className="w-full font-extrabold py-3 px-6 rounded-2xl shadow-md border-b-4 bg-purple-100 hover:bg-purple-200 border-purple-300 text-purple-700 flex items-center justify-center gap-2 text-base transition-all"
+                >
+                  <span className="text-xl">👐</span>
+                  <span>Chuyển sang 2 bàn tay</span>
+                </Link>
+              )}
+
               {isTrained && (
                 <button
                   onClick={() => setShowFeedbackModal(true)}

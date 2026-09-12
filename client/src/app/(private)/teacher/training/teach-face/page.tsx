@@ -378,9 +378,16 @@ export default function TeacherTeachFacePage() {
         const kps = getFaceKeypoints(face);
         if (kps && kps.length >= 468) {
           const features = normalizeFaceFeatures(kps);
+          const resultKNN = classifyKNN(features, samples, 3);
           const result = await trainerRef.current!.predict(features);
-          setPredictedLabel(result.label);
-          setConfidence(result.confidence);
+          
+          if (resultKNN.minDistance > 3.5) {
+            setPredictedLabel('Khác thường, không có dữ liệu này trong thư viện ảnh của bạn!');
+            setConfidence(0);
+          } else {
+            setPredictedLabel(result.label);
+            setConfidence(result.confidence);
+          }
         }
       } else {
         setPredictedLabel('AI đang đợi khuôn mặt bạn... 👀');

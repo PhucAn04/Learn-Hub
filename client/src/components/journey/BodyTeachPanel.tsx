@@ -222,7 +222,10 @@ export default function BodyTeachPanel({
              const resultKNN = classifyKNN(features, samples, kValue);
              const resultNN = await trainerRef.current!.predict(features);
              if (resultKNN) {
-                if (resultNN.confidence < 50 || resultKNN.maxCount < Math.min(threshold, kValue)) {
+                if (resultKNN.minDistance > 0.65) {
+                  setPredictedLabel('Khác thường, không có dữ liệu này trong thư viện ảnh của bạn!');
+                  setConfidence(0);
+                } else if (resultNN.confidence < 50 || resultKNN.maxCount < Math.min(threshold, kValue)) {
                   setPredictedLabel('Chưa rõ ràng... 🤔');
                   setConfidence(resultNN.confidence);
                 } else {

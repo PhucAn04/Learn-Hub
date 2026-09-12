@@ -385,27 +385,42 @@ export default function TeacherTeachTwoHandsPage() {
           const f1 = normalizeHandKeypoints(hand1?.keypoints || []);
           const f2 = normalizeHandKeypoints(hand2?.keypoints || []);
 
+          const pred1KNN = classifyKNN(f1, samples, 3);
+          const pred2KNN = classifyKNN(f2, samples, 3);
+          
           const pred1 = await trainerRef.current!.predict(f1);
           const pred2 = await trainerRef.current!.predict(f2);
 
-          const isHand1One = pred1.label.includes('1');
-          const isHand2One = pred2.label.includes('1');
-          
-          let totalFingers = 0;
-          totalFingers += isHand1One ? 1 : 2;
-          totalFingers += isHand2One ? 1 : 2;
+          if (pred1KNN.minDistance > 0.7 && pred2KNN.minDistance > 0.7) {
+            setPredictedLabel('Khác thường, không có dữ liệu này trong thư viện ảnh của bạn!');
+            setConfidence(0);
+          } else {
+            const isHand1One = pred1.label.includes('1');
+            const isHand2One = pred2.label.includes('1');
+            
+            let totalFingers = 0;
+            totalFingers += isHand1One ? 1 : 2;
+            totalFingers += isHand2One ? 1 : 2;
 
-          setPredictedLabel(`2 Bàn Tay 👐 (Tay 1: ${isHand1One ? '1 ngón' : '2 ngón'}, Tay 2: ${isHand2One ? '1 ngón' : '2 ngón'} | Tổng: ${totalFingers} ngón)`);
-          setConfidence(Math.round((pred1.confidence + pred2.confidence) / 2));
+            setPredictedLabel(`2 Bàn Tay 👐 (Tay 1: ${isHand1One ? '1 ngón' : '2 ngón'}, Tay 2: ${isHand2One ? '1 ngón' : '2 ngón'} | Tổng: ${totalFingers} ngón)`);
+            setConfidence(Math.round((pred1.confidence + pred2.confidence) / 2));
+          }
         } else {
           // Single Hand Prediction
           const hand = hands[0];
           const kps = hand.keypoints;
           if (kps && kps.length >= 21) {
             const features = normalizeHandKeypoints(kps);
+            const resultKNN = classifyKNN(features, samples, 3);
             const result = await trainerRef.current!.predict(features);
-            setPredictedLabel(result.label);
-            setConfidence(result.confidence);
+            
+            if (resultKNN.minDistance > 0.65) {
+              setPredictedLabel('Khác thường, không có dữ liệu này trong thư viện ảnh của bạn!');
+              setConfidence(0);
+            } else {
+              setPredictedLabel(result.label);
+              setConfidence(result.confidence);
+            }
           }
         }
       } else {

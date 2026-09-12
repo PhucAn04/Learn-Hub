@@ -309,9 +309,16 @@ export default function TeacherTeachGesturesPage() {
         const kps = hand.keypoints;
         if (kps && kps.length >= 21) {
           const features = normalizeHandKeypoints(kps);
+          const resultKNN = classifyKNN(features, samples, 3);
           const result = await trainerRef.current!.predict(features);
-          setPredictedLabel(result.label);
-          setConfidence(result.confidence);
+          
+          if (resultKNN.minDistance > 0.65) {
+            setPredictedLabel('Khác thường, không có dữ liệu này trong thư viện ảnh của bạn!');
+            setConfidence(0);
+          } else {
+            setPredictedLabel(result.label);
+            setConfidence(result.confidence);
+          }
         }
       } else {
         setPredictedLabel('AI đang đợi tay bạn... ✋');

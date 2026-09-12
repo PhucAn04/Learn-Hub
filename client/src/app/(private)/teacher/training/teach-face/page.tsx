@@ -521,20 +521,10 @@ export default function TeacherTeachFacePage() {
   const handleOpenSubmit = () => {
     playClickSound();
 
-    // 1. Evaluate accuracy against Emotion Landmark Dataset (real video landmarks)
-    let kaggleCorrect = 0;
-    EMOTION_LANDMARK_DATASET.forEach(testCase => {
-      const result = classifyKNN(testCase.features, samples, 3);
-      const expectedText = CLASSES.find(c => c.id === testCase.expectedLabel)?.label || testCase.expectedLabel;
-      if (result.label === expectedText) {
-        kaggleCorrect++;
-      }
-    });
-    const kaggleAccuracy = EMOTION_LANDMARK_DATASET.length > 0 
-      ? (kaggleCorrect / EMOTION_LANDMARK_DATASET.length) * 100
-      : 0;
-
-    // 2. Leave-One-Out Cross Validation (LOOCV) on user's own samples
+    // 1. Leave-One-Out Cross Validation (LOOCV) on user's own samples
+    // teach-face: Khuôn mặt mỗi người là duy nhất, dùng KNN để so khớp đặc trưng 
+    // khuôn mặt giữa giáo viên và bộ Kaggle sẽ luôn dẫn đến độ chính xác thấp oan uổng.
+    // Do đó, chỉ dùng LOOCV (self-consistency) để chấm điểm chất lượng bộ dữ liệu.
     let loocvCorrect = 0;
     samples.forEach((holdOut, idx) => {
       const otherSamples = samples.filter((_, i) => i !== idx);
@@ -548,8 +538,7 @@ export default function TeacherTeachFacePage() {
       ? (loocvCorrect / samples.length) * 100
       : 0;
 
-    // 3. Combine both approaches (Average)
-    let calculatedAccuracy = Math.round((kaggleAccuracy + loocvAccuracy) / 2);
+    let calculatedAccuracy = Math.round(loocvAccuracy);
 
     // Apply penalty for insufficient samples (2% per missing image below threshold of 10)
     const MIN_SAMPLES_PER_CLASS = 10;

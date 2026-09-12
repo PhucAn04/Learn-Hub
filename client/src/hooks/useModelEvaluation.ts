@@ -114,34 +114,88 @@ export function useModelEvaluation(config: EvalConfig) {
         }
       } catch { /* fallback */ }
 
+      // teach-face: khuôn mặt mỗi người là duy nhất → không dùng FER-2013/teacher samples
+      const isFaceMode = config.challengeType === 'teach-face';
+
       // 1. Golden Evaluation — đánh giá chất lượng Model AI của bé
-      const goldenResult = evaluateAgainstGolden(samples, evaluationDataset, k);
+      let goldenResult: { results: { expectedLabel: string; predictedLabel: string; isCorrect: boolean; confidence: number }[]; accuracy: number; correctCount: number; totalCount: number };
 
-      // Bổ sung NN softmax confidence cho Golden Test (thay vì vote count)
-      if (nnPredict) {
-        let nnCorrectCount = 0;
-        for (let i = 0; i < goldenResult.results.length; i++) {
-          try {
-            const goldenSample = evaluationDataset[i];
-            if (goldenSample) {
-              const nnPred = await nnPredict(goldenSample.features);
-              // Ghi đè confidence bằng NN softmax (% thật, không phải vote count)
-              goldenResult.results[i].confidence = nnPred.confidence;
+      if (isFaceMode) {
+        // teach-face: Khuôn mặt mỗi người là duy nhất → FER-2013 features hoàn toàn khác webcam features.
+        // Thay vì so khớp chéo với Kaggle (luôn sai), dùng LOOCV trên chính samples của bé.
+        const loocvResults: typeof goldenResult.results = [];
+        let loocvCorrect = 0;
 
-              if (config.challengeType !== 'teach') {
-                const predictedLabel = config.classes.find(c => c.id === nnPred.label)?.label || nnPred.label;
-                const expectedClassId = config.classes.find(c => c.label === goldenSample.expectedLabel)?.id || goldenSample.expectedLabel;
-                const isCorrectMatch = labelsMatch(predictedLabel, goldenSample.expectedLabel, config.classes) || labelsMatch(nnPred.label, expectedClassId, config.classes);
-                goldenResult.results[i].isCorrect = isCorrectMatch;
-                if (isCorrectMatch) nnCorrectCount++;
-              }
+        for (let i = 0; i < samples.length; i++) {
+          const holdOut = samples[i];
+          const others = samples.filter((_, j) => j !== i);
+          if (others.length === 0) continue;
+
+          const expectedLabel = holdOut.label;
+          let predictedLabel = expectedLabel;
+          let isCorrect = true;
+          let confidence = 100;
+
+          if (nnPredict) {
+            try {
+              const pred = await nnPredict(holdOut.features);
+              predictedLabel = config.classes.find(c => c.id === pred.label)?.label || pred.label;
+              isCorrect = labelsMatch(predictedLabel, expectedLabel, config.classes);
+              confidence = pred.confidence;
+            } catch {
+              const knn = classifyKNNDetailed(holdOut.features, others, Math.min(k, others.length));
+              const matched = resolveClassMatch(knn.label, config.classes);
+              predictedLabel = matched?.label || knn.label;
+              isCorrect = labelsMatch(predictedLabel, expectedLabel, config.classes);
+              confidence = Math.round((knn.counts[knn.label] || 0) / Math.min(k, others.length) * 100);
             }
-          } catch { /* fallback giữ KNN confidence */ }
+          } else {
+            const knn = classifyKNNDetailed(holdOut.features, others, Math.min(k, others.length));
+            const matched = resolveClassMatch(knn.label, config.classes);
+            predictedLabel = matched?.label || knn.label;
+            isCorrect = labelsMatch(predictedLabel, expectedLabel, config.classes);
+            confidence = Math.round((knn.counts[knn.label] || 0) / Math.min(k, others.length) * 100);
+          }
+
+          if (isCorrect) loocvCorrect++;
+          loocvResults.push({ expectedLabel, predictedLabel, isCorrect, confidence });
         }
-        
-        if (config.challengeType !== 'teach' && goldenResult.results.length > 0) {
-          goldenResult.accuracy = Math.round((nnCorrectCount / goldenResult.results.length) * 100);
-          goldenResult.correctCount = nnCorrectCount;
+
+        goldenResult = {
+          results: loocvResults,
+          accuracy: samples.length > 0 ? Math.round((loocvCorrect / samples.length) * 100) : 0,
+          correctCount: loocvCorrect,
+          totalCount: samples.length,
+        };
+      } else {
+        goldenResult = evaluateAgainstGolden(samples, evaluationDataset, k);
+
+        // Bổ sung NN softmax confidence cho Golden Test (thay vì vote count)
+        if (nnPredict) {
+          let nnCorrectCount = 0;
+          for (let i = 0; i < goldenResult.results.length; i++) {
+            try {
+              const goldenSample = evaluationDataset[i];
+              if (goldenSample) {
+                const nnPred = await nnPredict(goldenSample.features);
+                // Ghi đè confidence bằng NN softmax (% thật, không phải vote count)
+                goldenResult.results[i].confidence = nnPred.confidence;
+
+                if (config.challengeType !== 'teach') {
+                  const predictedLabel = config.classes.find(c => c.id === nnPred.label)?.label || nnPred.label;
+                  const expectedClassId = config.classes.find(c => c.label === goldenSample.expectedLabel)?.id || goldenSample.expectedLabel;
+                  const isCorrectMatch = labelsMatch(predictedLabel, goldenSample.expectedLabel, config.classes) || labelsMatch(nnPred.label, expectedClassId, config.classes);
+                  goldenResult.results[i].isCorrect = isCorrectMatch;
+                  if (isCorrectMatch) nnCorrectCount++;
+                }
+              }
+            } catch { /* fallback giữ KNN confidence */ }
+          }
+          
+          if (config.challengeType !== 'teach' && goldenResult.results.length > 0) {
+            goldenResult.accuracy = Math.round((nnCorrectCount / goldenResult.results.length) * 100);
+            goldenResult.correctCount = nnCorrectCount;
+          }
         }
       }
       // 2. Confusion Matrix
@@ -158,12 +212,13 @@ export function useModelEvaluation(config: EvalConfig) {
       //   Tầng 2: Teacher Reference Dataset (Kaggle 68 mẫu) — chuẩn mực, không phụ thuộc bé
       let studentImageAudit: NonNullable<ModelEvaluation['sampleEvidence']>['studentImageAudit'] = [];
 
-      if (hasTeacher) {
+      if (hasTeacher && !isFaceMode) {
         // Tầng 1: Đánh giá bằng Teacher Samples (Distance-weighted, K=5)
+        // Không áp dụng cho teach-face vì khuôn mặt mỗi người khác nhau
         studentImageAudit = evaluateStudentImagesWithTeacher(
           samples, config.teacherSamples!, config.classes, teacherK
         );
-      } else {
+      } else if (!isFaceMode) {
         // Tầng 2: Đánh giá bằng Golden/Reference Dataset (Distance-weighted, K=5)
         studentImageAudit = evaluateStudentImagesWithReference(
           samples, config.classes, teacherK, evaluationDataset
@@ -177,8 +232,9 @@ export function useModelEvaluation(config: EvalConfig) {
       // 3b-2. Model Confidence Per Image (Khung: Mô Hình AI Đánh Giá Từng Ảnh)
       const modelConfidencePerImage: NonNullable<ModelEvaluation['sampleEvidence']>['modelConfidencePerImage'] = [];
       if (nnPredict) {
-        if (hasTeacher) {
+        if (hasTeacher && !isFaceMode) {
           // Có teacher thì dùng bộ mẫu của GV đưa qua model của bé
+          // Không áp dụng cho teach-face vì khuôn mặt khác người
           for (const img of config.teacherSamples!) {
             try {
               const expectedLabel = img.label || '?';
@@ -287,7 +343,9 @@ export function useModelEvaluation(config: EvalConfig) {
       const feedbackMislabeledCount = samples.filter(s => s.aiFeedback?.isMisclassified).length;
       
       let crossCheckMislabeledCount = 0;
-      const refDataset = hasTeacher ? config.teacherSamples! : samples;
+      // teach-face: khuôn mặt mỗi người là duy nhất, KNN cross-check giữa 2 người khác nhau
+      // sẽ luôn sai → luôn dùng self-consistency (leave-one-out) thay vì teacher samples
+      const refDataset = (hasTeacher && !isFaceMode) ? config.teacherSamples! : samples;
 
       samples.forEach((sample, index) => {
         if (sample.quality?.isBlurry || sample.quality?.isDark) return;
@@ -296,7 +354,7 @@ export function useModelEvaluation(config: EvalConfig) {
           return;
         }
 
-        const refs = hasTeacher ? refDataset : samples.filter((_, i) => i !== index);
+        const refs = (hasTeacher && !isFaceMode) ? refDataset : samples.filter((_, i) => i !== index);
         if (refs.length === 0) return;
 
         const checkK = Math.min(k, refs.length);
@@ -368,7 +426,7 @@ export function useModelEvaluation(config: EvalConfig) {
         agreementRate: 0,
       };
 
-      if (config.teacherSamples && config.teacherSamples.length > 0) {
+      if (config.teacherSamples && config.teacherSamples.length > 0 && !isFaceMode) {
         // Simple cross-check: for each teacher sample, classify against student samples
         let conflicts = 0;
         

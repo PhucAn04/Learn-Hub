@@ -9,6 +9,7 @@
  *   - Khong co Teacher  → evaluateStudentImagesWithReference() (dung TEACHER_REFERENCE_DATASET)
  */
 
+import { resolveClassMatch } from './knn-classifier';
 import type { StoredSample } from './knn-classifier';
 import { TEACHER_REFERENCE_DATASET } from './teacher-reference-dataset';
 
@@ -117,7 +118,17 @@ function calculateImageAuditConfidence(
   avgDistance: number
 ): number {
   // Lấy độ tự tin của nhãn mong muốn (thay vì nhãn thắng)
+  // Fuzzy key lookup: handle label differences (e.g. "Happy" vs "Happy 😀")
   let score = knnConfidences[expectedLabel] || 0;
+  if (score === 0) {
+    // Fallback: find key where one is a substring of the other
+    for (const key of Object.keys(knnConfidences)) {
+      if (key.includes(expectedLabel) || expectedLabel.includes(key)) {
+        score = knnConfidences[key];
+        break;
+      }
+    }
+  }
   
   // Làm mềm điểm số dựa trên khoảng cách tuyệt đối đến mẫu chuẩn
   // Tránh việc KNN có 5/5 phiếu bầu đều ra 100% (cần linh hoạt 0-100)
@@ -155,9 +166,10 @@ export function evaluateStudentImagesWithTeacher(
     const expectedLabel = classes.find(c => c.id === sampleClassId)?.label || sample.label;
 
     const knn = classifyKNNTeacher(sample.features, teacherSamples, k);
-    const predictedClassId = classes.find(c => c.label === knn.label)?.id || knn.label;
-    const predictedLabel = classes.find(c => c.id === predictedClassId)?.label || knn.label;
-    const isMatch = predictedClassId === sampleClassId || predictedLabel === expectedLabel;
+    const matchedClass = resolveClassMatch(knn.label, classes);
+    const predictedClassId = matchedClass?.id || knn.label;
+    const predictedLabel = matchedClass?.label || knn.label;
+    const isMatch = predictedClassId === sampleClassId;
 
     const auditConfidence = calculateImageAuditConfidence(knn.confidences, expectedLabel, sample, knn.avgDistance);
 
@@ -200,9 +212,10 @@ export function evaluateStudentImagesWithReference(
     const expectedLabel = classes.find(c => c.id === sampleClassId)?.label || sample.label;
 
     const knn = classifyKNNTeacher(sample.features, refSamples, k);
-    const predictedClassId = classes.find(c => c.label === knn.label)?.id || knn.label;
-    const predictedLabel = classes.find(c => c.id === predictedClassId)?.label || knn.label;
-    const isMatch = predictedClassId === sampleClassId || predictedLabel === expectedLabel;
+    const matchedClass = resolveClassMatch(knn.label, classes);
+    const predictedClassId = matchedClass?.id || knn.label;
+    const predictedLabel = matchedClass?.label || knn.label;
+    const isMatch = predictedClassId === sampleClassId;
 
     const auditConfidence = calculateImageAuditConfidence(knn.confidences, expectedLabel, sample, knn.avgDistance);
 

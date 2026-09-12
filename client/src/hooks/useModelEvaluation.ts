@@ -29,6 +29,22 @@ interface EvalConfig {
   k?: number;
 }
 
+/**
+ * Compare two labels that may differ by emoji suffix.
+ * Resolves both labels to class IDs via resolveClassMatch, then compares IDs.
+ * Falls back to substring matching if neither resolves.
+ */
+function labelsMatch(a: string, b: string, classes?: { id: string; label: string }[]): boolean {
+  if (a === b) return true;
+  if (classes && classes.length > 0) {
+    const aId = resolveClassMatch(a, classes)?.id;
+    const bId = resolveClassMatch(b, classes)?.id;
+    if (aId && bId) return aId === bId;
+  }
+  // Fallback: one label is a substring of the other (handles emoji suffix)
+  return a.includes(b) || b.includes(a);
+}
+
 export function useModelEvaluation(config: EvalConfig) {
   const [evaluation, setEvaluation] = useState<ModelEvaluation | null>(null);
   const [previousEvaluation, setPreviousEvaluation] = useState<ModelEvaluation | null>(null);
@@ -115,7 +131,7 @@ export function useModelEvaluation(config: EvalConfig) {
               if (config.challengeType !== 'teach') {
                 const predictedLabel = config.classes.find(c => c.id === nnPred.label)?.label || nnPred.label;
                 const expectedClassId = config.classes.find(c => c.label === goldenSample.expectedLabel)?.id || goldenSample.expectedLabel;
-                const isCorrectMatch = predictedLabel === goldenSample.expectedLabel || nnPred.label === expectedClassId;
+                const isCorrectMatch = labelsMatch(predictedLabel, goldenSample.expectedLabel, config.classes) || labelsMatch(nnPred.label, expectedClassId, config.classes);
                 goldenResult.results[i].isCorrect = isCorrectMatch;
                 if (isCorrectMatch) nnCorrectCount++;
               }
@@ -173,7 +189,7 @@ export function useModelEvaluation(config: EvalConfig) {
               let distanceToStudent = 0;
               const studentSamplesOfClass = samples.filter(s => {
                 const sLabel = config.classes.find(c => c.id === s.sourceId)?.label || s.label;
-                return sLabel === expectedLabel;
+                return labelsMatch(sLabel, expectedLabel, config.classes);
               });
               
               if (studentSamplesOfClass.length > 0) {
@@ -186,7 +202,7 @@ export function useModelEvaluation(config: EvalConfig) {
 
               const nnPred = await nnPredict(img.features);
               const predictedLabel = config.classes.find(c => c.id === nnPred.label)?.label || nnPred.label;
-              const isCorrect = predictedLabel === expectedLabel || nnPred.label === expectedLabel;
+              const isCorrect = labelsMatch(predictedLabel, expectedLabel, config.classes) || labelsMatch(nnPred.label, expectedLabel, config.classes);
               
               // Cho unlearned style: lấy confidence cho NHÃN ĐÚNG (expectedLabel)
               // thay vì confidence cho nhãn model đoán (predictedLabel)
@@ -227,7 +243,7 @@ export function useModelEvaluation(config: EvalConfig) {
               const pred = await nnPredict(ref.features);
               const predictedLabel = config.classes.find(c => c.id === pred.label)?.label || pred.label;
               const expectedClassId = config.classes.find(c => c.label === ref.label)?.id || ref.label;
-              const isCorrect = predictedLabel === ref.label || pred.label === expectedClassId;
+              const isCorrect = labelsMatch(predictedLabel, ref.label, config.classes) || labelsMatch(pred.label, expectedClassId, config.classes);
               if (isCorrect) correctCount++;
               
               goldenConfResults.push({
@@ -249,7 +265,7 @@ export function useModelEvaluation(config: EvalConfig) {
               const pred = await evalPredict(img.features);
               const expectedLabel = img.label || '?';
               const predictedLabel = config.classes.find(c => c.id === pred.label)?.label || pred.label;
-              const isCorrect = predictedLabel === expectedLabel || pred.label === expectedLabel;
+              const isCorrect = labelsMatch(predictedLabel, expectedLabel, config.classes) || labelsMatch(pred.label, expectedLabel, config.classes);
 
               modelConfidencePerImage.push({
                 expectedLabel, predictedLabel, isCorrect,
@@ -361,7 +377,7 @@ export function useModelEvaluation(config: EvalConfig) {
           const expectedLabel = config.classes.find(c => c.id === ts.sourceId)?.label || ts.label;
           const studentSamplesOfClass = samples.filter(s => {
             const sLabel = config.classes.find(c => c.id === s.sourceId)?.label || s.label;
-            return sLabel === expectedLabel;
+            return labelsMatch(sLabel, expectedLabel, config.classes);
           });
           
           if (studentSamplesOfClass.length > 0) {
@@ -377,7 +393,7 @@ export function useModelEvaluation(config: EvalConfig) {
             const expectedLabel = config.classes.find(c => c.id === ts.sourceId)?.label || ts.label;
             const predictedLabel = config.classes.find(c => c.id === prediction.label)?.label || prediction.label;
             
-            if (predictedLabel !== expectedLabel && prediction.label !== expectedLabel) {
+            if (!labelsMatch(predictedLabel, expectedLabel, config.classes) && !labelsMatch(prediction.label, expectedLabel, config.classes)) {
               conflicts++;
             }
           }

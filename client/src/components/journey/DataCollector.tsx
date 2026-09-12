@@ -95,7 +95,7 @@ export default function DataCollector({
       if (detectorMode === 'hand') {
         const hands = results as HandResult[];
         if (hands && hands.length > 0 && hands[0].keypoints) {
-          features = normalizeHandKeypoints(hands[0].keypoints);
+          features = normalizeHandKeypoints(hands[0].keypoints, mode === 'hand-2');
           roi = calculateROI(hands[0].keypoints as { x: number; y: number }[], img.canvas.width, img.canvas.height, 0.1);
           isValid = true;
           const ctx = img.canvas.getContext('2d');

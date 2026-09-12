@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
-import { Sparkles, Brain, ArrowLeft, Trash2, Camera, Award, HelpCircle } from 'lucide-react';
+import { useEffect, useRef, useState, useMemo } from 'react';
+import { Sparkles, Brain, ArrowLeft, Trash2, Camera, Award, HelpCircle, X } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
@@ -20,9 +20,21 @@ import { TfTrainer } from '@/lib/tf-trainer';
 import { uploadSamplesToCloudinary, isCloudinaryConfigured } from '@/lib/cloudinary';
 import { useStabilityDetector } from '@/hooks/useStabilityDetector';
 // Predefined classes for teaching
-const CLASSES = [
+const BASE_CLASSES = [
   { id: 'class_3', label: '2 Bàn Tay, 1 Ngón Tay ☝️☝️', voicePrompt: 'Hãy giơ hai bàn tay, mỗi tay một ngón nhé!' },
   { id: 'class_4', label: '2 Bàn Tay, 2 Ngón Tay ✌️✌️', voicePrompt: 'Hãy giơ hai bàn tay, mỗi tay hai ngón nhé!' },
+];
+
+const DYNAMIC_PRESETS = [
+  { label: '2 Bàn Tay, 3 Ngón Tay 🤟🤟', emoji: '🤟🤟' },
+  { label: '2 Bàn Tay, 4 Ngón Tay 🖖🖖', emoji: '🖖🖖' },
+  { label: '2 Bàn Tay, 5 Ngón Tay 🖐️🖐️', emoji: '🖐️🖐️' },
+];
+
+const INITIAL_DYNAMIC_CLASSES = [
+  { id: 'class_8', label: '2 Bàn Tay, 3 Ngón Tay 🤟🤟', emoji: '🤟🤟' },
+  { id: 'class_9', label: '2 Bàn Tay, 4 Ngón Tay 🖖🖖', emoji: '🖖🖖' },
+  { id: 'class_10', label: '2 Bàn Tay, 5 Ngón Tay 🖐️🖐️', emoji: '🖐️🖐️' },
 ];
 
 // Mapping từ class ID sang golden dataset expectedLabel
@@ -94,6 +106,18 @@ function countExtendedFingers(keypoints: HandKeypoint[]): number {
   return count;
 }
 
+function isThumbExtended(keypoints: HandKeypoint[]): boolean {
+  if (!keypoints || keypoints.length < 21) return false;
+  const wrist = keypoints[0];
+  const thumbTip = keypoints[4];
+  const thumbIP = keypoints[3];
+  const thumbMCP = keypoints[2];
+  const thumbDistTip = Math.abs(thumbTip.x - wrist.x);
+  const thumbDistIP = Math.abs(thumbIP.x - wrist.x);
+  const thumbDistMCP = Math.abs(thumbMCP.x - wrist.x);
+  return thumbDistTip > thumbDistIP && thumbDistIP > thumbDistMCP * 1.05;
+}
+
 /**
  * Xác định số ngón tay mong đợi cho mỗi class (tính trên từng bàn tay)
  *  - class_1: 1 ngón (index finger)
@@ -101,15 +125,49 @@ function countExtendedFingers(keypoints: HandKeypoint[]): number {
  *  - class_3: 1 ngón mỗi tay
  *  - class_4: 2 ngón mỗi tay
  */
-function getExpectedFingerCount(classId: string): number {
+function getExpectedFingerCount(classId: string, label?: string): number {
   if (classId === 'class_1' || classId === 'class_3') return 1;
   if (classId === 'class_2' || classId === 'class_4') return 2;
+  if (label) {
+    if (label.includes('3 Ngón')) return 3;
+    if (label.includes('4 Ngón')) return 4;
+    if (label.includes('5 Ngón')) return 5;
+  }
   return -1; // unknown
 }
 
 export default function TeacherTeachTwoHandsPage() {
   const router = useRouter();
   const [samples, setSamples] = useState<StoredSample[]>([]);
+  
+  // Dynamic classes management
+  const [dynamicClasses, setDynamicClasses] = useState<{ id: string; label: string; emoji: string }[]>(INITIAL_DYNAMIC_CLASSES);
+  const [nextClassIdCounter, setNextClassIdCounter] = useState(11);
+
+  const CLASSES = useMemo(() => [
+    ...BASE_CLASSES,
+    ...dynamicClasses.map(dc => ({ ...dc, voicePrompt: `Hãy giơ hai bàn tay, mỗi tay ${dc.label.split(',')[1].trim()} nhé!` }))
+  ], [dynamicClasses]);
+
+  const removedPresets = useMemo(() => {
+    const activeLabels = dynamicClasses.map(c => c.label);
+    return DYNAMIC_PRESETS.filter(p => !activeLabels.includes(p.label));
+  }, [dynamicClasses]);
+
+  const removeDynamicClass = (classId: string) => {
+    setDynamicClasses(prev => prev.filter(c => c.id !== classId));
+    setSamples(prev => prev.filter(s => s.sourceId !== classId));
+    setIsTrained(false);
+    setActiveClass(prev => prev === classId ? 'class_3' : prev);
+  };
+
+  const addDynamicClass = (label: string, emoji: string) => {
+    if (dynamicClasses.some(c => c.label === label)) return;
+    const newId = `class_${nextClassIdCounter}`;
+    setDynamicClasses(prev => [...prev, { id: newId, label, emoji }]);
+    setNextClassIdCounter(prev => prev + 1);
+  };
+
   const [activeClass, setActiveClass] = useState<string>('class_3');
   const [isCapturing, setIsCapturing] = useState(false);
   const [activeDataTab, setActiveDataTab] = useState<'camera' | 'upload' | 'video'>('camera');
@@ -206,7 +264,7 @@ export default function TeacherTeachTwoHandsPage() {
     const goldenCurrentClass = GOLDEN_TEST_DATASET.filter(g => g.expectedLabel === goldenLabel);
     const goldenOtherClasses = GOLDEN_TEST_DATASET.filter(g => g.expectedLabel !== goldenLabel);
 
-    const expectedFingers = getExpectedFingerCount(activeClass);
+    const expectedFingers = getExpectedFingerCount(activeClass, activeClassLabel);
 
     const vW = videoRef.current ? videoRef.current.videoWidth || 640 : 640;
     const vH = videoRef.current ? videoRef.current.videoHeight || 480 : 480;
@@ -233,7 +291,7 @@ export default function TeacherTeachTwoHandsPage() {
 
       const processHand = (handIndex: number) => {
         if (hands[handIndex] && hands[handIndex].keypoints && hands[handIndex].keypoints.length >= 21) {
-          const features = normalizeHandKeypoints(hands[handIndex].keypoints);
+          const features = normalizeHandKeypoints(hands[handIndex].keypoints, true);
           let isValid = true;
 
           // Quality Assessment (Dark/Blurry Check)
@@ -250,11 +308,18 @@ export default function TeacherTeachTwoHandsPage() {
           if (isValid && expectedFingers > 0) {
             const detectedFingers = countExtendedFingers(hands[handIndex].keypoints);
             if (detectedFingers >= 0) {
-              // Bỏ qua ngón cái khi đếm, nên bây giờ có thể so sánh chính xác số ngón
-              if (detectedFingers !== expectedFingers) {
+              let isFingerCountOk: boolean;
+              if (expectedFingers === 5) {
+                isFingerCountOk = detectedFingers >= 4 && isThumbExtended(hands[handIndex].keypoints);
+              } else if (expectedFingers === 4) {
+                isFingerCountOk = detectedFingers === 4 && !isThumbExtended(hands[handIndex].keypoints);
+              } else {
+                isFingerCountOk = detectedFingers === expectedFingers;
+              }
+              if (!isFingerCountOk) {
                 isValid = false;
                 rejectedAny = true;
-                rejectionMsg = `Bạn đang giơ ${detectedFingers} ngón tay chính, nhưng nhãn "${activeClassLabel}" cần ${expectedFingers} ngón! 🖐️`;
+                rejectionMsg = `Đang giơ không đúng số ngón! Nhãn "${activeClassLabel}" cần ${expectedFingers} ngón mỗi tay 🖐️`;
               }
             }
           }
@@ -338,10 +403,13 @@ export default function TeacherTeachTwoHandsPage() {
 
   const handleTrain = async () => {
     const validSamples = samples.filter(s => s.isValid !== false);
-    const c3 = validSamples.filter(s => s.sourceId === 'class_3').length;
-    const c4 = validSamples.filter(s => s.sourceId === 'class_4').length;
+    
+    // Check if every class has at least 6 valid samples (3 captures x 2 hands = 6)
+    const hasEnough = CLASSES.every(cls => {
+      return validSamples.filter(s => s.sourceId === cls.id).length >= 6;
+    });
 
-    if (c3 < 6 || c4 < 6) { // c3/c4 need 6 samples (3 captures x 2 hands)
+    if (!hasEnough) {
       speakEnglish('Need more samples to learn');
       return;
     }
@@ -382,8 +450,8 @@ export default function TeacherTeachTwoHandsPage() {
           // Dual Hand Prediction logic: classify both hands and count total fingers
           const hand1 = hands[0];
           const hand2 = hands[1];
-          const f1 = normalizeHandKeypoints(hand1?.keypoints || []);
-          const f2 = normalizeHandKeypoints(hand2?.keypoints || []);
+          const f1 = normalizeHandKeypoints(hand1?.keypoints || [], true);
+          const f2 = normalizeHandKeypoints(hand2?.keypoints || [], true);
 
           const pred1KNN = classifyKNN(f1, samples, 3);
           const pred2KNN = classifyKNN(f2, samples, 3);
@@ -392,17 +460,23 @@ export default function TeacherTeachTwoHandsPage() {
           const pred2 = await trainerRef.current!.predict(f2);
 
           if (pred1KNN.minDistance > 0.7 && pred2KNN.minDistance > 0.7) {
-            setPredictedLabel('Khác thường, không có dữ liệu này trong thư viện ảnh của bạn!');
+            setPredictedLabel('Dữ liệu chưa được học... 🤔');
             setConfidence(0);
           } else {
-            const isHand1One = pred1.label.includes('1');
-            const isHand2One = pred2.label.includes('1');
+            const getFingers = (label: string) => {
+              if (label.includes('1 Ngón')) return 1;
+              if (label.includes('2 Ngón')) return 2;
+              if (label.includes('3 Ngón')) return 3;
+              if (label.includes('4 Ngón')) return 4;
+              if (label.includes('5 Ngón')) return 5;
+              return 0;
+            };
             
-            let totalFingers = 0;
-            totalFingers += isHand1One ? 1 : 2;
-            totalFingers += isHand2One ? 1 : 2;
+            const f1Count = getFingers(pred1.label);
+            const f2Count = getFingers(pred2.label);
+            const totalFingers = f1Count + f2Count;
 
-            setPredictedLabel(`2 Bàn Tay 👐 (Tay 1: ${isHand1One ? '1 ngón' : '2 ngón'}, Tay 2: ${isHand2One ? '1 ngón' : '2 ngón'} | Tổng: ${totalFingers} ngón)`);
+            setPredictedLabel(`2 Bàn Tay 👐 (Tay 1: ${f1Count} ngón, Tay 2: ${f2Count} ngón | Tổng: ${totalFingers} ngón)`);
             setConfidence(Math.round((pred1.confidence + pred2.confidence) / 2));
           }
         } else {
@@ -410,12 +484,12 @@ export default function TeacherTeachTwoHandsPage() {
           const hand = hands[0];
           const kps = hand.keypoints;
           if (kps && kps.length >= 21) {
-            const features = normalizeHandKeypoints(kps);
+            const features = normalizeHandKeypoints(kps, true);
             const resultKNN = classifyKNN(features, samples, 3);
             const result = await trainerRef.current!.predict(features);
             
             if (resultKNN.minDistance > 0.65) {
-              setPredictedLabel('Khác thường, không có dữ liệu này trong thư viện ảnh của bạn!');
+              setPredictedLabel('Dữ liệu chưa được học... 🤔');
               setConfidence(0);
             } else {
               setPredictedLabel(result.label);
@@ -510,14 +584,14 @@ export default function TeacherTeachTwoHandsPage() {
     playClickSound();
     
     // Evaluate accuracy against Golden Dataset
-    const targetClasses = [CLASSES[0].label, CLASSES[1].label];
-
-    const testCases = GOLDEN_TEST_DATASET.filter(g => targetClasses.includes(g.expectedLabel));
+    const goldenTargetClasses = ['1 Ngón Tay ☝️', '2 Ngón Tay ✌️'];
+    const testCases = GOLDEN_TEST_DATASET.filter(g => goldenTargetClasses.includes(g.expectedLabel));
 
     let correctCount = 0;
     testCases.forEach(testCase => {
       const result = classifyKNN(testCase.features, samples, 3);
-      if (result.label === testCase.expectedLabel) {
+      const expectedIn2Hands = testCase.expectedLabel === '1 Ngón Tay ☝️' ? CLASSES[0].label : CLASSES[1].label;
+      if (result.label === expectedIn2Hands) {
         correctCount++;
       }
     });
@@ -528,19 +602,19 @@ export default function TeacherTeachTwoHandsPage() {
     const MIN_SAMPLES_PER_CLASS = 10;
     let totalPenalty = 0;
 
-    const sampleCounts: Record<string, number> = { class_1: 0, class_2: 0, class_3: 0, class_4: 0 };
+    const sampleCounts: Record<string, number> = {};
     samples.forEach(s => {
-      if (s.sourceId && s.sourceId in sampleCounts) {
-        sampleCounts[s.sourceId]++;
+      if (s.sourceId) {
+        sampleCounts[s.sourceId] = (sampleCounts[s.sourceId] || 0) + 1;
       }
     });
 
     let hasPenalty = false;
-    const classesToCheck = ['class_3', 'class_4'];
-    classesToCheck.forEach(cid => {
-      const count = sampleCounts[cid];
-      if (count < MIN_SAMPLES_PER_CLASS) {
-        totalPenalty += (MIN_SAMPLES_PER_CLASS - count) * 2;
+    CLASSES.forEach(cls => {
+      // 1 image = 2 hands = 2 raw samples
+      const imageCount = Math.floor((sampleCounts[cls.id] || 0) / 2);
+      if (imageCount < MIN_SAMPLES_PER_CLASS) {
+        totalPenalty += (MIN_SAMPLES_PER_CLASS - imageCount) * 2;
         hasPenalty = true;
       }
     });
@@ -622,13 +696,12 @@ export default function TeacherTeachTwoHandsPage() {
               <div className="text-xs font-black text-indigo-600 tracking-wider mb-2 uppercase">Lớp học AI của bạn</div>
               <h3 className="text-xl font-bold text-gray-800 mb-4">Các bước dạy học cho AI:</h3>
 
-              {/* Stage 2: Two-hand classes */}
+              {/* Stage 1: Base classes */}
               <div className="mb-2">
-                <span className="text-xs font-black text-emerald-600 tracking-wider uppercase">Bước 2: 2 Bàn tay 👐</span>
+                <span className="text-xs font-black text-emerald-600 tracking-wider uppercase">Bước 1: Cơ bản 👐</span>
               </div>
-              {/* Class Tabs */}
-              <div className="space-y-3 mb-6">
-                {CLASSES.slice(2, 4).map(cls => {
+              <div className="space-y-3 mb-4">
+                {BASE_CLASSES.map(cls => {
                   const validSamples = samples.filter(s => s.isValid !== false);
                   const rawCount = validSamples.filter(s => s.sourceId === cls.id).length;
                   const classSampleCount = Math.floor(rawCount / 2);
@@ -671,6 +744,78 @@ export default function TeacherTeachTwoHandsPage() {
                     </div>
                   );
                 })}
+              </div>
+
+              {/* Stage 2: Dynamic classes */}
+              <div className="mb-2 mt-4">
+                <span className="text-xs font-black text-purple-600 tracking-wider uppercase">Bước 2: Nhãn mở rộng 🖐️</span>
+              </div>
+              <div className="space-y-3 mb-4">
+                {dynamicClasses.map(cls => {
+                  const validSamples = samples.filter(s => s.isValid !== false);
+                  const rawCount = validSamples.filter(s => s.sourceId === cls.id).length;
+                  const classSampleCount = Math.floor(rawCount / 2);
+                  const isSelected = activeClass === cls.id;
+                  const hasEnough = classSampleCount >= 3;
+                  
+                  return (
+                    <div
+                      key={cls.id}
+                      onClick={() => {
+                        playClickSound();
+                        setActiveClass(cls.id);
+                      }}
+                      className={`cursor-pointer rounded-2xl p-4 border-2 transition-all flex items-center justify-between ${
+                        isSelected
+                          ? 'border-purple-500 bg-purple-50/80 shadow-md ring-2 ring-purple-200'
+                          : 'border-gray-200 bg-gray-50 hover:bg-gray-100'
+                      }`}
+                    >
+                      <div>
+                        <div className="font-extrabold text-purple-900">{cls.label}</div>
+                        <div className="text-xs text-gray-500 font-semibold mt-1 flex items-center gap-1.5">
+                          <span>Đã chụp:</span>
+                          <span className="text-purple-600 font-black">{classSampleCount} ảnh</span>
+                          <span className={`inline-block px-1.5 py-0.5 rounded-full text-[9px] font-black ${
+                            hasEnough ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700 animate-pulse'
+                          }`}>
+                            {hasEnough
+                              ? classSampleCount >= 10 ? '✅ Đủ mẫu (10+)' : '✅ Đủ mẫu — 💡 Chụp thêm!'
+                              : `⚠️ Thiếu ${3 - classSampleCount} ảnh`}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="flex gap-2">
+                        {classSampleCount > 0 && (
+                          <button onClick={(e) => { e.stopPropagation(); clearClassSamples(cls.id); }} className="p-2 hover:bg-red-100 rounded-lg text-red-500" title="Xóa ảnh">
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        )}
+                        <button
+                          onClick={(e) => { e.stopPropagation(); removeDynamicClass(cls.id); }}
+                          className="p-2 hover:bg-red-100 rounded-lg text-red-400" title="Xóa nhãn"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+
+                {/* Nút thêm lại nhãn đã xóa */}
+                {removedPresets.length > 0 && (
+                  <div className="flex flex-wrap gap-2 mt-2">
+                    {removedPresets.map(preset => (
+                      <button
+                        key={preset.label}
+                        onClick={() => { playClickSound(); addDynamicClass(preset.label, preset.emoji); }}
+                        className="px-3 py-1.5 bg-purple-50 hover:bg-purple-100 text-purple-700 text-xs font-bold rounded-xl border border-purple-200 flex items-center gap-1 transition-colors"
+                      >
+                        <span>+ {preset.label.split(',')[1].trim()}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
 
 
@@ -717,9 +862,13 @@ export default function TeacherTeachTwoHandsPage() {
                   const raw = samples.filter(s => s.sourceId === id || (s.label === label && !s.sourceId)).length;
                   return Math.floor(raw / 2);
                 };
-                const c3 = getCount(CLASSES[0].id, CLASSES[0].label);
-                const c4 = getCount(CLASSES[1].id, CLASSES[1].label);
-                const isReady = c3 >= 10 && c4 >= 10;
+                
+                const missingClasses = CLASSES.map(cls => {
+                  const count = getCount(cls.id, cls.label);
+                  return { label: cls.label, count, missing: Math.max(0, 10 - count) };
+                }).filter(c => c.missing > 0);
+                
+                const isReady = missingClasses.length === 0;
 
                 if (!isReady) {
                   return (
@@ -727,8 +876,9 @@ export default function TeacherTeachTwoHandsPage() {
                       <span className="text-red-800 text-sm font-extrabold block">⚠️ Yêu cầu dữ liệu:</span>
                       <span>Bạn cần chụp ít nhất 10 ảnh cho mỗi nhóm để AI có thể học tốt nhé:</span>
                       <ul className="list-disc pl-4 space-y-1">
-                        {c3 < 10 && <li>Nhóm &quot;{CLASSES[0].label}&quot;: thiếu {10 - c3} ảnh mẫu.</li>}
-                        {c4 < 10 && <li>Nhóm &quot;{CLASSES[1].label}&quot;: thiếu {10 - c4} ảnh mẫu.</li>}
+                        {missingClasses.map((mc, idx) => (
+                          <li key={idx}>Nhóm &quot;{mc.label}&quot;: thiếu {mc.missing} ảnh mẫu.</li>
+                        ))}
                       </ul>
                     </div>
                   );
@@ -826,15 +976,26 @@ export default function TeacherTeachTwoHandsPage() {
                   const keypoints = hands[0].keypoints;
                   
                   // Finger counting check
-                  const expectedFingers = getExpectedFingerCount(classId);
+                  const classLabel = CLASSES.find(c => c.id === classId)?.label || '';
+                  const expectedFingers = getExpectedFingerCount(classId, classLabel);
                   if (expectedFingers > 0) {
                     const detectedFingers = countExtendedFingers(keypoints);
-                    if (detectedFingers >= 0 && detectedFingers !== expectedFingers) {
-                      return {
-                        isValid: false,
-                        isQuestionable: true,
-                        questionableReason: `Đang giơ ${detectedFingers} ngón thay vì ${expectedFingers} ngón! 🖐️`,
-                      };
+                    if (detectedFingers >= 0) {
+                      let isFingerCountOk: boolean;
+                      if (expectedFingers === 5) {
+                        isFingerCountOk = detectedFingers >= 4 && isThumbExtended(keypoints);
+                      } else if (expectedFingers === 4) {
+                        isFingerCountOk = detectedFingers === 4 && !isThumbExtended(keypoints);
+                      } else {
+                        isFingerCountOk = detectedFingers === expectedFingers;
+                      }
+                      if (!isFingerCountOk) {
+                        return {
+                          isValid: false,
+                          isQuestionable: true,
+                          questionableReason: `Đang giơ không đúng số ngón! Cần ${expectedFingers} ngón mỗi tay 🖐️`,
+                        };
+                      }
                     }
                   }
                   

@@ -38,16 +38,25 @@ export interface StoredSample {
  * 2. Find max distance from wrist to any keypoint
  * 3. Scale all keypoints by dividing by max distance
  */
-export function normalizeHandKeypoints(keypoints: HandKeypoint[]): number[] {
+export function normalizeHandKeypoints(keypoints: HandKeypoint[], mirrorToRightHand: boolean = false): number[] {
   if (!keypoints || keypoints.length < 21) {
     return new Array(42).fill(0);
   }
 
   const wrist = keypoints[0];
-  const translated = keypoints.map(kp => ({
+  let translated = keypoints.map(kp => ({
     x: kp.x - wrist.x,
     y: kp.y - wrist.y
   }));
+
+  // Mirror hand to normalize left/right hands to a single representation.
+  // We use the horizontal position of Index MCP (5) relative to Pinky MCP (17).
+  if (mirrorToRightHand && translated[5].x > translated[17].x) {
+    translated = translated.map(kp => ({
+      x: -kp.x,
+      y: kp.y
+    }));
+  }
 
   // Find max distance from wrist
   let maxDist = 0.0001;

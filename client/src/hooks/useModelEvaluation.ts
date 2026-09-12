@@ -147,14 +147,14 @@ export function useModelEvaluation(config: EvalConfig) {
               const matched = resolveClassMatch(knn.label, config.classes);
               predictedLabel = matched?.label || knn.label;
               isCorrect = labelsMatch(predictedLabel, expectedLabel, config.classes);
-              confidence = Math.round((knn.counts[knn.label] || 0) / Math.min(k, others.length) * 100);
+              confidence = Math.round(((knn.counts as Record<string, number>)[knn.label] || 0) / Math.min(k, others.length) * 100);
             }
           } else {
             const knn = classifyKNNDetailed(holdOut.features, others, Math.min(k, others.length));
             const matched = resolveClassMatch(knn.label, config.classes);
             predictedLabel = matched?.label || knn.label;
             isCorrect = labelsMatch(predictedLabel, expectedLabel, config.classes);
-            confidence = Math.round((knn.counts[knn.label] || 0) / Math.min(k, others.length) * 100);
+            confidence = Math.round(((knn.counts as Record<string, number>)[knn.label] || 0) / Math.min(k, others.length) * 100);
           }
 
           if (isCorrect) loocvCorrect++;

@@ -27,10 +27,11 @@ export default function AIConfidenceEnergyBars({ classes, confidences, isAnomaly
 
   const effectiveConfidences = confidences || {};
 
-  // Lấy số ảnh nhiều nhất để làm chuẩn tính toán sự thiên vị nhẹ
-  let maxCount = 0;
-  if (classCounts) {
-    maxCount = Math.max(...Object.values(classCounts), 0);
+  // Tính số lượng ảnh trung bình mỗi nhãn để làm chuẩn
+  let avgCount = 0;
+  if (classCounts && classes.length > 0) {
+    const totalCount = Object.values(classCounts).reduce((sum, count) => sum + count, 0);
+    avgCount = totalCount / classes.length;
   }
 
   const adjustedConfidences: Record<string, number> = {};
@@ -40,17 +41,14 @@ export default function AIConfidenceEnergyBars({ classes, confidences, isAnomaly
     let conf = (isPhaseB && isAnomaly) ? 0 : (effectiveConfidences[c.id] || effectiveConfidences[c.label] || 0);
     const cCount = classCounts ? (classCounts[c.id] || 0) : 0;
     
-    // Thuật toán: Thể hiện sự thiên vị (Bias) một cách RẤT NHẸ NHÀNG lên thanh năng lượng.
-    // Vì thanh năng lượng khá ngắn, nếu tuột nhiều sẽ giống như bị lỗi.
-    // Chúng ta chỉ trừ tối đa khoảng 20% năng lượng của nhãn ít ảnh nhất.
-    if (classCounts && maxCount > 0 && !isAnomaly) {
-      const penaltyRatio = cCount / maxCount; // 0.0 -> 1.0
+    if (classCounts && avgCount > 0 && !isAnomaly) {
+      // Tỷ lệ so với số ảnh trung bình (tối đa là 1.0)
+      const balanceRatio = Math.min(1.0, cCount / avgCount);
       
-      // Công thức softPenalty: 
-      // Nếu bằng số ảnh (ratio = 1) => softPenalty = 0.8 + 0.2*1 = 1.0 (Giữ nguyên 100%)
-      // Nếu 10 ảnh vs 20 ảnh (ratio = 0.5) => softPenalty = 0.8 + 0.2*0.5 = 0.9 (Giảm đi 10% năng lượng)
-      // Nhãn bị thua thiệt sẽ bị khuyết đi một mẩu nhỏ xíu ở đuôi thanh năng lượng.
-      const softPenalty = 0.8 + 0.2 * penaltyRatio; 
+      // Sử dụng công thức phạt mạnh hơn để học sinh dễ thấy sự chênh lệch
+      // Nếu balanceRatio = 1 (số ảnh >= trung bình) => softPenalty = 1.0 (Giữ nguyên 100%)
+      // Nếu balanceRatio = 0.33 => softPenalty = 0.3 + 0.7 * 0.33 = 0.531 (Giảm ~47% năng lượng)
+      const softPenalty = 0.3 + 0.7 * balanceRatio; 
       
       conf = conf * softPenalty; 
     }

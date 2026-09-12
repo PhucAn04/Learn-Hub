@@ -160,7 +160,7 @@ export default function TeacherTeachGesturesPage() {
       // Helper to process a hand
       const processHand = (handIndex: number) => {
         if (hands[handIndex] && hands[handIndex].keypoints && hands[handIndex].keypoints.length >= 21) {
-          const features = normalizeHandKeypoints(hands[handIndex].keypoints);
+          const features = normalizeHandKeypoints(hands[handIndex].keypoints, true);
           let isValid = true;
 
           // Quality Assessment (Dark/Blurry Check)
@@ -308,7 +308,7 @@ export default function TeacherTeachGesturesPage() {
         const hand = hands[0];
         const kps = hand.keypoints;
         if (kps && kps.length >= 21) {
-          const features = normalizeHandKeypoints(kps);
+          const features = normalizeHandKeypoints(kps, true);
           const resultKNN = classifyKNN(features, samples, 3);
           const result = await trainerRef.current!.predict(features);
           
@@ -652,10 +652,10 @@ export default function TeacherTeachGesturesPage() {
                       <span className="text-red-800 text-sm font-extrabold block">⚠️ Yêu cầu dữ liệu:</span>
                       <span>Bạn cần chụp ít nhất 3 ảnh cho mỗi nhóm để AI có thể học tốt nhé:</span>
                       <ul className="list-disc pl-4 space-y-1">
-                        {c1 < 3 && <li>Nhóm "{CLASSES[0].label}": thiếu {3 - c1} ảnh mẫu.</li>}
-                        {c2 < 3 && <li>Nhóm "{CLASSES[1].label}": thiếu {3 - c2} ảnh mẫu.</li>}
-                        {c3 < 3 && <li>Nhóm "{CLASSES[2].label}": thiếu {3 - c3} ảnh mẫu.</li>}
-                        {c4 < 3 && <li>Nhóm "{CLASSES[3].label}": thiếu {3 - c4} ảnh mẫu.</li>}
+                        {c1 < 3 && <li>Nhóm &quot;{CLASSES[0].label}&quot;: thiếu {3 - c1} ảnh mẫu.</li>}
+                        {c2 < 3 && <li>Nhóm &quot;{CLASSES[1].label}&quot;: thiếu {3 - c2} ảnh mẫu.</li>}
+                        {c3 < 3 && <li>Nhóm &quot;{CLASSES[2].label}&quot;: thiếu {3 - c3} ảnh mẫu.</li>}
+                        {c4 < 3 && <li>Nhóm &quot;{CLASSES[3].label}&quot;: thiếu {3 - c4} ảnh mẫu.</li>}
                       </ul>
                     </div>
                   );
@@ -663,7 +663,7 @@ export default function TeacherTeachGesturesPage() {
 
                 return (
                   <div className="bg-green-50 border-2 border-green-200 text-green-700 rounded-2xl p-4 text-xs font-bold mb-6 shadow-inner">
-                    <span>🎉 Tuyệt vời! Bạn đã thu thập đủ dữ liệu rồi. Hãy nhấn nút <b>"HUẤN LUYỆN AI 🧠🚀"</b> bên dưới nhé!</span>
+                    <span>🎉 Tuyệt vời! Bạn đã thu thập đủ dữ liệu rồi. Hãy nhấn nút <b>&quot;HUẤN LUYỆN AI 🧠🚀&quot;</b> bên dưới nhé!</span>
                   </div>
                 );
               })()}
@@ -813,7 +813,7 @@ export default function TeacherTeachGesturesPage() {
                 </div>
               ) : (
                 <div className="text-center py-4 text-purple-200 font-bold">
-                  Bạn hãy chụp mẫu tay bên trái rồi bấm <span className="text-yellow-300">"HUẤN LUYỆN AI"</span> để xem kết quả dự đoán trực tiếp ở đây nhé! 🤖✨
+                  Bạn hãy chụp mẫu tay bên trái rồi bấm <span className="text-yellow-300">&quot;HUẤN LUYỆN AI&quot;</span> để xem kết quả dự đoán trực tiếp ở đây nhé! 🤖✨
                 </div>
               )}
             </div>

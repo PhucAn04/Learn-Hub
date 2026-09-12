@@ -152,7 +152,7 @@ export default function GesturesChallenge() {
 
               // Override with Neural Network if available
               if (trainerRef.current) {
-                 const features = normalizeHandKeypoints(kps);
+                 const features = normalizeHandKeypoints(kps, true);
                  const pred = trainerRef.current.predictSync(features);
                  if (pred && pred.label) {
                    if (pred.label === 'class_1') gesture = 'like';

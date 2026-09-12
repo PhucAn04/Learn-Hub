@@ -169,10 +169,29 @@ export const api = {
     const data = await request<unknown>(`/datasets/${datasetId}/file`, {
       method: 'GET',
     });
+    let response: DatasetFileResponse;
     if (Array.isArray(data)) {
-      return { samples: data } as DatasetFileResponse;
+      response = { samples: data } as DatasetFileResponse;
+    } else {
+      response = data as DatasetFileResponse;
     }
-    return data as DatasetFileResponse;
+    
+    // Auto-upgrade legacy unmirrored hand features to mirrored (Index < Pinky)
+    if (response && response.samples) {
+      response.samples = response.samples.map((s: StoredSample) => {
+        if (s.features && s.features.length === 42) {
+          // Hand features: Index MCP X is at index 10, Pinky MCP X is at index 34
+          if (s.features[10] > s.features[34]) {
+            return {
+              ...s,
+              features: s.features.map((v: number, i: number) => i % 2 === 0 ? -v : v)
+            };
+          }
+        }
+        return s;
+      });
+    }
+    return response;
   },
 
   async getDatasetById(datasetId: string) {

@@ -88,16 +88,17 @@ export default function DataCollector({
     for (const img of processedImages) {
       const rawThumb = img.thumbnailBase64;
       const results = await detect(img.canvas);
-      let features: number[] | null = null;
-      let isValid = false;
+      const featuresList: number[][] = [];
       let roi: ROI | undefined = undefined;
 
       if (detectorMode === 'hand') {
         const hands = results as HandResult[];
         if (hands && hands.length > 0 && hands[0].keypoints) {
-          features = normalizeHandKeypoints(hands[0].keypoints, mode === 'hand-2');
+          featuresList.push(normalizeHandKeypoints(hands[0].keypoints, true));
+          if (mode === 'hand-2' && hands.length >= 2 && hands[1].keypoints) {
+            featuresList.push(normalizeHandKeypoints(hands[1].keypoints, true));
+          }
           roi = calculateROI(hands[0].keypoints as { x: number; y: number }[], img.canvas.width, img.canvas.height, 0.1);
-          isValid = true;
           const ctx = img.canvas.getContext('2d');
           if (ctx) {
             hands.forEach((hand, idx) => {
@@ -118,9 +119,8 @@ export default function DataCollector({
         if (faces && faces.length > 0) {
           const keypoints = getFaceKeypoints(faces[0]);
           if (keypoints) {
-             features = normalizeFaceFeatures(keypoints);
+             featuresList.push(normalizeFaceFeatures(keypoints));
              roi = calculateROI(keypoints as { x: number; y: number }[], img.canvas.width, img.canvas.height, 0.1);
-             isValid = true;
              const ctx = img.canvas.getContext('2d');
              if (ctx) {
                faces.forEach((face) => {
@@ -136,9 +136,8 @@ export default function DataCollector({
       } else if (detectorMode === 'body') {
         const poses = results as BodyPoseResult[];
         if (poses && poses.length > 0 && poses[0].keypoints) {
-          features = normalizeBodyKeypoints(poses[0].keypoints);
+          featuresList.push(normalizeBodyKeypoints(poses[0].keypoints));
           roi = calculateROI(poses[0].keypoints as { x: number; y: number }[], img.canvas.width, img.canvas.height, 0.1);
-          isValid = true;
           const ctx = img.canvas.getContext('2d');
           if (ctx) {
             poses.forEach((pose) => {
@@ -151,55 +150,57 @@ export default function DataCollector({
         }
       }
 
-      if (features && isValid) {
+      if (featuresList.length > 0) {
         // Assess image quality (brightness, blur)
         const quality = assessQuality(img.canvas, roi);
         
-        // Quality validation: mark blurry/dark images as invalid
-        let sampleIsValid = !(quality.isDark || quality.isBlurry);
-        let isQuestionable = quality.isDark || quality.isBlurry;
-        let questionableReason = '';
-        
-        if (quality.isBlurry) {
-          questionableReason = 'Ảnh hơi mờ! Bé cố gắng chụp rõ nét hơn nhé 🔍';
-          qualityWarningCount++;
-        } else if (quality.isDark) {
-          questionableReason = 'Ảnh hơi tối! Bé tìm chỗ sáng hơn xíu nha 🌑';
-          qualityWarningCount++;
-        }
+        for (const features of featuresList) {
+          // Quality validation: mark blurry/dark images as invalid
+          let sampleIsValid = !(quality.isDark || quality.isBlurry);
+          let isQuestionable = quality.isDark || quality.isBlurry;
+          let questionableReason = '';
+          
+          if (quality.isBlurry) {
+            questionableReason = 'Ảnh hơi mờ! Bé cố gắng chụp rõ nét hơn nhé 🔍';
+            qualityWarningCount++;
+          } else if (quality.isDark) {
+            questionableReason = 'Ảnh hơi tối! Bé tìm chỗ sáng hơn xíu nha 🌙';
+            qualityWarningCount++;
+          }
 
-        // Label validation via parent callback (finger counting, golden KNN, expression detection, etc.)
-        if (sampleIsValid && onValidateSample) {
-          const labelResult = onValidateSample({
-            features,
+          // Label validation via parent callback (finger counting, golden KNN, expression detection, etc.)
+          if (sampleIsValid && onValidateSample) {
+            const labelResult = onValidateSample({
+              features,
+              label: activeClassLabel,
+              classId: activeClassId,
+              canvas: img.canvas,
+              quality,
+              detectionResults: results,
+            });
+            if (!labelResult.isValid) {
+              sampleIsValid = false;
+              labelWarningCount++;
+            }
+            if (labelResult.isQuestionable) {
+              isQuestionable = true;
+              questionableReason = labelResult.questionableReason || questionableReason;
+            }
+          }
+
+          newSamples.push({
+            id: `sample_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
             label: activeClassLabel,
-            classId: activeClassId,
-            canvas: img.canvas,
+            sourceId: activeClassId,
+            features,
+            thumbnail: img.thumbnailBase64,
+            rawThumbnail: rawThumb,
+            isValid: sampleIsValid,
+            isQuestionable,
+            questionableReason: questionableReason || undefined,
             quality,
-            detectionResults: results,
           });
-          if (!labelResult.isValid) {
-            sampleIsValid = false;
-            labelWarningCount++;
-          }
-          if (labelResult.isQuestionable) {
-            isQuestionable = true;
-            questionableReason = labelResult.questionableReason || questionableReason;
-          }
         }
-
-        newSamples.push({
-          id: `sample_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
-          label: activeClassLabel,
-          sourceId: activeClassId,
-          features,
-          thumbnail: img.thumbnailBase64,
-          rawThumbnail: rawThumb,
-          isValid: sampleIsValid,
-          isQuestionable,
-          questionableReason: questionableReason || undefined,
-          quality,
-        });
       } else {
         failCount++;
       }

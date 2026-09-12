@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { ArrowLeft, HelpCircle } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -12,11 +12,12 @@ import { DatasetResponse, ModelResponse } from '@/types/models';
 import { uploadSamplesToCloudinary, isCloudinaryConfigured } from '@/lib/cloudinary';
 import TeachPanel from '@/components/journey/TeachPanel';
 import { GOLDEN_TEST_DATASET } from '@/lib/golden-dataset';
+import { buildDynamicDataset } from '@/lib/teacher-dynamic-dataset';
 import ReportCard from '@/components/journey/ReportCard';
 import { useModelEvaluation } from '@/hooks/useModelEvaluation';
 import { getStarRatingInfo } from '@/lib/scoring';
 
-const CLASSES = [
+const BASE_CLASSES = [
   { id: 'class_3', label: '2 Bàn Tay, 1 Ngón Tay', emoji: '☝️☝️' },
   { id: 'class_4', label: '2 Bàn Tay, 2 Ngón Tay', emoji: '✌️✌️' },
 ];
@@ -48,6 +49,21 @@ export default function TeachTwoHandsPage() {
       .catch(err => console.error("Failed to load template", err));
   }, []);
   
+  // Nhãn động CHỈ hiện khi Teacher template có customClasses (có bộ ảnh mẫu)
+  // Student KHÔNG có giao diện thêm / xóa / sửa nhãn
+  const CLASSES = useMemo(() => {
+    if (teacherTemplate?.customClasses && teacherTemplate.customClasses.length > 0) {
+      return [...BASE_CLASSES, ...teacherTemplate.customClasses.map((c: { id: string; label: string; emoji?: string }) => ({ id: c.id, label: c.label, emoji: c.emoji }))]; 
+    }
+    return BASE_CLASSES;
+  }, [teacherTemplate]);
+
+  // Build dynamic golden dataset từ Teacher template samples (cho nhãn custom 3/4/5 ngón)
+  const dynamicGolden = useMemo(() => {
+    if (!teacherTemplate?.samples) return [];
+    return buildDynamicDataset(teacherTemplate.samples);
+  }, [teacherTemplate]);
+
   // Submission States
   const [reflectionAnswer, setReflectionAnswer] = useState('Chụp ảnh rõ nét và giữ tay thật yên lặng khi chụp');
   const [teacherMessage, setTeacherMessage] = useState('');
@@ -67,6 +83,7 @@ export default function TeachTwoHandsPage() {
     challengeType: 'teach-two-hands',
     classes: CLASSES,
     goldenDataset: GOLDEN_TEST_DATASET,
+    dynamicDataset: dynamicGolden,
     teacherSamples: teacherTemplate?.samples,
   });
 

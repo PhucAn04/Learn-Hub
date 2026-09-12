@@ -65,6 +65,17 @@ export function useModelEvaluation(config: EvalConfig) {
         if (config.challengeType === 'teach') {
           return TEACHER_REFERENCE_DATASET.map(g => ({ ...g, expectedLabel: g.expectedLabel }));
         }
+        if (config.challengeType === 'teach-two-hands') {
+          return config.goldenDataset.map(g => {
+            let mapped = g.expectedLabel;
+            if (g.expectedLabel === '1 Ngón Tay ☝️') {
+              mapped = config.classes[0]?.label || mapped;
+            } else if (g.expectedLabel === '2 Ngón Tay ✌️') {
+              mapped = config.classes[1]?.label || mapped;
+            }
+            return { ...g, expectedLabel: mapped };
+          });
+        }
         return config.goldenDataset.map(g => ({
           ...g,
           expectedLabel: classIdToLabel.get(g.expectedLabel) || g.expectedLabel,

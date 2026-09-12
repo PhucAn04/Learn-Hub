@@ -534,7 +534,7 @@ export default function TeachPanel({
           const roi = calculateROI(keypoints as { x: number; y: number }[], rawCanvas.width, rawCanvas.height, 0.1);
           const quality = assessQuality(rawCanvas, roi, keypoints as { x: number; y: number }[]);
 
-          const features = normalizeHandKeypoints(keypoints);
+            const features = normalizeHandKeypoints(keypoints, true);
           let heuristicValid = true;
           let isQuestionable = false;
           let questionableReason = '';
@@ -970,8 +970,8 @@ export default function TeachPanel({
         const hands = handsRef.current;
         if (hands && hands.length > 0) {
           if (isTwoHandMode && hands.length >= 2) {
-            const f1 = normalizeHandKeypoints(hands[0]?.keypoints || []);
-            const f2 = normalizeHandKeypoints(hands[1]?.keypoints || []);
+              const f1 = normalizeHandKeypoints(hands[0]?.keypoints || [], true);
+              const f2 = normalizeHandKeypoints(hands[1]?.keypoints || [], true);
             const pred1KNN = classifyKNNWithVotes(f1, samples, kValue);
             const pred2KNN = classifyKNNWithVotes(f2, samples, kValue);
             
@@ -1021,7 +1021,7 @@ export default function TeachPanel({
           } else {
             const kps = hands[0].keypoints;
             if (kps && kps.length >= 21) {
-              const features = normalizeHandKeypoints(kps);
+              const features = normalizeHandKeypoints(kps, true);
               const resultKNN = classifyKNNWithVotes(features, samples, kValue);
               const resultNN = await trainerRef.current!.predict(features);
               
@@ -1264,11 +1264,29 @@ export default function TeachPanel({
   // ══════════════════════════════════════
   // RENDER
   // ══════════════════════════════════════
-  const loadingText = isFaceMode
+  const loadingText = isFaceMode 
     ? 'ĐANG KHỞI ĐỘNG CAMERA NHẬN DẠNG KHUÔN MẶT...'
     : 'ĐANG KHỞI ĐỘNG CAMERA NHẬN DẠNG XƯƠNG TAY...';
 
-
+  const fallbackTeacherTemplate = useMemo(() => {
+    if (teacherTemplate) return teacherTemplate;
+    if (mode === 'gesture' && GOLDEN_GESTURES_DATASET && GOLDEN_GESTURES_DATASET.length > 0) {
+      return {
+        id: 'golden_fallback',
+        name: 'Kaggle Golden Gestures',
+        challengeType: 'teach-gestures',
+        samples: GOLDEN_GESTURES_DATASET.map((g, i) => ({
+           id: `golden_${i}`,
+           sourceId: g.expectedLabel,
+           label: g.expectedLabel,
+           features: g.features,
+           thumbnail: '',
+           isValid: true
+        }))
+      } as TeacherTemplate;
+    }
+    return undefined;
+  }, [teacherTemplate, mode]);
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
@@ -1816,7 +1834,7 @@ export default function TeachPanel({
           }, accuracyScore);
         }}
         studentSamples={samples}
-        teacherTemplate={teacherTemplate}
+        teacherTemplate={fallbackTeacherTemplate}
         kValue={kValue}
         threshold={threshold}
         classes={classes}

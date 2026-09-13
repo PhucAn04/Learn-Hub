@@ -220,7 +220,16 @@ export function analyzeBlur(
       minMaxLapThreshold = 150;
   } else {
       // Camera SD (Giáo viên / mặc định) chịu ảnh hưởng nặng của bộ xử lý ảnh (ISP):
-      if (brightness >= 100) {
+      if (brightness >= 180) {
+          // Siêu chói sáng (Overexposed): Cảm biến bão hòa trắng xóa (clipping). 
+          // Độ tương phản biến mất, ActiveVar tụt xuống đáy dù lấy nét đúng.
+          minVarianceThreshold = 120;
+          minMaxLapThreshold = 12;
+      } else if (brightness >= 135) {
+          // Hơi chói sáng: Độ tương phản bắt đầu giảm, viền tay mờ dần vào phông nền.
+          minVarianceThreshold = 300;
+          minMaxLapThreshold = 25;
+      } else if (brightness >= 100) {
           // Sáng tốt: Ít nhiễu, không bị bệt. ActiveVar phản ánh đúng đường nét thực tế.
           // Webcam lởm chụp nét cũng chỉ được tầm 600-800.
           minVarianceThreshold = 550;

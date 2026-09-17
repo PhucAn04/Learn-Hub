@@ -44,8 +44,10 @@ export function useMl5FaceMesh(
 
   useEffect(() => {
     if (!cameraActive) {
-      setModelStatus('loading');
-      updateDebug('Đang khởi động');
+      queueMicrotask(() => {
+        setModelStatus('loading');
+        updateDebug('Đang khởi động');
+      });
       return;
     }
 

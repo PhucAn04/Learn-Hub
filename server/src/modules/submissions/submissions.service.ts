@@ -11,7 +11,10 @@ export class SubmissionsService {
     private readonly submissionRepository: Repository<Submission>,
   ) {}
 
-  async createSubmission(userId: string, dto: CreateSubmissionDto): Promise<Submission> {
+  async createSubmission(
+    userId: string,
+    dto: CreateSubmissionDto,
+  ): Promise<Submission> {
     const submission = this.submissionRepository.create({
       userId,
       challengeType: dto.challengeType || 'teach',
@@ -22,7 +25,7 @@ export class SubmissionsService {
     return this.submissionRepository.save(submission);
   }
 
-  async getAllSubmissions(): Promise<any[]> {
+  async getAllSubmissions(): Promise<Submission[]> {
     return this.submissionRepository.find({
       relations: {
         user: true,

@@ -1,0 +1,12 @@
+- [x] Phase 1: Teach Gestures
+  - [x] Viết script `convert-kaggle-to-golden-gestures.py` để lấy 4 nhãn (thumb, rock, peace, open) từ file CSV hiện có.
+  - [x] Chạy script tạo ra `golden-gestures-dataset.ts`.
+  - [x] Xây dựng trang UI `teach-gestures/page.tsx` cho bé dạy KNN học 4 cử chỉ.
+- [x] Phase 2: Teach Face
+  - [x] Viết script `extract-face-landmarks.py` tự tạo tọa độ bằng Mediapipe từ bộ dữ liệu ảnh Kaggle FER-2013 thu gọn.
+  - [x] Chạy script tạo ra `golden-face-dataset.ts`.
+  - [x] Mở rộng thư viện KNN (`knn-classifier.ts`) để hỗ trợ vector tọa độ mặt (468 điểm).
+  - [x] Xây dựng trang UI `teach-face/page.tsx` cho bé dạy KNN học cảm xúc.
+- [x] Phase 3: Hoàn thiện & Tài liệu
+  - [x] Cập nhật Navigation / UI để hiển thị các trang bài học mới.
+  - [x] Tổng hợp Walkthrough và danh sách trích dẫn tham khảo luận văn.

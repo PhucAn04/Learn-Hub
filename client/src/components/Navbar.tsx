@@ -6,11 +6,12 @@ import { usePathname, useRouter } from 'next/navigation';
 import { Sparkles, LogIn, UserPlus, User, LogOut, Home, Brain } from 'lucide-react';
 import { api } from '@/lib/api';
 import { playClickSound } from '@/lib/audio';
+import { UserProfile } from '@/types/models';
 
 export default function Navbar() {
   const pathname = usePathname();
   const router = useRouter();
-  const [currentUser, setCurrentUser] = useState<any>(null);
+  const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
 
   // Load user profile on mount & when pathname changes
   useEffect(() => {
@@ -49,7 +50,7 @@ export default function Navbar() {
       <div className="max-w-6xl mx-auto flex justify-between items-center">
         {/* Logo */}
         <Link
-          href="/"
+          href={currentUser ? (currentUser.role === 'teacher' ? '/teacher' : '/home') : '/'}
           onClick={playClickSound}
           className="flex items-center gap-2 font-black text-2xl tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-blue-600 via-purple-600 to-pink-500 hover:scale-105 transition-transform duration-300"
         >
@@ -60,10 +61,10 @@ export default function Navbar() {
         {/* Navigation Links */}
         <div className="hidden md:flex items-center gap-6 font-extrabold text-sm text-gray-700">
           <Link
-            href={currentUser ? '/home' : '/'}
+            href={currentUser ? (currentUser.role === 'teacher' ? '/teacher' : '/home') : '/'}
             onClick={playClickSound}
             className={`flex items-center gap-1 px-4 py-2 rounded-full transition-all ${
-              pathname === '/' || pathname === '/home' ? 'bg-purple-100 text-purple-800' : 'hover:bg-gray-100'
+              pathname === '/' || pathname === '/home' || pathname === '/teacher' ? 'bg-purple-100 text-purple-800' : 'hover:bg-gray-100'
             }`}
           >
             <Home className="w-4 h-4 text-purple-500" />

@@ -1,0 +1,5 @@
+- `[x]` Thêm 2 class mới vào `teach/page.tsx`
+  - `[x]` Cập nhật mảng `CLASSES`.
+  - `[x]` Sửa đổi `captureSample` để xử lý logic thu thập 2 tay.
+  - `[x]` Sửa đổi `handleTrain` để kiểm tra số lượng mẫu (yêu cầu ít nhất 3 lần chụp = 6 mẫu đơn cho class 2 tay).
+- `[x]` Kiểm tra hoạt động UI và logic KNN.

@@ -32,7 +32,7 @@ export default function ScoreHeader({
   return (
     <div className="flex justify-between items-center mb-6">
       <Link
-        href="/"
+        href="/home"
         onClick={playClickSound}
         className={`flex items-center gap-2 px-5 py-3 rounded-full bg-white border-2 font-extrabold transition shadow-md ${styles.backBtn}`}
       >

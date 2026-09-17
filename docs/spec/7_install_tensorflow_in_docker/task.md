@@ -1,0 +1,6 @@
+- [x] Create `scripts/tfjs-extractor` directory.
+- [x] Create `package.json` with `@tensorflow/tfjs-node` and `@tensorflow-models/face-landmarks-detection`.
+- [x] Create `Dockerfile` based on `node:20-slim`.
+- [x] Create `docker-compose.yml` with proper volume mounts for dataset and output.
+- [x] Write `extract.js` to process images with `tf.node.decodeImage()` and export TS file.
+- [x] Run `docker-compose build` to verify the image builds correctly (Running in background).

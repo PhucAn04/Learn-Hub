@@ -9,20 +9,30 @@ import { ProgressModule } from './modules/progress/progress.module';
 import { SubmissionsModule } from './modules/submissions/submissions.module';
 import { DatasetsModule } from './modules/datasets/datasets.module';
 import { ModelsModule } from './modules/models/models.module';
+import { IntegrationsModule } from './modules/integrations/integrations.module';
+import { ActionLogsModule } from './modules/action-logs/action-logs.module';
+import { AssessmentsModule } from './modules/assessments/assessments.module';
+import { AdminModule } from './modules/admin/admin.module';
+
+import { MailModule } from './shared/mail/mail.module';
 
 @Module({
   imports: [
     ConfigModule,
     DatabaseModule,
+    MailModule,
     UsersModule,
     AuthModule,
     ProgressModule,
     SubmissionsModule,
     DatasetsModule,
     ModelsModule,
+    IntegrationsModule,
+    ActionLogsModule,
+    AssessmentsModule,
+    AdminModule,
   ],
   controllers: [AppController],
   providers: [AppService],
 })
 export class AppModule {}
-

@@ -16,7 +16,9 @@ export function useMl5Handpose(
 
   useEffect(() => {
     if (!cameraActive) {
-      setModelStatus('loading');
+      queueMicrotask(() => {
+        setModelStatus('loading');
+      });
       return;
     }
 

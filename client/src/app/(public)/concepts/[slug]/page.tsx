@@ -66,7 +66,47 @@ const CONCEPTS_DATA = {
       nextUrl: '/challenge/teach-face',
       btnText: 'Vào Sandbox Cảm Xúc',
     }
-  }
+  },
+  'body-exercises': {
+    slides: [
+      {
+        title: 'Nhận Diện Tư Thế (Body Pose Detection)',
+        content: 'Bé có biết máy tính cũng có thể tập thể dục cùng mình không? Bằng cách theo dõi các khớp xương như vai, khuỷu tay, đầu gối, AI có thể vẽ ra một bộ xương người que ngộ nghĩnh di chuyển theo từng cử động của bé. Kỹ thuật này gọi là "Nhận Diện Tư Thế" đấy!',
+        image: '🤸',
+        color: 'from-amber-400 to-orange-500',
+        borderColor: 'border-amber-400',
+      },
+    ],
+    quiz: {
+      question: 'Để nhận diện tư thế, AI sẽ theo dõi bộ phận nào của bé?',
+      options: ['Quần áo bé đang mặc', 'Các khớp xương (vai, tay, chân)'],
+      correct: 1,
+      successMsg: 'Chính xác! AI tìm kiếm các điểm khớp xương để vẽ ra bộ xương người que.',
+      failMsg: 'Chưa đúng rồi, AI không quan tâm bé mặc áo màu gì đâu, mà quan tâm bé chuyển động thế nào cơ!',
+      nextUrl: '/challenge/teach-body',
+      btnText: 'Tập Thể Dục Nào!',
+    }
+  },
+  'free-label': {
+    slides: [
+      {
+        title: 'Phân Loại Ảnh Bằng Transfer Learning',
+        content: 'Bé đã biết AI nhận diện bàn tay bằng bộ khung xương rồi đúng không? Nhưng nếu muốn AI phân biệt chó và mèo thì sao? Bàn tay thì có ngón, nhưng chó mèo thì không có bộ khung xương giống nhau! Vì vậy, các nhà khoa học đã tạo ra một AI siêu thông minh tên là MobileNet — bạn ấy đã xem hơn 1 triệu bức ảnh và biết cách nhìn hình dạng, màu sắc, kết cấu của mọi thứ. Bé chỉ cần cho MobileNet xem thêm vài ảnh nữa là bạn ấy biết phân biệt ngay! Kỹ thuật "học thêm" này gọi là Transfer Learning đấy.',
+        image: '🧪',
+        color: 'from-teal-400 to-cyan-500',
+        borderColor: 'border-teal-400',
+      },
+    ],
+    quiz: {
+      question: 'Theo bé, AI cần gì để học phân biệt chó và mèo?',
+      options: ['Chỉ cần 1 ảnh duy nhất', 'Thật nhiều ảnh đa dạng từ nhiều góc khác nhau'],
+      correct: 1,
+      successMsg: 'Tuyệt vời! AI cần xem thật nhiều ảnh đa dạng để hiểu được sự khác biệt.',
+      failMsg: 'Chưa đúng rồi, bé hãy nghĩ xem — giống như bé cần xem nhiều con chó khác nhau mới nhận ra tất cả các chú chó, AI cũng vậy!',
+      nextUrl: '/challenge/teach-free',
+      btnText: 'Vào Sandbox Phân Loại Ảnh',
+    }
+  },
 };
 
 export default function ConceptSlugPage() {

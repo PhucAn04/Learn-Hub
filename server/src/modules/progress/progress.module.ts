@@ -7,11 +7,7 @@ import { AuthModule } from '../auth/auth.module';
 import { UsersModule } from '../users/users.module';
 
 @Module({
-  imports: [
-    TypeOrmModule.forFeature([Progress]),
-    AuthModule,
-    UsersModule,
-  ],
+  imports: [TypeOrmModule.forFeature([Progress]), AuthModule, UsersModule],
   providers: [ProgressService],
   controllers: [ProgressController],
   exports: [ProgressService],

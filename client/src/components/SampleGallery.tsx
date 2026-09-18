@@ -1,23 +1,26 @@
 'use client';
 
 import { useState } from 'react';
-import { Trash2, AlertTriangle, Eye, X, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Trash2, AlertTriangle, Eye, EyeOff, X, ChevronLeft, ChevronRight } from 'lucide-react';
 import { StoredSample } from '@/lib/knn-classifier';
 
 interface SampleGalleryProps {
   samples: StoredSample[];
   onDeleteSample: (id: string) => void;
   onClearAll: () => void;
+  isTrained?: boolean;
 }
 
-export default function SampleGallery({ samples, onDeleteSample, onClearAll }: SampleGalleryProps) {
+export default function SampleGallery({ samples, onDeleteSample, onClearAll, isTrained = false }: SampleGalleryProps) {
   const [previewIndex, setPreviewIndex] = useState<number | null>(null);
   const [showSkeleton, setShowSkeleton] = useState(true);
 
   if (samples.length === 0) return null;
 
-  const invalidSamples = samples.filter(s => s.isValid === false);
+  const invalidSamples = samples.filter(s => s.isValid === false || s.aiFeedback?.isMisclassified === true);
+  const questionableSamples = samples.filter(s => s.isQuestionable === true && s.isValid !== false);
   const invalidCount = invalidSamples.length;
+  const questionableCount = questionableSamples.length;
   const previewSample = previewIndex !== null ? samples[previewIndex] : null;
 
   return (
@@ -29,11 +32,11 @@ export default function SampleGallery({ samples, onDeleteSample, onClearAll }: S
             <AlertTriangle className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
             <div>
               <p className="text-sm font-extrabold text-red-700">
-                ⚠️ Có {invalidCount} ảnh có thể sai nhãn!
+                ⚠️ Có {invalidCount} ảnh cần kiểm tra lại!
               </p>
               <p className="text-xs text-red-600 mt-1">
-                AI nghĩ {invalidCount > 1 ? 'những' : ''} ảnh có viền đỏ bên dưới không giống với nhãn bé đang dạy.
-                Bé hãy bấm vào ảnh để xem chi tiết và xóa ảnh sai nhé!
+                AI nghĩ {invalidCount > 1 ? 'những' : ''} ảnh có viền nổi bật (đỏ/vàng) không đúng nhãn bé đang dạy hoặc bị mờ.
+                Bé hãy bấm vào ảnh để xem chi tiết và xóa ảnh bị lỗi nhé!
               </p>
             </div>
           </div>
@@ -44,6 +47,7 @@ export default function SampleGallery({ samples, onDeleteSample, onClearAll }: S
         <span className="text-xs font-bold text-gray-500">
           📷 Thư viện ảnh ({samples.length})
           {invalidCount > 0 && <span className="text-red-500 ml-1">• {invalidCount} ảnh nghi sai</span>}
+          {questionableCount > 0 && <span className="text-red-500 ml-1">• {questionableCount} ảnh nghi sai</span>}
         </span>
         <button
           onClick={(e) => {
@@ -59,7 +63,9 @@ export default function SampleGallery({ samples, onDeleteSample, onClearAll }: S
       {/* Thumbnail grid - larger size, wrapped */}
       <div className="grid grid-cols-4 gap-2 py-2 px-1 max-h-[240px] overflow-y-auto">
         {samples.map((s, index) => {
-          const isInvalid = s.isValid === false;
+          const isInvalid = s.isValid === false || s.aiFeedback?.isMisclassified === true;
+          const isBadQuality = s.quality?.isBlurry || s.quality?.isDark;
+          const isQuestionable = s.isQuestionable === true && !isInvalid;
           const key = s.id || `sample-${index}`;
           
           return (
@@ -70,8 +76,12 @@ export default function SampleGallery({ samples, onDeleteSample, onClearAll }: S
                 setPreviewIndex(index);
               }}
               className={`group relative overflow-hidden rounded-xl shadow-sm cursor-pointer transition-all hover:scale-105 aspect-square ${
-                isInvalid 
-                  ? 'border-4 border-red-500 ring-2 ring-red-300 ring-offset-1' 
+                isBadQuality
+                  ? 'border-4 border-yellow-500 ring-2 ring-yellow-300 ring-offset-1 z-10'
+                  : isInvalid 
+                  ? 'border-4 border-red-500 ring-2 ring-red-300 ring-offset-1 z-10'
+                  : isQuestionable
+                  ? 'border-4 border-red-400 ring-2 ring-red-200 ring-offset-1 z-10'
                   : 'border-2 border-indigo-100 hover:border-indigo-400'
               }`}
             >
@@ -81,15 +91,31 @@ export default function SampleGallery({ samples, onDeleteSample, onClearAll }: S
                 <div className="w-full h-full flex items-center justify-center text-[10px] text-gray-400 bg-slate-800">📷</div>
               )}
 
-              {isInvalid && (
+              {/* Quality Warning Icon (Top Left) */}
+              {(s.quality?.isBlurry || s.quality?.isDark) && (
+                <div 
+                  className="absolute top-1 left-1 bg-yellow-500 text-white p-1 rounded shadow-lg opacity-90 z-10" 
+                  title={s.quality.isBlurry ? 'Ảnh mờ' : 'Ảnh tối'}
+                >
+                  <AlertTriangle className="w-3 h-3" />
+                </div>
+              )}
+
+              {isBadQuality ? (
+                <div className="absolute inset-0 bg-yellow-500/10 flex items-center justify-center pointer-events-none" />
+              ) : isInvalid ? (
                 <div className="absolute inset-0 bg-red-500/20 flex items-center justify-center">
                   <div className="bg-red-500 text-white p-1 rounded-full shadow-lg animate-pulse">
                     <AlertTriangle className="w-4 h-4" />
                   </div>
                 </div>
-              )}
+              ) : isQuestionable ? (
+                <div className="absolute inset-0 bg-red-500/10 flex items-center justify-center pointer-events-none">
+                  
+                </div>
+              ) : null}
 
-              {!isInvalid && (
+              {!isInvalid && !isBadQuality && !isQuestionable && (
                 <div className="absolute inset-0 flex items-center justify-center bg-black/40 text-white opacity-0 transition-opacity group-hover:opacity-100">
                   <Eye className="w-5 h-5" />
                 </div>
@@ -103,7 +129,11 @@ export default function SampleGallery({ samples, onDeleteSample, onClearAll }: S
       {previewSample && previewIndex !== null && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setPreviewIndex(null)}>
           <div 
-            className="bg-white rounded-3xl max-w-md w-full p-6 border-4 border-indigo-400 shadow-2xl relative"
+            className={`bg-white rounded-3xl ${
+              isTrained && previewSample.aiFeedback && !(previewSample.quality?.isBlurry || previewSample.quality?.isDark)
+                ? 'max-w-3xl'
+                : 'max-w-xl'
+            } w-full p-6 border-4 border-indigo-400 shadow-2xl relative`}
             onClick={(e) => e.stopPropagation()}
           >
             {/* Close button */}
@@ -122,51 +152,117 @@ export default function SampleGallery({ samples, onDeleteSample, onClearAll }: S
             {previewSample.rawThumbnail && (
               <button
                 onClick={() => setShowSkeleton(!showSkeleton)}
-                className="absolute top-16 right-4 p-2 bg-white hover:bg-gray-100 rounded-full text-indigo-600 shadow-md border border-indigo-200 transition-colors z-10 flex items-center gap-2"
+                className="absolute top-16 right-4 p-2 bg-white hover:bg-gray-100 rounded-full text-indigo-600 shadow-md border border-indigo-200 transition-colors z-[60] flex items-center gap-2"
                 title={showSkeleton ? "Ẩn nét vẽ AI" : "Hiện nét vẽ AI"}
               >
-                {showSkeleton ? <Eye className="w-5 h-5 text-indigo-600" /> : <Eye className="w-5 h-5 text-gray-400" />}
+                {showSkeleton ? <Eye className="w-5 h-5 text-indigo-600" /> : <EyeOff className="w-5 h-5 text-gray-400" />}
               </button>
             )}
 
             {/* Large image preview */}
-            <div className={`relative rounded-2xl overflow-hidden border-4 ${previewSample.isValid === false ? 'border-red-400' : 'border-gray-200'} mb-4 bg-slate-900`}>
-              {previewSample.thumbnail ? (
-                <img 
-                  src={(showSkeleton || !previewSample.rawThumbnail) ? previewSample.thumbnail : previewSample.rawThumbnail} 
-                  alt="Preview" 
-                  className="w-full aspect-square object-cover" 
-                />
-              ) : (
-                <div className="w-full aspect-square flex items-center justify-center text-gray-500">Không có ảnh</div>
-              )}
+            <div className="flex gap-3 mb-4">
+              <div className={`relative flex-1 rounded-2xl overflow-hidden border-4 ${
+                (previewSample.quality?.isBlurry || previewSample.quality?.isDark)
+                  ? 'border-yellow-500 shadow-[0_0_15px_rgba(234,179,8,0.3)]'
+                  : (previewSample.isValid === false || previewSample.aiFeedback?.isMisclassified)
+                  ? 'border-red-500' 
+                  : 'border-gray-200'
+              } bg-slate-900`}>
+                {isTrained && previewSample.aiFeedback?.isMisclassified && (
+                  <div className="absolute top-0 inset-x-0 bg-red-500/80 backdrop-blur-sm text-white text-xs py-1 text-center font-bold z-10 truncate shadow-sm">
+                    Ảnh của bé
+                  </div>
+                )}
+                {previewSample.thumbnail ? (
+                  <img 
+                    src={(showSkeleton || !previewSample.rawThumbnail) ? previewSample.thumbnail : previewSample.rawThumbnail} 
+                    alt="Preview" 
+                    className="w-full aspect-[4/3] object-cover" 
+                  />
+                ) : (
+                  <div className="w-full aspect-[4/3] flex items-center justify-center text-gray-500">Không có ảnh</div>
+                )}
+                
+                {previewSample.isValid === false && (
+                  <div className="absolute bottom-3 right-3 bg-red-500 text-white p-2 rounded-full shadow-lg animate-pulse z-10">
+                    <AlertTriangle className="w-5 h-5" />
+                  </div>
+                )}
+              </div>
 
-              {previewSample.isValid === false && (
-                <div className="absolute top-3 right-3 bg-red-500 text-white p-2 rounded-full shadow-lg animate-pulse">
-                  <AlertTriangle className="w-6 h-6" />
+              {/* AI nearest match */}
+              {isTrained && previewSample.aiFeedback && !(previewSample.quality?.isBlurry || previewSample.quality?.isDark) && (
+                <div className="relative flex-1 rounded-2xl overflow-hidden border-4 border-indigo-400 bg-slate-900 shadow-inner">
+                  <div className="absolute top-0 inset-x-0 bg-indigo-500/80 backdrop-blur-sm text-white text-xs py-1 text-center font-bold z-10 truncate shadow-sm">
+                    Mẫu ({previewSample.aiFeedback.predictedLabel})
+                  </div>
+                  {previewSample.aiFeedback.nearestMatchThumbnail ? (
+                    <img 
+                      src={previewSample.aiFeedback.nearestMatchThumbnail} 
+                      className="w-full aspect-[4/3] object-cover" 
+                      alt="Nearest match"
+                    />
+                  ) : (
+                    <div className="w-full aspect-[4/3] flex items-center justify-center text-xs text-indigo-400 font-bold bg-indigo-50/5">
+                      Không có mẫu
+                    </div>
+                  )}
                 </div>
               )}
             </div>
 
-            {/* Validation status */}
-            {previewSample.isValid === false ? (
+            {/* Validation status & Quality Warning */}
+            {(previewSample.quality?.isBlurry || previewSample.quality?.isDark) ? (
+              <div className="p-4 rounded-xl border-2 bg-yellow-50 border-yellow-300 mb-4">
+                <div className="flex items-center gap-2 font-extrabold text-yellow-700 text-sm">
+                  <AlertTriangle className="w-5 h-5" />
+                  <span>Ảnh chưa đạt chất lượng!</span>
+                </div>
+                <p className="text-xs text-yellow-600 mt-2 font-semibold leading-relaxed">
+                  {previewSample.quality.isBlurry && '📸 Vì ảnh bị mờ nên AI không thể xác định rõ. '}
+                  {previewSample.quality.isDark && '🌙 Vì ảnh hơi tối nên AI không thể nhìn rõ. '}
+                  Bé nên xóa tấm này và chụp lại tấm khác nét hơn để AI học tốt nhất nhé!
+                </p>
+              </div>
+            ) : (isTrained && previewSample.aiFeedback?.isMisclassified) ? (
+              <div className="p-4 rounded-xl border-2 bg-red-50 border-red-300 mb-4">
+                <div className="flex items-center gap-2 font-extrabold text-red-700 text-sm">
+                  <AlertTriangle className="w-5 h-5" />
+                  <span>AI đã nhầm lẫn ảnh này!</span>
+                </div>
+                <p className="text-xs text-red-600 mt-2 font-semibold leading-relaxed">
+                  Ảnh này quá giống với mẫu của nhóm <span className="font-bold">"{previewSample.aiFeedback.predictedLabel}"</span> nên AI đã đoán sai. Bé hãy XÓA đi và chụp lại góc khác nhé!
+                </p>
+              </div>
+            ) : previewSample.isValid === false ? (
               <div className="p-4 rounded-xl border-2 bg-red-50 border-red-300 mb-4">
                 <div className="flex items-center gap-2 font-extrabold text-red-700 text-sm">
                   <AlertTriangle className="w-5 h-5" />
                   <span>AI nghĩ ảnh này KHÔNG ĐÚNG nhãn!</span>
                 </div>
                 <p className="text-xs text-red-600 mt-2 font-semibold leading-relaxed">
-                  Bạn AI đã xem ảnh này và thấy nó không giống với nhãn &quot;{previewSample.label}&quot; mà bé đang dạy.
+                  Bạn AI đã xem ảnh này và thấy nó không giống với nhãn "{previewSample.label}" mà bé đang dạy.
                   Bé nên xóa ảnh này đi và chụp lại cho đúng nhé! 🤗
                 </p>
               </div>
-            ) : previewSample.isValid === true ? (
+            ) : previewSample.isQuestionable ? (
+              <div className="p-4 rounded-xl border-2 bg-red-50 border-red-300 mb-4">
+                <div className="flex items-center gap-2 font-extrabold text-red-700 text-sm">
+                  <AlertTriangle className="w-5 h-5" />
+                  <span>Ảnh thí nghiệm — AI nghi ngờ!</span>
+                </div>
+                <p className="text-xs text-red-600 mt-2 font-semibold leading-relaxed">
+                  {previewSample.questionableReason || 'AI nghi ngờ ảnh này không đúng nhãn.'}
+                  {' '}Ảnh này vẫn được thu trong Chế độ Khám Phá. Nếu AI dự đoán sai, đây có thể là nguyên nhân! 🧪
+                </p>
+              </div>
+            ) : (
               <div className="p-4 rounded-xl border-2 bg-green-50 border-green-300 mb-4">
                 <div className="flex items-center gap-2 font-extrabold text-green-700 text-sm">
                   ✅ <span>Ảnh tốt! AI nhận diện đúng nhãn rồi!</span>
                 </div>
               </div>
-            ) : null}
+            )}
 
             {/* Navigation and Delete */}
             <div className="flex gap-2">

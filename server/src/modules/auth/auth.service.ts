@@ -28,7 +28,7 @@ export class AuthService {
 
     const resetToken = await this.generatePasswordResetToken(user.id);
     const domain = process.env.FRONTEND_URL || 'http://localhost:3000';
-    const resetLink = `${domain}/auth/reset-password?token=${resetToken}`;
+    const resetLink = `${domain}/auth/reset-password?token=${resetToken}&email=${encodeURIComponent(user.email)}`;
 
     await this.mailService.sendPasswordResetEmail(user.email, resetLink);
     return true;

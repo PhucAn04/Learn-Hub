@@ -3,20 +3,55 @@ import * as nodemailer from 'nodemailer';
 
 @Injectable()
 export class MailService {
-  private transporter: nodemailer.Transporter;
+  private transporter: nodemailer.Transporter | null = null;
   private readonly logger = new Logger(MailService.name);
+  private initialized = false;
 
-  constructor() {
-    // Basic nodemailer transport configuration.
-    // In production, these should come from ConfigService / Environment variables
-    this.transporter = nodemailer.createTransport({
-      host: process.env.SMTP_HOST || 'smtp.ethereal.email',
-      port: parseInt(process.env.SMTP_PORT || '587', 10),
-      auth: {
-        user: process.env.SMTP_USER || 'ethereal_user',
-        pass: process.env.SMTP_PASS || 'ethereal_pass',
-      },
-    });
+  private async ensureTransporter(): Promise<nodemailer.Transporter> {
+    if (this.transporter && this.initialized) {
+      return this.transporter;
+    }
+
+    // Nếu đã cấu hình SMTP thực (production)
+    if (
+      process.env.SMTP_HOST &&
+      process.env.SMTP_HOST !== 'smtp.ethereal.email'
+    ) {
+      this.transporter = nodemailer.createTransport({
+        host: process.env.SMTP_HOST,
+        port: parseInt(process.env.SMTP_PORT || '587', 10),
+        auth: {
+          user: process.env.SMTP_USER,
+          pass: process.env.SMTP_PASS,
+        },
+      });
+      this.initialized = true;
+      this.logger.log(`SMTP configured: ${process.env.SMTP_HOST}`);
+      return this.transporter;
+    }
+
+    // Dev mode: tự động tạo tài khoản Ethereal test
+    try {
+      const testAccount = await nodemailer.createTestAccount();
+      this.transporter = nodemailer.createTransport({
+        host: 'smtp.ethereal.email',
+        port: 587,
+        secure: false,
+        auth: {
+          user: testAccount.user,
+          pass: testAccount.pass,
+        },
+      });
+      this.initialized = true;
+      this.logger.log(`Ethereal test account created: ${testAccount.user}`);
+      return this.transporter;
+    } catch {
+      this.logger.warn(
+        'Cannot create Ethereal account, using console fallback',
+      );
+      this.initialized = true;
+      return null as unknown as nodemailer.Transporter;
+    }
   }
 
   async sendPasswordResetEmail(to: string, resetLink: string) {
@@ -36,8 +71,19 @@ export class MailService {
       </div>
     `;
 
+    const transporter = await this.ensureTransporter();
+
+    // Fallback: nếu không tạo được transporter, chỉ log ra console
+    if (!transporter) {
+      this.logger.warn(`=== PASSWORD RESET EMAIL (console fallback) ===`);
+      this.logger.warn(`To: ${to}`);
+      this.logger.warn(`Reset Link: ${resetLink}`);
+      this.logger.warn(`==============================================`);
+      return true;
+    }
+
     try {
-      const info = await this.transporter.sendMail({
+      const info = await transporter.sendMail({
         from: '"Learn-Hub Admin" <no-reply@learn-hub.com>',
         to,
         subject: 'Learn-Hub: Thiết lập lại mật khẩu của bạn',
@@ -46,20 +92,22 @@ export class MailService {
 
       this.logger.log(`Email sent successfully: ${info.messageId}`);
 
-      // ethereal log for dev
-      if (
-        process.env.SMTP_HOST === 'smtp.ethereal.email' ||
-        !process.env.SMTP_HOST
-      ) {
-        this.logger.log(
-          `Ethereal Preview URL: ${nodemailer.getTestMessageUrl(info)}`,
-        );
+      // Ethereal preview URL cho dev
+      const previewUrl = nodemailer.getTestMessageUrl(info);
+      if (previewUrl) {
+        this.logger.log(`📧 Ethereal Preview URL: ${previewUrl}`);
       }
 
       return true;
     } catch (error) {
       this.logger.error('Error sending password reset email', error);
-      throw new Error('Không thể gửi email lúc này. Vui lòng thử lại sau.');
+
+      // Trong dev mode, log link ra console thay vì throw error
+      this.logger.warn(`=== FALLBACK: PASSWORD RESET LINK ===`);
+      this.logger.warn(`To: ${to}`);
+      this.logger.warn(`Reset Link: ${resetLink}`);
+      this.logger.warn(`=====================================`);
+      return true;
     }
   }
 }

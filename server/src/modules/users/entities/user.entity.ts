@@ -66,7 +66,7 @@ export class User {
   roleChangedAt?: Date;
 
   // 🔑 Password Reset Fields 🔑
-  @Column({ nullable: true, select: false })
+  @Column({ type: 'varchar', nullable: true, select: false })
   resetPasswordToken?: string | null;
 
   @Column({ type: 'timestamp', nullable: true, select: false })

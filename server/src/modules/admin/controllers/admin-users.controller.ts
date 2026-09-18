@@ -63,9 +63,12 @@ export class AdminUsersController {
 
   @Post('users/:id/generate-reset-link')
   async generateResetLink(@Param('id') id: string) {
+    const user = await this.adminUsersService.findOneById(id);
     const resetToken = await this.authService.generatePasswordResetToken(id);
     const domain = process.env.FRONTEND_URL || 'http://localhost:3000';
-    return { resetLink: `${domain}/auth/reset-password?token=${resetToken}` };
+    return {
+      resetLink: `${domain}/auth/reset-password?token=${resetToken}&email=${encodeURIComponent(user.email)}`,
+    };
   }
 
   @Post('users/:id/send-reset-email')

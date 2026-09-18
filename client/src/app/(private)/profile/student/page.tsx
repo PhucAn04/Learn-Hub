@@ -112,7 +112,7 @@ export default function StudentProfilePage() {
 
   if (loading) {
     return (
-      <div className="min-h-[80vh] flex items-center justify-center bg-sky-50">
+      <div className="flex-1 flex items-center justify-center bg-sky-50">
         <Loader2 className="w-12 h-12 text-blue-500 animate-spin" />
       </div>
     );
@@ -128,7 +128,7 @@ export default function StudentProfilePage() {
 
 
   return (
-    <div className="min-h-[85vh] bg-sky-50 py-10 px-4 select-none">
+    <div className="flex-1 bg-sky-50 py-10 px-4 select-none">
       <div className="max-w-6xl mx-auto">
         {/* Back navigation */}
         <div className="mb-6">

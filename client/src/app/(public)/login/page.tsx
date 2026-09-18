@@ -42,7 +42,7 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-[85vh] bg-gradient-to-b from-purple-50 to-pink-100 flex items-center justify-center px-4 py-12 select-none">
+    <div className="flex-1 bg-gradient-to-b from-purple-50 to-pink-100 flex items-center justify-center px-4 py-12 select-none">
       <div className="max-w-md w-full bg-white rounded-3xl p-8 border-4 border-purple-300 shadow-2xl relative overflow-hidden">
         {/* Floating background decorative bubbles */}
         <div className="absolute -top-10 -right-10 w-24 h-24 bg-purple-100 rounded-full blur-xl pointer-events-none" />

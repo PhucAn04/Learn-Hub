@@ -70,6 +70,28 @@ export default function Navbar() {
             <Home className="w-4 h-4 text-purple-500" />
             Trang Chủ
           </Link>
+
+          <Link
+            href="/about"
+            onClick={playClickSound}
+            className={`flex items-center gap-1 px-4 py-2 rounded-full transition-all ${
+              pathname === '/about' ? 'bg-pink-100 text-pink-800' : 'hover:bg-gray-100'
+            }`}
+          >
+            <Brain className="w-4 h-4 text-pink-500" />
+            Giới Thiệu
+          </Link>
+
+          <Link
+            href="/platform-intro"
+            onClick={playClickSound}
+            className={`flex items-center gap-1 px-4 py-2 rounded-full transition-all ${
+              pathname === '/platform-intro' ? 'bg-emerald-100 text-emerald-800' : 'hover:bg-gray-100'
+            }`}
+          >
+            <Sparkles className="w-4 h-4 text-emerald-500" />
+            Trải Nghiệm AI
+          </Link>
         </div>
 
         {/* Auth / User actions */}

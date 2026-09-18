@@ -34,7 +34,7 @@ export default function ProfileDispatcherPage() {
   }, [router]);
 
   return (
-    <div className="min-h-[80vh] flex flex-col items-center justify-center bg-slate-50 gap-3">
+    <div className="flex-1 flex flex-col items-center justify-center bg-slate-50 gap-3">
       <Loader2 className="w-10 h-10 text-indigo-500 animate-spin" />
       <span className="font-extrabold text-sm text-slate-500">Đang chuẩn bị trang cá nhân...</span>
     </div>

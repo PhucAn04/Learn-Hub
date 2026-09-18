@@ -187,9 +187,6 @@ export default function Home() {
           </div>
         </div>
         
-        <div className="mt-20 text-center text-slate-400 font-medium pb-8">
-          <p>Dự án: Xây dựng website học tập tương tác giúp học sinh tiếp cận AI</p>
-        </div>
       </section>
     </div>
   );

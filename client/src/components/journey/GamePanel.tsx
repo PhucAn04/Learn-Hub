@@ -29,7 +29,9 @@ function FingersGame({ onScoreReached }: { onScoreReached: (score: number) => vo
 
   // Stable ref so the match-timer closure always reads the latest score
   const scoreRef = useRef(score);
-  scoreRef.current = score;
+  useEffect(() => {
+    scoreRef.current = score;
+  }, [score]);
 
   // Camera + Handpose hooks
   const { videoRef, canvasRef, cameraActive, cameraError, retryCamera } = useCamera({

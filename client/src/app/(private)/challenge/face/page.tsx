@@ -13,13 +13,20 @@ import {
   FACE_NOSE,
   drawPolyline,
   normalizeFaceKeypoints,
+
   getSmileMetricsFromFaceMesh,
   drawFaceStickers,
+  getFaceKeypoints,
+  drawFaceSkeleton
 } from '@/lib/face-drawing';
 import ScoreHeader from '@/components/ScoreHeader';
 import CameraView from '@/components/CameraView';
 import { FaceFilter, SmileMetrics } from '@/types/ml5';
 import { api } from '@/lib/api';
+import { TfTrainer } from '@/lib/tf-trainer';
+import { normalizeFaceFeatures, classifyKNN, StoredSample } from '@/lib/knn-classifier';
+
+import { LeaderboardEntry } from '@/types/models';
 
 // Color palette for multiple faces — each face gets its own color set
 const FACE_COLORS = [
@@ -40,7 +47,7 @@ export default function FaceChallenge() {
   const [capturedPhotoUrl, setCapturedPhotoUrl] = useState<string | null>(null);
   const [flashActive, setFlashActive] = useState(false);
   const [score, setScore] = useState(0);
-  const [leaderboard, setLeaderboard] = useState<any[]>([]);
+  const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
 
   const smileMetricsRef = useRef<SmileMetrics>({
     isSmiling: false,
@@ -58,7 +65,35 @@ export default function FaceChallenge() {
     maxFaces: 4,
   });
 
+  // Load custom KNN model from user's "teach-face" dataset
+  const trainerRef = useRef<TfTrainer | null>(null);
+  const [isLoadingModel, setIsLoadingModel] = useState(true);
+
   useEffect(() => {
+    const fetchMyModel = async () => {
+      try {
+        const datasets = await api.getMyDatasets('teach-face');
+        if (datasets && datasets.length > 0) {
+          const fileRes = await api.getDatasetFile(datasets[0].id);
+          let loadedSamples: StoredSample[] = [];
+          if (fileRes && fileRes.data && Array.isArray(fileRes.data)) {
+            loadedSamples = fileRes.data;
+          } else if (fileRes && Array.isArray(fileRes.samples)) {
+            loadedSamples = fileRes.samples;
+          }
+          
+          if (loadedSamples.length > 0) {
+            trainerRef.current = new TfTrainer();
+            await trainerRef.current.train(loadedSamples);
+          }
+        }
+      } catch (err) {
+        console.error('Failed to fetch teach-face model', err);
+      } finally {
+        setIsLoadingModel(false);
+      }
+    };
+    fetchMyModel();
   }, []);
 
   // Fetch leaderboard on mount and score change
@@ -142,6 +177,30 @@ export default function FaceChallenge() {
 
               // Calculate smile metrics for this face
               const faceSmile = getSmileMetricsFromFaceMesh(kps);
+              
+              // If we have a custom AI model, use it to override the heuristics!
+              if (trainerRef.current) {
+                const faceKps = getFaceKeypoints(kpsRaw);
+                if (faceKps && faceKps.length >= 468) {
+                  const features = normalizeFaceFeatures(faceKps);
+                  const pred = trainerRef.current.predictSync(features);
+                  // In teach-face, 'class_1' is usually mapped to 'Vui vẻ 😀'
+                  // We check if the highest confidence class matches a "smile" class taught by teacher
+                  // For simplicity, let's use the confidence of class_1 (if it exists) as progress
+                  if (pred && pred.confidences && typeof pred.confidences['class_1'] === 'number') {
+                    const confidenceVal = pred.confidences['class_1'] * 100;
+                    faceSmile.progress = confidenceVal;
+                    faceSmile.isSmiling = confidenceVal > 80;
+                  } else if (pred && pred.label === 'class_1') {
+                     faceSmile.isSmiling = true;
+                     faceSmile.progress = 100;
+                  } else if (pred && pred.label !== 'class_1') {
+                     faceSmile.isSmiling = false;
+                     faceSmile.progress = 0;
+                  }
+                }
+              }
+
               if (faceSmile.progress > bestSmile.progress) {
                 bestSmile = faceSmile;
               }
@@ -194,8 +253,10 @@ export default function FaceChallenge() {
 
         // Draw stickers on ALL faces into the captured photo
         for (const kpsRaw of allFacesRef.current) {
-          if (kpsRaw.length >= 30) {
-            const kps = normalizeFaceKeypoints(kpsRaw, videoRef.current!, cv);
+          const faceKps = getFaceKeypoints(kpsRaw);
+          if (faceKps && faceKps.length >= 30) {
+            const kps = normalizeFaceKeypoints(faceKps, videoRef.current!, cv);
+            drawFaceSkeleton(ctx, faceKps, videoRef.current!.videoWidth || 640, videoRef.current!.videoHeight || 480, cv.width, cv.height);
             drawFaceStickers(ctx, kps, [activeFilter]);
           }
         }
@@ -355,9 +416,9 @@ export default function FaceChallenge() {
             <CameraView
               videoRef={videoRef}
               canvasRef={canvasRef}
-              modelStatus={modelStatus}
+              modelStatus={isLoadingModel ? 'loading' : modelStatus}
               cameraError={cameraError || ''}
-              loadingText="ĐANG TÌM KHUÔN MẶT CỦA BÉ..."
+              loadingText={isLoadingModel ? "ĐANG TẢI MÔ HÌNH AI CỦA BÉ..." : "ĐANG TÌM KHUÔN MẶT CỦA BÉ..."}
               hudText={hudText}
               theme="emerald"
               onRetry={retryCamera}

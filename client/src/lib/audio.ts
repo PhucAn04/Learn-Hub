@@ -1,7 +1,13 @@
+type AudioContextWindow = Window & typeof globalThis & {
+  webkitAudioContext?: typeof AudioContext;
+};
+
 export const playClickSound = () => {
   if (typeof window === 'undefined') return;
   try {
-    const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+    const AudioCtx = window.AudioContext || (window as AudioContextWindow).webkitAudioContext;
+    if (!AudioCtx) return;
+    const ctx = new AudioCtx();
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
     
@@ -26,7 +32,9 @@ export const playClickSound = () => {
 export const playSuccessSound = () => {
   if (typeof window === 'undefined') return;
   try {
-    const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+    const AudioCtx = window.AudioContext || (window as AudioContextWindow).webkitAudioContext;
+    if (!AudioCtx) return;
+    const ctx = new AudioCtx();
     
     // Play a happy ascending arpeggio (C5 -> E5 -> G5 -> C6)
     const playNote = (freq: number, startTime: number, duration: number) => {

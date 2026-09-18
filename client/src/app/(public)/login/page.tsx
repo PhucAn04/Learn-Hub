@@ -29,9 +29,13 @@ export default function LoginPage() {
       const response = await api.login(email, password);
       playSuccessSound();
       api.setToken(response.accessToken);
-      router.push('/home');
-    } catch (err: any) {
-      setError(err.message || 'Email hoặc mật khẩu không chính xác rồi bé ơi.');
+      if (response.user?.role === 'teacher') {
+        router.push('/teacher');
+      } else {
+        router.push('/home');
+      }
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Email hoặc mật khẩu không chính xác rồi bé ơi.');
     } finally {
       setLoading(false);
     }
@@ -93,6 +97,15 @@ export default function LoginPage() {
                 required
               />
             </div>
+            <div className="flex justify-end mt-1">
+              <Link 
+                href="/auth/forgot-password" 
+                onClick={playClickSound}
+                className="text-xs font-semibold text-purple-600 hover:text-purple-700 hover:underline transition-colors"
+              >
+                Quên mật khẩu?
+              </Link>
+            </div>
           </div>
 
           <button
@@ -110,6 +123,26 @@ export default function LoginPage() {
             )}
           </button>
         </form>
+
+        <div className="relative my-6 z-10">
+          <div className="absolute inset-0 flex items-center">
+            <div className="w-full border-t border-gray-200"></div>
+          </div>
+          <div className="relative flex justify-center text-sm">
+            <span className="px-2 bg-white text-gray-400 font-semibold">Hoặc</span>
+          </div>
+        </div>
+
+        <button
+          onClick={() => {
+            playClickSound();
+            window.location.href = '/api/auth/google';
+          }}
+          className="w-full py-4 bg-white text-gray-700 font-black text-base rounded-2xl hover:bg-gray-50 transition shadow-md border-2 border-gray-200 active:border-b-0 active:translate-y-[2px] flex items-center justify-center gap-3 cursor-pointer z-10 relative"
+        >
+          <img src="https://www.svgrepo.com/show/475656/google-color.svg" alt="Google" className="w-6 h-6" />
+          Đăng nhập với Google
+        </button>
 
         <div className="mt-8 text-center border-t border-gray-100 pt-6 relative z-10">
           <p className="text-xs font-semibold text-gray-500">

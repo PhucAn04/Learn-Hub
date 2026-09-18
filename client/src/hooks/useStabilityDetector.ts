@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 /**
  * Hook theo dõi sự ổn định (stability) của keypoints qua nhiều frame liên tiếp.
@@ -79,106 +79,106 @@ export function useStabilityDetector(
   } = options;
 
   const [result, setResult] = useState<StabilityResult>({ isStable: true, motionScore: 0 });
+  const [prevActive, setPrevActive] = useState(active);
   
-  // Circular buffer lưu centroid history
+  // Circular buffer
   const bufferRef = useRef<CentroidPoint[]>([]);
   const lastSampleTimeRef = useRef<number>(0);
-  const animFrameRef = useRef<number>(0);
 
-  // Reset buffer khi active thay đổi
-  useEffect(() => {
+  // Avoid setting state in useEffect for active=false by doing it during render
+  if (active !== prevActive) {
+    setPrevActive(active);
     if (!active) {
-      bufferRef.current = [];
       setResult({ isStable: true, motionScore: 0 });
     }
-  }, [active]);
+  }
 
-  const tick = useCallback(() => {
+  // Khắc phục react-hooks/refs: Chỉ thay đổi ref bên trong useEffect
+  const latestProps = useRef({ keypointsGetter, videoRef, bufferSize, threshold, sampleInterval });
+  useEffect(() => {
+    latestProps.current = { keypointsGetter, videoRef, bufferSize, threshold, sampleInterval };
+  }, [keypointsGetter, videoRef, bufferSize, threshold, sampleInterval]);
+
+  useEffect(() => {
     if (!active) return;
 
-    const now = performance.now();
-    if (now - lastSampleTimeRef.current < sampleInterval) {
-      animFrameRef.current = requestAnimationFrame(tick);
-      return;
-    }
-    lastSampleTimeRef.current = now;
-
-    // Lấy keypoints hiện tại
-    const keypoints = keypointsGetter();
-    if (!keypoints || keypoints.length === 0) {
-      // Không có keypoints → không đánh giá được → giữ trạng thái hiện tại
-      animFrameRef.current = requestAnimationFrame(tick);
-      return;
-    }
-
-    // Tính centroid
-    const centroid = computeCentroid(keypoints);
-    if (!centroid) {
-      animFrameRef.current = requestAnimationFrame(tick);
-      return;
-    }
-
-    // Push vào buffer
-    const buffer = bufferRef.current;
-    buffer.push({ x: centroid.x, y: centroid.y, timestamp: now });
+    bufferRef.current = [];
+    lastSampleTimeRef.current = 0;
     
-    // Giới hạn kích thước buffer
-    while (buffer.length > bufferSize) {
-      buffer.shift();
-    }
-
-    // Cần ít nhất 3 samples để đánh giá
-    if (buffer.length < 3) {
-      setResult({ isStable: true, motionScore: 0 });
-      animFrameRef.current = requestAnimationFrame(tick);
-      return;
-    }
-
-    // Tính average displacement giữa các centroid liên tiếp
-    let totalDisplacement = 0;
-    let pairCount = 0;
-    for (let i = 1; i < buffer.length; i++) {
-      totalDisplacement += euclideanDistance(buffer[i], buffer[i - 1]);
-      pairCount++;
-    }
-    const avgDisplacement = totalDisplacement / pairCount;
-
-    // Kích thước video thực tế
-    const videoWidth = videoRef.current?.videoWidth || 640;
-    const isHD = videoWidth >= 1000;
-
-    // Chuẩn hóa theo resolution (baseline = 640px width)
-    const normalizedDisplacement = avgDisplacement * (640 / videoWidth);
-
-    // Dynamic Threshold:
-    // Với Giáo viên (SD), giữ nguyên threshold khắt khe.
-    // Với Học sinh (HD), nới lỏng (x2.5) vì điểm ảnh lớn làm nhiễu AI (jitter) lộ rõ,
-    // và trẻ em cầm tay thường rung tự nhiên nhiều hơn.
-    const dynamicThreshold = isHD ? threshold * 2.5 : threshold;
-
-    const isStable = normalizedDisplacement < dynamicThreshold;
-
-    setResult(prev => {
-      // Tránh re-render nếu không đổi
-      if (prev.isStable === isStable && Math.abs(prev.motionScore - normalizedDisplacement) < 0.5) {
-        return prev;
+    let animFrame: number;
+    
+    const tick = () => {
+      const props = latestProps.current;
+      const now = performance.now();
+      
+      if (now - lastSampleTimeRef.current < props.sampleInterval) {
+        animFrame = requestAnimationFrame(tick);
+        return;
       }
-      return { isStable, motionScore: normalizedDisplacement };
-    });
+      lastSampleTimeRef.current = now;
 
-    animFrameRef.current = requestAnimationFrame(tick);
-  }, [active, keypointsGetter, videoRef, bufferSize, threshold, sampleInterval]);
-
-  useEffect(() => {
-    if (active) {
-      animFrameRef.current = requestAnimationFrame(tick);
-    }
-    return () => {
-      if (animFrameRef.current) {
-        cancelAnimationFrame(animFrameRef.current);
+      // Lấy keypoints hiện tại
+      const keypoints = props.keypointsGetter();
+      if (!keypoints || keypoints.length === 0) {
+        animFrame = requestAnimationFrame(tick);
+        return;
       }
+
+      // Tính centroid
+      const centroid = computeCentroid(keypoints);
+      if (!centroid) {
+        animFrame = requestAnimationFrame(tick);
+        return;
+      }
+
+      const buffer = bufferRef.current;
+      buffer.push({ x: centroid.x, y: centroid.y, timestamp: now });
+      
+      while (buffer.length > props.bufferSize) {
+        buffer.shift();
+      }
+
+      if (buffer.length < 3) {
+        setResult({ isStable: true, motionScore: 0 });
+        animFrame = requestAnimationFrame(tick);
+        return;
+      }
+
+      let totalDisplacement = 0;
+      let pairCount = 0;
+      for (let i = 1; i < buffer.length; i++) {
+        totalDisplacement += euclideanDistance(buffer[i], buffer[i - 1]);
+        pairCount++;
+      }
+      const avgDisplacement = totalDisplacement / pairCount;
+
+      const videoWidth = props.videoRef.current?.videoWidth || 640;
+      const isHD = videoWidth >= 1000;
+
+      const normalizedDisplacement = avgDisplacement * (640 / videoWidth);
+      const dynamicThreshold = isHD ? props.threshold * 2.5 : props.threshold;
+      const isStable = normalizedDisplacement < dynamicThreshold;
+
+      setResult(prev => {
+        if (prev.isStable === isStable && Math.abs(prev.motionScore - normalizedDisplacement) < 0.5) {
+          return prev;
+        }
+        return { isStable, motionScore: normalizedDisplacement };
+      });
+
+      animFrame = requestAnimationFrame(tick);
     };
-  }, [active, tick]);
+
+    animFrame = requestAnimationFrame(tick);
+
+    return () => {
+      cancelAnimationFrame(animFrame);
+    };
+  }, [active]);
+
+  if (!active) {
+    return { isStable: true, motionScore: 0 };
+  }
 
   return result;
 }

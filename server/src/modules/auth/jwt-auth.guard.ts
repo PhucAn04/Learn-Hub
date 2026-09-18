@@ -1,4 +1,9 @@
-import { CanActivate, ExecutionContext, Injectable, UnauthorizedException } from '@nestjs/common';
+import {
+  CanActivate,
+  ExecutionContext,
+  Injectable,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { UsersService } from '../users/users.service';
 
@@ -14,7 +19,9 @@ export class JwtAuthGuard implements CanActivate {
     const authHeader = request.headers.authorization;
 
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      throw new UnauthorizedException('Bạn cần đăng nhập để thực hiện chức năng này.');
+      throw new UnauthorizedException(
+        'Bạn cần đăng nhập để thực hiện chức năng này.',
+      );
     }
 
     const token = authHeader.split(' ')[1];
@@ -30,7 +37,9 @@ export class JwtAuthGuard implements CanActivate {
       request.user = user;
       return true;
     } catch (err) {
-      throw new UnauthorizedException('Phiên làm việc đã hết hạn hoặc không hợp lệ. Vui lòng đăng nhập lại.');
+      throw new UnauthorizedException(
+        'Phiên làm việc đã hết hạn hoặc không hợp lệ. Vui lòng đăng nhập lại.',
+      );
     }
   }
 }

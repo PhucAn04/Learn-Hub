@@ -22,7 +22,9 @@ interface UseCameraOptions {
 }
 
 export function useCamera(options: UseCameraOptions = {}) {
-  const { width = 480, height = 360, facingMode = 'user' } = options;
+  const width = options.width || 1280;
+  const height = options.height || 720;
+  const facingMode = options.facingMode || 'user';
 
   const [cameraActive, setCameraActive] = useState(false);
   const [cameraError, setCameraError] = useState('');
@@ -59,7 +61,11 @@ export function useCamera(options: UseCameraOptions = {}) {
 
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
-          video: { width, height, facingMode },
+          video: { 
+            width: { ideal: width }, 
+            height: { ideal: height }, 
+            facingMode 
+          },
           audio: false,
         });
 

@@ -1,4 +1,4 @@
-# Hệ thống Quản trị viên (Admin Panel) v2 — Tách biệt hoàn toàn
+# Hệ thống Quản trị viên (Admin Panel) — Tách biệt hoàn toàn
 
 ## Tổng quan
 
@@ -63,7 +63,7 @@ graph TB
 
 ## Proposed Changes
 
-### Nguyên tắc thiết kế v2
+### Nguyên tắc thiết kế
 
 1. **Tách biệt hoàn toàn**: Admin panel là route group riêng trên client (`/admin/*`) và module riêng trên server (`AdminModule`)
 2. **Không chạm code cũ**: Chỉ **thêm mới** files, không sửa đổi logic hiện tại (trừ 2 điểm nhỏ bắt buộc: thêm `isActive` vào User Entity và register AdminModule)
@@ -239,7 +239,7 @@ client/src/app/
 
 ---
 
-### Component 5: Kiến trúc tổng thể v2
+### Component 5: Kiến trúc tổng thể
 
 ```mermaid
 graph TB
@@ -324,7 +324,7 @@ Tất cả files còn lại trong cả `server/src/modules/*` (trừ `users/enti
 > - **Option B**: Chung key `token` → đơn giản hơn nhưng admin phải logout hệ thống chính nếu muốn dùng admin panel
 
 > [!NOTE]
-> **Q3**: Bạn có muốn thêm chức năng **xem chi tiết user** (submissions, progress, datasets) ở admin panel, hay v2 này chỉ cần quản lý user + role thôi?
+> **Q3**: Bạn có muốn thêm chức năng **xem chi tiết user** (submissions, progress, datasets) ở admin panel, hay hệ thống này chỉ cần quản lý user + role thôi?
 
 ---
 

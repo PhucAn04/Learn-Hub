@@ -53,4 +53,34 @@ export class UsersService {
   async updateLastLogin(userId: string): Promise<void> {
     await this.userRepository.update(userId, { lastLoginAt: new Date() });
   }
+
+  async updateResetToken(
+    userId: string,
+    hashedToken: string,
+    expires: Date,
+  ): Promise<void> {
+    await this.userRepository.update(userId, {
+      resetPasswordToken: hashedToken,
+      resetPasswordExpires: expires,
+    });
+  }
+
+  async findByResetToken(hashedToken: string): Promise<User | null> {
+    const user = await this.userRepository
+      .createQueryBuilder('user')
+      .addSelect('user.resetPasswordToken')
+      .addSelect('user.resetPasswordExpires')
+      .where('user.resetPasswordToken = :hashedToken', { hashedToken })
+      .getOne();
+
+    return user;
+  }
+
+  async updatePassword(userId: string, hashedPassword: string): Promise<void> {
+    await this.userRepository.update(userId, {
+      password: hashedPassword,
+      resetPasswordToken: null,
+      resetPasswordExpires: null,
+    });
+  }
 }

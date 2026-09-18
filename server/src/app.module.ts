@@ -14,10 +14,13 @@ import { ActionLogsModule } from './modules/action-logs/action-logs.module';
 import { AssessmentsModule } from './modules/assessments/assessments.module';
 import { AdminModule } from './modules/admin/admin.module';
 
+import { MailModule } from './shared/mail/mail.module';
+
 @Module({
   imports: [
     ConfigModule,
     DatabaseModule,
+    MailModule,
     UsersModule,
     AuthModule,
     ProgressModule,

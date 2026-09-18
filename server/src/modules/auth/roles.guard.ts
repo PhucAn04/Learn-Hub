@@ -22,7 +22,11 @@ export class RolesGuard implements CanActivate {
       return true;
     }
 
-    const request = context.switchToHttp().getRequest();
+    const request = context.switchToHttp().getRequest<
+      import('express').Request & {
+        user?: import('../users/entities/user.entity').User;
+      }
+    >();
     const user = request.user;
 
     if (!user || !requiredRoles.includes(user.role)) {

@@ -15,7 +15,11 @@ export class JwtAuthGuard implements CanActivate {
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    const request = context.switchToHttp().getRequest();
+    const request = context.switchToHttp().getRequest<
+      import('express').Request & {
+        user?: import('../users/entities/user.entity').User;
+      }
+    >();
     const authHeader = request.headers.authorization;
 
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -27,7 +31,7 @@ export class JwtAuthGuard implements CanActivate {
     const token = authHeader.split(' ')[1];
 
     try {
-      const payload = this.jwtService.verify(token);
+      const payload = this.jwtService.verify<{ sub: string }>(token);
       const user = await this.usersService.findById(payload.sub);
 
       if (!user) {
@@ -36,7 +40,7 @@ export class JwtAuthGuard implements CanActivate {
 
       request.user = user;
       return true;
-    } catch (err) {
+    } catch {
       throw new UnauthorizedException(
         'Phiên làm việc đã hết hạn hoặc không hợp lệ. Vui lòng đăng nhập lại.',
       );

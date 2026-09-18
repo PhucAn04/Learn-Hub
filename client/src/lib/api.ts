@@ -72,6 +72,20 @@ export const api = {
     });
   },
 
+  async forgotPassword(email: string) {
+    return request<{ success: boolean }>('/auth/forgot-password', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    });
+  },
+
+  async resetPassword(token: string, newPassword: string) {
+    return request<{ success: boolean }>('/auth/reset-password', {
+      method: 'POST',
+      body: JSON.stringify({ token, newPassword }),
+    });
+  },
+
   async register(username: string, email: string, password?: string, avatar?: string) {
     return request<AuthResponse>('/auth/register', {
       method: 'POST',

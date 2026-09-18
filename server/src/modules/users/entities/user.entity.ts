@@ -46,7 +46,7 @@ export class User {
   @UpdateDateColumn()
   updatedAt!: Date;
 
-  // ── Admin Management Fields ──
+  // 🛡️ Admin Management Fields 🛡️
   @Column({ default: true })
   isActive!: boolean;
 
@@ -64,4 +64,11 @@ export class User {
 
   @Column({ type: 'timestamp', nullable: true })
   roleChangedAt?: Date;
+
+  // 🔑 Password Reset Fields 🔑
+  @Column({ nullable: true, select: false })
+  resetPasswordToken?: string | null;
+
+  @Column({ type: 'timestamp', nullable: true, select: false })
+  resetPasswordExpires?: Date | null;
 }

@@ -3,8 +3,9 @@
 import { useEffect, useState, use } from 'react';
 import { useRouter } from 'next/navigation';
 import { adminApi } from '@/lib/admin-api';
-import { ArrowLeft, Shield, AlertTriangle, CheckCircle } from 'lucide-react';
+import { ArrowLeft, Shield, AlertTriangle, CheckCircle, Key } from 'lucide-react';
 import type { UserProfile } from '@/types/models';
+import PasswordResetModal from '@/components/admin/PasswordResetModal';
 
 type AdminUserDetail = UserProfile & { isActive: boolean; lastLoginAt?: string; deactivatedAt?: string; roleChangedAt?: string };
 
@@ -14,6 +15,7 @@ export default function UserDetail({ params }: { params: Promise<{ id: string }>
   const [user, setUser] = useState<AdminUserDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
+  const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
 
   useEffect(() => {
     adminApi.getUser(resolvedParams.id)
@@ -167,6 +169,22 @@ export default function UserDetail({ params }: { params: Promise<{ id: string }>
                     </div>
                   </div>
                 </div>
+
+                <div className="p-4 border border-amber-100 bg-amber-50/50 rounded-lg">
+                  <div className="flex items-start gap-3">
+                    <Key className="text-amber-600 mt-0.5" size={20} />
+                    <div>
+                      <h4 className="font-medium text-slate-800 text-sm">Cấp lại mật khẩu</h4>
+                      <p className="text-xs text-slate-500 mt-1 mb-3">Tạo đường link để đổi mật khẩu hoặc gửi email tự động cho người dùng.</p>
+                      <button 
+                        onClick={() => setIsPasswordModalOpen(true)}
+                        className="text-xs px-3 py-1.5 bg-amber-600 text-white rounded hover:bg-amber-700 transition"
+                      >
+                        Reset Password
+                      </button>
+                    </div>
+                  </div>
+                </div>
               </div>
             )}
 
@@ -176,6 +194,14 @@ export default function UserDetail({ params }: { params: Promise<{ id: string }>
           </div>
         </div>
       </div>
+
+      <PasswordResetModal 
+        isOpen={isPasswordModalOpen} 
+        onClose={() => setIsPasswordModalOpen(false)} 
+        userId={user.id} 
+        userName={user.username} 
+        userEmail={user.email} 
+      />
     </div>
   );
 }

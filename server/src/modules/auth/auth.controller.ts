@@ -6,6 +6,7 @@ import {
   UseGuards,
   Req,
   Res,
+  BadRequestException,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -20,7 +21,12 @@ import { GoogleOAuthGuard } from './google-oauth.guard';
 import { CurrentUser } from './current-user.decorator';
 import { User } from '../users/entities/user.entity';
 import { GoogleOAuthProfile } from '../../shared/types';
-import { RegisterDto, LoginDto } from './dto/auth.dto';
+import {
+  RegisterDto,
+  LoginDto,
+  ForgotPasswordDto,
+  ResetPasswordDto,
+} from './dto/auth.dto';
 import type { Request, Response } from 'express';
 
 @ApiTags('Auth')
@@ -52,8 +58,28 @@ export class AuthController {
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Lấy thông tin tài khoản hiện tại' })
   @ApiResponse({ status: 200, description: 'Thông tin tài khoản.' })
-  async getProfile(@CurrentUser() user: User) {
+  getProfile(@CurrentUser() user: User) {
     return user;
+  }
+
+  @Post('forgot-password')
+  @ApiOperation({ summary: 'Yêu cầu đặt lại mật khẩu qua email' })
+  @ApiBody({ type: ForgotPasswordDto })
+  async forgotPassword(@Body() body: ForgotPasswordDto) {
+    if (!body.email) throw new BadRequestException('Email không được để trống');
+    await this.authService.sendPasswordResetEmail(body.email);
+    return { success: true };
+  }
+
+  @Post('reset-password')
+  @ApiOperation({ summary: 'Đặt lại mật khẩu mới với token' })
+  @ApiBody({ type: ResetPasswordDto })
+  async resetPassword(@Body() body: ResetPasswordDto) {
+    const { token, newPassword } = body;
+    if (!token || !newPassword)
+      throw new BadRequestException('Thiếu thông tin');
+    await this.authService.resetPassword(token, newPassword);
+    return { success: true };
   }
 
   @Get('google')

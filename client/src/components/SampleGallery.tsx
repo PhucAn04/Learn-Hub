@@ -231,7 +231,7 @@ export default function SampleGallery({ samples, onDeleteSample, onClearAll, isT
                   <span>AI đã nhầm lẫn ảnh này!</span>
                 </div>
                 <p className="text-xs text-red-600 mt-2 font-semibold leading-relaxed">
-                  Ảnh này quá giống với mẫu của nhóm <span className="font-bold">"{previewSample.aiFeedback.predictedLabel}"</span> nên AI đã đoán sai. Bé hãy XÓA đi và chụp lại góc khác nhé!
+                  Ảnh này quá giống với mẫu của nhóm <span className="font-bold">&quot;{previewSample.aiFeedback.predictedLabel}&quot;</span> nên AI đã đoán sai. Bé hãy XÓA đi và chụp lại góc khác nhé!
                 </p>
               </div>
             ) : previewSample.isValid === false ? (
@@ -241,7 +241,7 @@ export default function SampleGallery({ samples, onDeleteSample, onClearAll, isT
                   <span>AI nghĩ ảnh này KHÔNG ĐÚNG nhãn!</span>
                 </div>
                 <p className="text-xs text-red-600 mt-2 font-semibold leading-relaxed">
-                  Bạn AI đã xem ảnh này và thấy nó không giống với nhãn "{previewSample.label}" mà bé đang dạy.
+                  Bạn AI đã xem ảnh này và thấy nó không giống với nhãn &quot;{previewSample.label}&quot; mà bé đang dạy.
                   Bé nên xóa ảnh này đi và chụp lại cho đúng nhé! 🤗
                 </p>
               </div>

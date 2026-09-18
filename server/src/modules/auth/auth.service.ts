@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { UsersService } from '../users/users.service';
+import { MailService } from '../../shared/mail/mail.service';
 import { User } from '../users/entities/user.entity';
 import { GoogleOAuthProfile } from '../../shared/types';
 import * as bcrypt from 'bcryptjs';
@@ -15,7 +16,23 @@ export class AuthService {
   constructor(
     private readonly usersService: UsersService,
     private readonly jwtService: JwtService,
+    private readonly mailService: MailService,
   ) {}
+
+  async sendPasswordResetEmail(email: string): Promise<boolean> {
+    const user = await this.usersService.findByEmail(email);
+    if (!user) {
+      // Return true to avoid email enumeration attacks
+      return true;
+    }
+
+    const resetToken = await this.generatePasswordResetToken(user.id);
+    const domain = process.env.FRONTEND_URL || 'http://localhost:3000';
+    const resetLink = `${domain}/auth/reset-password?token=${resetToken}&email=${encodeURIComponent(user.email)}`;
+
+    await this.mailService.sendPasswordResetEmail(user.email, resetLink);
+    return true;
+  }
 
   async register(
     userData: Partial<User>,
@@ -129,5 +146,44 @@ export class AuthService {
 
   private generateToken(userId: string): string {
     return this.jwtService.sign({ sub: userId });
+  }
+
+  async generatePasswordResetToken(userId: string): Promise<string> {
+    const user = await this.usersService.findById(userId);
+    if (!user) throw new BadRequestException('User not found');
+
+    const resetToken = (await import('crypto')).randomBytes(32).toString('hex');
+    const hashedToken = await this.hashResetToken(resetToken);
+
+    // Set expiration to 15 minutes
+    const expires = new Date();
+    expires.setMinutes(expires.getMinutes() + 15);
+
+    await this.usersService.updateResetToken(userId, hashedToken, expires);
+
+    return resetToken;
+  }
+
+  private async hashResetToken(token: string): Promise<string> {
+    const crypto = await import('crypto');
+    return crypto.createHash('sha256').update(token).digest('hex');
+  }
+
+  async resetPassword(token: string, newPassword: string): Promise<boolean> {
+    const hashedToken = await this.hashResetToken(token);
+    const user = await this.usersService.findByResetToken(hashedToken);
+
+    if (!user) {
+      throw new BadRequestException('Token không hợp lệ hoặc đã hết hạn.');
+    }
+
+    if (user.resetPasswordExpires && user.resetPasswordExpires < new Date()) {
+      throw new BadRequestException('Token đã hết hạn. Vui lòng tạo lại.');
+    }
+
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    await this.usersService.updatePassword(user.id, hashedPassword);
+
+    return true;
   }
 }

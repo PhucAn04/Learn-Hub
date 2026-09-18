@@ -109,4 +109,16 @@ export const adminApi = {
       body: JSON.stringify({ isActive }),
     });
   },
+
+  async generateResetLink(id: string) {
+    return request<{ resetLink: string }>(`/admin/users/${id}/generate-reset-link`, {
+      method: 'POST',
+    });
+  },
+
+  async sendResetEmail(id: string) {
+    return request<{ success: boolean }>(`/admin/users/${id}/send-reset-email`, {
+      method: 'POST',
+    });
+  },
 };

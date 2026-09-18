@@ -97,6 +97,15 @@ export default function LoginPage() {
                 required
               />
             </div>
+            <div className="flex justify-end mt-1">
+              <Link 
+                href="/auth/forgot-password" 
+                onClick={playClickSound}
+                className="text-xs font-semibold text-purple-600 hover:text-purple-700 hover:underline transition-colors"
+              >
+                Quên mật khẩu?
+              </Link>
+            </div>
           </div>
 
           <button

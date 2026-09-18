@@ -4,6 +4,7 @@ import { ConfigService } from '@nestjs/config';
 import { PassportModule } from '@nestjs/passport';
 import { UsersModule } from '../users/users.module';
 import { AuthService } from './auth.service';
+import { MailModule } from '../../shared/mail/mail.module';
 import { AuthController } from './auth.controller';
 import { JwtAuthGuard } from './jwt-auth.guard';
 import { GoogleStrategy } from './strategies/google.strategy';
@@ -12,6 +13,7 @@ import { GoogleOAuthGuard } from './google-oauth.guard';
 @Module({
   imports: [
     UsersModule,
+    MailModule,
     PassportModule.register({ defaultStrategy: 'jwt' }),
     JwtModule.registerAsync({
       inject: [ConfigService],

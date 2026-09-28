@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "Learn Hub",
-  description: "Learn Hub educational platform",
+  description: "Xây dựng một hệ thống web học tập giúp học sinh tiểu học tiếp cận và thực hành quy trình học máy (Machine Learning) cơ bản trực tiếp trên trình duyệt một cách trực quan và sinh động.",
 };
 
 export default function RootLayout({

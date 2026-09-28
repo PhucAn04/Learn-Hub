@@ -78,7 +78,7 @@ export default function AboutPage() {
               <div className="pt-2">
                 <p className="font-bold flex items-center gap-2 mb-2"><Target className="w-5 h-5 text-pink-500" /> Mục tiêu dự án:</p>
                 <p className="text-gray-600 font-medium leading-relaxed bg-pink-50 p-4 rounded-xl">
-                  Xây dựng một hệ thống web học tập giúp học sinh tiểu học tiếp cận và thực hành quy trình học máy (Machine Learning) trực tiếp trên trình duyệt một cách trực quan và sinh động.
+                  Xây dựng một hệ thống web học tập giúp học sinh tiểu học tiếp cận và thực hành quy trình học máy (Machine Learning) cơ bản trực tiếp trên trình duyệt một cách trực quan và sinh động.
                 </p>
               </div>
             </div>

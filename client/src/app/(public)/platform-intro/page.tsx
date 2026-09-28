@@ -5,6 +5,7 @@ import { Bot, Sparkles, AlertCircle, Shield } from 'lucide-react';
 import { useCamera } from '@/hooks/useCamera';
 import { useMl5FaceMesh } from '@/hooks/useMl5FaceMesh';
 import { useMl5Handpose } from '@/hooks/useMl5Handpose';
+import { useCocoSsdDetector } from '@/hooks/useCocoSsdDetector';
 import { drawFaceSkeleton } from '@/lib/face-drawing';
 import { drawHandSkeleton } from '@/lib/hand-drawing';
 import CameraView from '@/components/CameraView';
@@ -17,6 +18,13 @@ export default function PlatformIntroPage() {
 
   const { modelStatus: faceModelStatus, allFacesRef } = useMl5FaceMesh(videoRef, cameraActive, { maxFaces: 1 });
   const { modelStatus: handModelStatus, handsRef } = useMl5Handpose(videoRef, cameraActive, { maxHands: 2 });
+
+    const { videoRef: videoRef2, canvasRef: canvasRef2, cameraActive: cameraActive2, cameraError: cameraError2, retryCamera: retryCamera2 } = useCamera({
+    width: 640,
+    height: 480,
+  });
+
+  const { modelStatus: mobilenetStatus, results: mobilenetResults } = useCocoSsdDetector(videoRef2, cameraActive2);
 
   const requestRef = useRef<number | undefined>(undefined);
 
@@ -157,7 +165,47 @@ export default function PlatformIntroPage() {
             )}
           </div>
 
-          {/* Text 2: HandPose */}
+
+          {/* Camera Card 2: MobileNet */}
+          <div className="bg-slate-900 rounded-3xl p-6 shadow-xl border-4 border-slate-700 flex flex-col items-center justify-center relative">
+            <div className="w-full aspect-video relative rounded-xl overflow-hidden shadow-inner bg-black">
+              <CameraView
+                videoRef={videoRef2}
+                canvasRef={canvasRef2}
+                modelStatus={mobilenetStatus}
+                cameraError={cameraError2}
+                onRetry={retryCamera2}
+              />
+            </div>
+            
+            {/* Status indicators */}
+            <div className="flex flex-col gap-2 mt-4 w-full">
+               <div className={`px-4 py-2 rounded-xl font-bold text-xs flex justify-between items-center ${mobilenetStatus === 'ready' ? 'bg-purple-500/20 text-purple-300' : 'bg-yellow-500/20 text-yellow-300'}`}>
+                <span>COCO-SSD Object Detection</span>
+                <span>{mobilenetStatus === 'ready' ? 'Sẵn sàng' : 'Đang tải...'}</span>
+              </div>
+            </div>
+            
+            {cameraError2 && (
+              <div className="mt-4 flex items-center gap-2 text-red-100 font-bold bg-red-500/50 px-4 py-2 rounded-lg border border-red-400 w-full justify-center text-xs text-center">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                <span>Không thể truy cập Camera.</span>
+              </div>
+            )}
+
+            {/* LABEL HIỂN THỊ CHỮ TIẾNG ANH NGAY DƯỚI KHUNG VIEW */}
+            {mobilenetStatus === 'ready' && mobilenetResults.length > 0 && (
+              <div className="mt-6 w-full text-center">
+                <div className="inline-block px-8 py-3 bg-gradient-to-r from-blue-500 to-purple-600 rounded-full text-white font-black text-2xl shadow-lg border-2 border-white/20 transform hover:scale-105 transition-transform">
+                  {mobilenetResults[0].class.split(',')[0].toUpperCase()}
+                </div>
+              </div>
+            )}
+          </div>
+
+        </div>
+
+        {/* Text 2: HandPose */}
           <div className="bg-white rounded-3xl p-8 shadow-xl border-4 border-blue-100 transform hover:-translate-y-1 transition-transform">
             <div className="flex items-center gap-4 mb-6">
               <div className="w-16 h-16 bg-blue-100 rounded-2xl flex items-center justify-center text-blue-600">
@@ -180,8 +228,6 @@ export default function PlatformIntroPage() {
               </div>
             </div>
           </div>
-
-        </div>
 
         {/* Text 3: Security */}
         <div className="bg-white rounded-3xl p-8 shadow-xl border-4 border-emerald-100 transform hover:-translate-y-1 transition-transform">

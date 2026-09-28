@@ -240,6 +240,7 @@ export const api = {
         batchSize?: number;
         learningRate?: number;
         k?: number;
+          autoTune?: boolean;
       };
       trainingLogs?: { epoch: number; loss: number; acc: number }[];
       version?: number;

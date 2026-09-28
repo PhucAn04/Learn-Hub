@@ -19,15 +19,33 @@ export class TfTrainer {
   async train(
     samples: StoredSample[],
     onProgress?: (epoch: number, progress: number, loss: number, acc: number) => void,
-    options?: { epochs?: number; batchSize?: number; learningRate?: number }
+    options?: { epochs?: number; batchSize?: number; learningRate?: number; autoTune?: boolean }
   ): Promise<{ epoch: number; loss: number; acc: number }[]> {
     await this.init();
     if (!this.tf) throw new Error('TensorFlow.js failed to load');
     if (samples.length === 0) throw new Error('Không có dữ liệu huấn luyện');
 
-    const epochs = options?.epochs ?? 50;
-    const learningRate = options?.learningRate ?? 0.005;
+    let epochs = options?.epochs ?? 50;
+    let learningRate = options?.learningRate ?? 0.005;
+    let dropoutRate = 0.2;
     const batchSize = Math.min(options?.batchSize ?? 32, samples.length);
+
+    // Chỉ tự động tinh chỉnh khi có cờ autoTune = true
+    if (options?.autoTune) {
+      if (samples.length < 15) {
+        epochs = 20;
+        learningRate = 0.01;
+        dropoutRate = 0.1;
+      } else if (samples.length >= 15 && samples.length <= 50) {
+        epochs = 50;
+        learningRate = 0.005;
+        dropoutRate = 0.2;
+      } else {
+        epochs = 100;
+        learningRate = 0.001;
+        dropoutRate = 0.3;
+      }
+    }
 
     // 1. Xác định các nhãn (classes) duy nhất
     this.classNames = Array.from(new Set(samples.map(s => s.label))).sort();
@@ -39,7 +57,7 @@ export class TfTrainer {
     // 2. Khởi tạo mô hình (Sequential MLP)
     this.model = this.tf.sequential();
     this.model.add(this.tf.layers.dense({ units: 128, activation: 'relu', inputShape: [inputShape] }));
-    this.model.add(this.tf.layers.dropout({ rate: 0.2 }));
+    this.model.add(this.tf.layers.dropout({ rate: dropoutRate }));
     this.model.add(this.tf.layers.dense({ units: 64, activation: 'relu' }));
     this.model.add(this.tf.layers.dense({ units: numClasses, activation: 'softmax' }));
 

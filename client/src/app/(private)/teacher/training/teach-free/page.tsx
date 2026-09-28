@@ -69,8 +69,7 @@ export default function TeacherTeachFreePage() {
   const [hpEpochs, setHpEpochs] = useState(50);
   const [hpBatchSize, setHpBatchSize] = useState(32);
   const [hpLearningRate, setHpLearningRate] = useState(0.005);
-  const [showSettings, setShowSettings] = useState(false);
-
+  
   // ── Prediction ────────────────────────────────────────
   const [predictedLabel, setPredictedLabel] = useState('Chưa nhận diện... 🤔');
   const [confidence, setConfidence] = useState(0);
@@ -390,7 +389,7 @@ export default function TeacherTeachFreePage() {
             setTrainingProgress(progress);
             setTrainingLogs((prev) => [...prev, { epoch: _epoch, loss, acc }]);
           },
-          { epochs: hpEpochs, batchSize: hpBatchSize, learningRate: hpLearningRate }
+          { epochs: hpEpochs, batchSize: hpBatchSize, learningRate: hpLearningRate, autoTune: true }
         );
 
         setIsTraining(false);
@@ -964,63 +963,9 @@ export default function TeacherTeachFreePage() {
             {/* Train + Submit Buttons */}
             <div className="mt-auto pt-4 space-y-2">
               {/* Hyperparameters panel ("Under the Hood") */}
-              <button
-                onClick={() => setShowSettings(!showSettings)}
-                className="w-full text-xs font-bold text-slate-400 hover:text-indigo-600 flex items-center justify-center gap-1 py-1 transition-colors"
-              >
-                <Settings className="w-3.5 h-3.5" />
-                {showSettings ? 'Ẩn cài đặt nâng cao ▲' : 'Cài đặt nâng cao ▼'}
-              </button>
+              
 
-              {showSettings && (
-                <div className="bg-slate-50 rounded-2xl p-4 border-2 border-slate-200 space-y-3 text-xs">
-                  <h4 className="font-black text-slate-700 text-sm flex items-center gap-1.5">
-                    ⚙️ Under the Hood
-                  </h4>
-                  {/* Epochs */}
-                  <div>
-                    <div className="flex justify-between mb-1">
-                      <span className="font-bold text-slate-600">Epochs (Số vòng học)</span>
-                      <span className="font-black text-indigo-700">{hpEpochs}</span>
-                    </div>
-                    <input
-                      type="range" min={10} max={200} step={10} value={hpEpochs}
-                      onChange={(e) => setHpEpochs(Number(e.target.value))}
-                      className="w-full accent-indigo-500"
-                    />
-                    <div className="flex justify-between text-[10px] text-slate-400"><span>10</span><span>200</span></div>
-                  </div>
-                  {/* Batch Size */}
-                  <div>
-                    <div className="flex justify-between mb-1">
-                      <span className="font-bold text-slate-600">Batch Size</span>
-                      <span className="font-black text-indigo-700">{hpBatchSize}</span>
-                    </div>
-                    <input
-                      type="range" min={8} max={128} step={8} value={hpBatchSize}
-                      onChange={(e) => setHpBatchSize(Number(e.target.value))}
-                      className="w-full accent-indigo-500"
-                    />
-                    <div className="flex justify-between text-[10px] text-slate-400"><span>8</span><span>128</span></div>
-                  </div>
-                  {/* Learning Rate */}
-                  <div>
-                    <div className="flex justify-between mb-1">
-                      <span className="font-bold text-slate-600">Learning Rate</span>
-                      <span className="font-black text-indigo-700">{hpLearningRate}</span>
-                    </div>
-                    <input
-                      type="range" min={0.0001} max={0.01} step={0.0001} value={hpLearningRate}
-                      onChange={(e) => setHpLearningRate(Number(e.target.value))}
-                      className="w-full accent-indigo-500"
-                    />
-                    <div className="flex justify-between text-[10px] text-slate-400"><span>0.0001</span><span>0.01</span></div>
-                  </div>
-                  <p className="text-[10px] text-slate-400 italic">
-                    💡 Epochs cao + Learning Rate thấp → chính xác hơn nhưng lâu hơn
-                  </p>
-                </div>
-              )}
+              
 
               {isTraining ? (
                 <div className="bg-indigo-50 rounded-2xl p-4 border border-indigo-100 animate-pulse">

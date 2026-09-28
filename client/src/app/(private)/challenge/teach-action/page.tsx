@@ -100,8 +100,7 @@ export default function StudentTeachActionPage() {
   const [hpEpochs, setHpEpochs] = useState(50);
   const [hpBatchSize, setHpBatchSize] = useState(32);
   const [hpLearningRate, setHpLearningRate] = useState(0.005);
-  const [showSettings, setShowSettings] = useState(false);
-
+  
   // ── Prediction ───────────────────────────────────────
   const [predictedLabel, setPredictedLabel] = useState('Chưa nhận diện... 🤔');
   const [confidence, setConfidence] = useState(0);
@@ -610,7 +609,7 @@ export default function StudentTeachActionPage() {
             setTrainingProgress(progress);
             setTrainingLogs((prev) => [...prev, { epoch: _epoch, loss, acc }]);
           },
-          { epochs: hpEpochs, batchSize: hpBatchSize, learningRate: hpLearningRate }
+          { epochs: hpEpochs, batchSize: hpBatchSize, learningRate: hpLearningRate, autoTune: true }
         );
 
         setIsTraining(false);
@@ -913,7 +912,7 @@ export default function StudentTeachActionPage() {
         await api.updateModelArtifacts(created.model.id, {
           algorithm: 'neural_network',
           testScore: submitScore,
-          hyperparameters: { epochs: hpEpochs, batchSize: hpBatchSize, learningRate: hpLearningRate },
+          hyperparameters: { epochs: hpEpochs, batchSize: hpBatchSize, learningRate: hpLearningRate, autoTune: true },
         }).catch(() => {});
 
         if (trainerRef.current?.isTrained()) {
@@ -1369,40 +1368,9 @@ export default function StudentTeachActionPage() {
 
               {/* Hyperparameters panel */}
               <div className="mt-auto pt-4 space-y-2">
-                <button
-                  onClick={() => setShowSettings(!showSettings)}
-                  className="w-full text-xs font-bold text-slate-400 hover:text-teal-600 flex items-center justify-center gap-1 py-1 transition-colors"
-                >
-                  <Settings className="w-3.5 h-3.5" />
-                  {showSettings ? 'Ẩn cài đặt nâng cao ▲' : 'Cài đặt nâng cao (Under the Hood) ▼'}
-                </button>
+                
 
-                {showSettings && (
-                  <div className="bg-slate-50 rounded-2xl p-3.5 border-2 border-slate-200 space-y-3 text-xs">
-                    <div>
-                      <div className="flex justify-between mb-1">
-                        <span className="font-bold text-slate-600">Epochs</span>
-                        <span className="font-black text-teal-700">{hpEpochs}</span>
-                      </div>
-                      <input
-                        type="range" min={10} max={200} step={10} value={hpEpochs}
-                        onChange={(e) => setHpEpochs(Number(e.target.value))}
-                        className="w-full accent-teal-600"
-                      />
-                    </div>
-                    <div>
-                      <div className="flex justify-between mb-1">
-                        <span className="font-bold text-slate-600">Batch Size</span>
-                        <span className="font-black text-teal-700">{hpBatchSize}</span>
-                      </div>
-                      <input
-                        type="range" min={8} max={128} step={8} value={hpBatchSize}
-                        onChange={(e) => setHpBatchSize(Number(e.target.value))}
-                        className="w-full accent-teal-600"
-                      />
-                    </div>
-                  </div>
-                )}
+                
 
                 {/* Train + Submit */}
                 {isTraining ? (

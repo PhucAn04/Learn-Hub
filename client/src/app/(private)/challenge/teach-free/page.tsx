@@ -97,8 +97,7 @@ export default function StudentTeachFreePage() {
   const [hpEpochs, setHpEpochs] = useState(50);
   const [hpBatchSize, setHpBatchSize] = useState(32);
   const [hpLearningRate, setHpLearningRate] = useState(0.005);
-  const [showSettings, setShowSettings] = useState(false);
-
+  
   // ── Prediction ──────────────────────────────────────
   const [predictedLabel, setPredictedLabel] = useState('Chưa nhận diện... 🤔');
   const [confidence, setConfidence] = useState(0);
@@ -504,7 +503,7 @@ export default function StudentTeachFreePage() {
             setTrainingProgress(progress);
             setTrainingLogs((prev) => [...prev, { epoch: _epoch, loss, acc }]);
           },
-          { epochs: hpEpochs, batchSize: hpBatchSize, learningRate: hpLearningRate }
+          { epochs: hpEpochs, batchSize: hpBatchSize, learningRate: hpLearningRate, autoTune: true }
         );
         setIsTraining(false);
         setIsTrained(true);
@@ -816,7 +815,7 @@ export default function StudentTeachFreePage() {
         await api.updateModelArtifacts(created.model.id, {
           algorithm: 'neural_network',
           testScore: submitScore,
-          hyperparameters: { epochs: hpEpochs, batchSize: hpBatchSize, learningRate: hpLearningRate },
+          hyperparameters: { epochs: hpEpochs, batchSize: hpBatchSize, learningRate: hpLearningRate, autoTune: true },
         }).catch(() => {});
 
         // Upload model blobs
@@ -1301,60 +1300,9 @@ export default function StudentTeachFreePage() {
 
               {/* Hyperparameters panel (Under the Hood) */}
               <div className="mt-auto pt-4 space-y-2">
-                <button
-                  onClick={() => setShowSettings(!showSettings)}
-                  className="w-full text-xs font-bold text-slate-400 hover:text-teal-600 flex items-center justify-center gap-1 py-1 transition-colors"
-                >
-                  <Settings className="w-3.5 h-3.5" />
-                  {showSettings ? 'Ẩn cài đặt nâng cao ▲' : 'Cài đặt nâng cao (Under the Hood) ▼'}
-                </button>
+                
 
-                {showSettings && (
-                  <div className="bg-slate-50 rounded-2xl p-3.5 border-2 border-slate-200 space-y-3 text-xs">
-                    <h4 className="font-black text-slate-700 text-xs flex items-center gap-1.5">
-                      ⚙️ Cài Đặt Tham Số Huấn Luyện
-                    </h4>
-                    {/* Epochs */}
-                    <div>
-                      <div className="flex justify-between mb-1">
-                        <span className="font-bold text-slate-600">Epochs (Số vòng học)</span>
-                        <span className="font-black text-teal-700">{hpEpochs}</span>
-                      </div>
-                      <input
-                        type="range" min={10} max={200} step={10} value={hpEpochs}
-                        onChange={(e) => setHpEpochs(Number(e.target.value))}
-                        className="w-full accent-teal-600"
-                      />
-                      <div className="flex justify-between text-[10px] text-slate-400"><span>10</span><span>200</span></div>
-                    </div>
-                    {/* Batch Size */}
-                    <div>
-                      <div className="flex justify-between mb-1">
-                        <span className="font-bold text-slate-600">Batch Size</span>
-                        <span className="font-black text-teal-700">{hpBatchSize}</span>
-                      </div>
-                      <input
-                        type="range" min={8} max={128} step={8} value={hpBatchSize}
-                        onChange={(e) => setHpBatchSize(Number(e.target.value))}
-                        className="w-full accent-teal-600"
-                      />
-                      <div className="flex justify-between text-[10px] text-slate-400"><span>8</span><span>128</span></div>
-                    </div>
-                    {/* Learning Rate */}
-                    <div>
-                      <div className="flex justify-between mb-1">
-                        <span className="font-bold text-slate-600">Learning Rate</span>
-                        <span className="font-black text-teal-700">{hpLearningRate}</span>
-                      </div>
-                      <input
-                        type="range" min={0.0001} max={0.01} step={0.0001} value={hpLearningRate}
-                        onChange={(e) => setHpLearningRate(Number(e.target.value))}
-                        className="w-full accent-teal-600"
-                      />
-                      <div className="flex justify-between text-[10px] text-slate-400"><span>0.0001</span><span>0.01</span></div>
-                    </div>
-                  </div>
-                )}
+                
 
                 {/* Train + Submit */}
                 {isTraining ? (

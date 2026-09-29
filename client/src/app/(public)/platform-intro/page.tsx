@@ -181,7 +181,7 @@ export default function PlatformIntroPage() {
             {/* Status indicators */}
             <div className="flex flex-col gap-2 mt-4 w-full">
                <div className={`px-4 py-2 rounded-xl font-bold text-xs flex justify-between items-center ${mobilenetStatus === 'ready' ? 'bg-purple-500/20 text-purple-300' : 'bg-yellow-500/20 text-yellow-300'}`}>
-                <span>COCO-SSD Object Detection</span>
+                <span>Object Detection</span>
                 <span>{mobilenetStatus === 'ready' ? 'Sẵn sàng' : 'Đang tải...'}</span>
               </div>
             </div>

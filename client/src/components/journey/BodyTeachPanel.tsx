@@ -77,6 +77,7 @@ export default function BodyTeachPanel({
   const [threshold, setThreshold] = useState(2);
   const [countdown, setCountdown] = useState<number | null>(null);
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
+  const [submitScoreState, setSubmitScoreState] = useState(100);
 
   const trainerRef = useRef<TfTrainer | null>(null);
   useEffect(() => {
@@ -222,7 +223,8 @@ export default function BodyTeachPanel({
              const resultKNN = classifyKNN(features, samples, kValue);
              const resultNN = await trainerRef.current!.predict(features);
              if (resultKNN) {
-                if (resultKNN.minDistance > 0.65) {
+                // Body pose distance is typically higher than hand pose due to full body variance (34 features)
+                if (resultKNN.minDistance > 1.5) {
                   setPredictedLabel('Khác thường, không có dữ liệu này trong thư viện ảnh của bạn!');
                   setConfidence(0);
                 } else if (resultNN.confidence < 50 || resultKNN.maxCount < Math.min(threshold, kValue)) {
@@ -328,17 +330,13 @@ export default function BodyTeachPanel({
         
         const validSamplesCount = samples.filter(s => s.isValid !== false).length;
         const accuracyScore = validSamplesCount > 0 ? (correctCount / validSamplesCount) * 100 : 0;
+        setSubmitScoreState(accuracyScore);
         
         if (!hasIssues) {
           speakEnglish('Perfect model!');
         } else {
           speakEnglish('Model trained, but check warnings.');
-          setShowFeedbackModal(true);
         }
-        
-        onTrainComplete(evaluated, async () => {
-          return trainerRef.current ? trainerRef.current.saveToBlobs() : null;
-        }, accuracyScore);
       }, 0);
     }
   }, [isTraining, trainingProgress, samples, kValue, threshold, onTrainComplete, teacherTemplate, classesState]);
@@ -558,13 +556,26 @@ export default function BodyTeachPanel({
               </button>
               
               {isTrained && (
-                <button
-                  onClick={() => setShowFeedbackModal(true)}
-                  className="w-full font-extrabold py-3 px-6 rounded-2xl shadow-md border-b-4 bg-indigo-100 hover:bg-indigo-200 border-indigo-300 text-indigo-700 flex items-center justify-center gap-2 text-base transition-all"
-                >
-                  <span className="text-xl">📊</span>
-                  <span>Xem Phân Tích Tổng Thể</span>
-                </button>
+                <>
+                  <button
+                    onClick={() => setShowFeedbackModal(true)}
+                    className="w-full font-extrabold py-3 px-6 rounded-2xl shadow-md border-b-4 bg-indigo-100 hover:bg-indigo-200 border-indigo-300 text-indigo-700 flex items-center justify-center gap-2 text-base transition-all"
+                  >
+                    <span className="text-xl">📊</span>
+                    <span>Xem Phân Tích Tổng Thể</span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      onTrainComplete(samples, async () => {
+                        return trainerRef.current ? trainerRef.current.saveToBlobs() : null;
+                      }, submitScoreState);
+                    }}
+                    className="w-full font-extrabold py-3 px-6 rounded-2xl shadow-md border-b-4 bg-emerald-500 hover:bg-emerald-600 border-emerald-700 text-white flex items-center justify-center gap-2 text-base transition-all"
+                  >
+                    <span className="text-xl">🚀</span>
+                    <span>Hoàn thành & Nộp Bài</span>
+                  </button>
+                </>
               )}
             </div>
           )}
@@ -584,19 +595,37 @@ export default function BodyTeachPanel({
               setSamples(prev => [...prev, ...newSamples]); 
               setIsModelOutdated(true);
             }}
-            onValidateSample={({ features, label }) => {
-              // KNN cross-validation: only validate when we have enough reference samples
-              const validRefSamples = samples.filter(s => s.isValid !== false);
-              if (validRefSamples.length < 6) {
-                return { isValid: true }; // Not enough data to validate
+            onValidateSample={({ features, label, classId }) => {
+              // 1. Chế độ Giáo viên (allowCustomClasses = true): Không có Golden Dataset, 
+              // và giáo viên đang là người tạo dữ liệu mẫu gốc -> KHÔNG cross-check, luôn hợp lệ.
+              if (allowCustomClasses) {
+                return { isValid: true };
               }
-              const result = classifyKNN(features, validRefSamples, Math.min(3, validRefSamples.length));
-              if (result && result.label !== label) {
-                return {
-                  isValid: false,
-                  isQuestionable: true,
-                  questionableReason: `Tư thế này trông giống "${result.label}" hơn! Hãy kiểm tra lại nhé 🤔`,
-                };
+              
+              // 2. Chế độ Học sinh: Cross-check đối chiếu với bộ dữ liệu của Giáo viên (teacherTemplate)
+              const refSamples = teacherTemplate?.samples || [];
+              
+              // Nếu giáo viên chưa có dữ liệu mẫu nào (hoặc quá ít), thì cũng không thể cross-check
+              if (refSamples.length < 3) {
+                return { isValid: true }; 
+              }
+              
+              const result = classifyKNN(features, refSamples, Math.min(3, refSamples.length));
+              if (result) {
+                 // Phải phân giải nhãn của giáo viên và học sinh từ ID ra tên để so sánh (đề phòng sai lệch ID)
+                 const teacherClass = classesState.find(c => c.id === result.label || c.label === result.label);
+                 const teacherLabelName = teacherClass ? teacherClass.label : result.label;
+                 
+                 const studentClass = classesState.find(c => c.id === classId || c.label === label);
+                 const studentLabelName = studentClass ? studentClass.label : label;
+
+                 if (teacherLabelName !== studentLabelName) {
+                    return {
+                      isValid: false,
+                      isQuestionable: true,
+                      questionableReason: `Tư thế này trông giống "${teacherLabelName}" hơn! Hãy kiểm tra lại nhé 🤔`,
+                    };
+                 }
               }
               return { isValid: true };
             }}
@@ -624,7 +653,7 @@ export default function BodyTeachPanel({
                 </div>
                 <div className="bg-white/10 rounded-xl px-3 py-1 border border-white/20 flex items-center gap-2">
                   <span className="text-[10px] font-semibold text-purple-300 uppercase block">Độ Tự Tin</span>
-                  <span className="text-lg font-black">{Math.round(confidence * 100)}<span className="text-sm text-purple-300">%</span></span>
+                  <span className="text-lg font-black">{Math.round(confidence)}<span className="text-sm text-purple-300">%</span></span>
                 </div>
               </div>
 
@@ -688,7 +717,7 @@ export default function BodyTeachPanel({
         teacherTemplate={teacherTemplate}
         kValue={kValue}
         threshold={threshold}
-        classes={classes}
+        classes={classesState}
         onDeleteSample={(id) => setSamples(prev => prev.filter(s => s.id !== id))}
       />
     </div>

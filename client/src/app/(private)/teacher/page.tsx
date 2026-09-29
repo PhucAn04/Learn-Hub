@@ -25,6 +25,7 @@ interface StudentProgress {
   teachGestures: { completed: boolean; bestScore: number };
   teachTwoHands: { completed: boolean; bestScore: number };
   teachFree: { completed: boolean; bestScore: number };
+  teachAction: { completed: boolean; bestScore: number };
   teachBody: { completed: boolean; bestScore: number };
 }
 
@@ -33,12 +34,13 @@ export default function TeacherDashboard() {
     const userProfile = await api.getProfile().catch(() => null);
 
     // Fetch all challenges
-    const [teachRes, faceRes, gesturesRes, twoHandsRes, freeRes, body1, body2, body3, body4, body5] = await Promise.all([
+    const [teachRes, faceRes, gesturesRes, twoHandsRes, freeRes, actionRes, body1, body2, body3, body4, body5] = await Promise.all([
       api.getDatasetsByChallenge('teach').catch(() => [] as DatasetRecord[]),
       api.getDatasetsByChallenge('teach-face').catch(() => [] as DatasetRecord[]),
       api.getDatasetsByChallenge('teach-gestures').catch(() => [] as DatasetRecord[]),
       api.getDatasetsByChallenge('teach-two-hands').catch(() => [] as DatasetRecord[]),
       api.getDatasetsByChallenge('teach-free').catch(() => [] as DatasetRecord[]),
+      api.getDatasetsByChallenge('teach-action').catch(() => [] as DatasetRecord[]),
       api.getDatasetsByChallenge('teach-body-1').catch(() => [] as DatasetRecord[]),
       api.getDatasetsByChallenge('teach-body-2').catch(() => [] as DatasetRecord[]),
       api.getDatasetsByChallenge('teach-body-3').catch(() => [] as DatasetRecord[]),
@@ -46,7 +48,7 @@ export default function TeacherDashboard() {
       api.getDatasetsByChallenge('teach-body-5').catch(() => [] as DatasetRecord[])
     ]);
 
-    const allDatasets = [...teachRes, ...faceRes, ...gesturesRes, ...twoHandsRes, ...freeRes, ...body1, ...body2, ...body3, ...body4, ...body5];
+    const allDatasets = [...teachRes, ...faceRes, ...gesturesRes, ...twoHandsRes, ...freeRes, ...actionRes, ...body1, ...body2, ...body3, ...body4, ...body5];
     const studentMap = new Map<string, StudentProgress>();
     
     let sumAccuracy = 0;
@@ -62,6 +64,7 @@ export default function TeacherDashboard() {
           teachGestures: { completed: false, bestScore: 0 },
           teachTwoHands: { completed: false, bestScore: 0 },
           teachFree: { completed: false, bestScore: 0 },
+          teachAction: { completed: false, bestScore: 0 },
           teachBody: { completed: false, bestScore: 0 },
         });
       }
@@ -89,6 +92,9 @@ export default function TeacherDashboard() {
       } else if (ds.challengeType === 'teach-free') {
         st.teachFree.completed = true;
         if (score > st.teachFree.bestScore) st.teachFree.bestScore = score;
+      } else if (ds.challengeType === 'teach-action') {
+        st.teachAction.completed = true;
+        if (score > st.teachAction.bestScore) st.teachAction.bestScore = score;
       } else if (ds.challengeType.startsWith('teach-body-')) {
         st.teachBody.completed = true;
         if (score > st.teachBody.bestScore) st.teachBody.bestScore = score;
@@ -229,7 +235,7 @@ export default function TeacherDashboard() {
           <h3 className="text-sm font-extrabold text-slate-500 uppercase tracking-wider mb-4 flex items-center gap-1.5">
             🔍 Truy cập Hình Ảnh Bộ Dữ Liệu
           </h3>
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3">
             <Link
               href="/teacher/datasets/teach"
               onClick={playClickSound}
@@ -272,6 +278,28 @@ export default function TeacherDashboard() {
               <div>
                 <div className="font-extrabold text-teal-900 text-sm">Dạy AI Cử chỉ</div>
                 <div className="text-[10px] text-slate-400 font-semibold">Xem hình ảnh xương tay</div>
+              </div>
+            </Link>
+            <Link
+              href="/teacher/datasets/teach-free"
+              onClick={playClickSound}
+              className="p-4 rounded-2xl border-2 border-rose-100 hover:border-rose-400 bg-rose-50/50 hover:bg-rose-50 transition-all flex items-center gap-3"
+            >
+              <span className="text-3xl">🌟</span>
+              <div>
+                <div className="font-extrabold text-rose-900 text-sm">Dạy AI Nhãn Tự do</div>
+                <div className="text-[10px] text-slate-400 font-semibold">Hình ảnh tự do</div>
+              </div>
+            </Link>
+            <Link
+              href="/teacher/datasets/teach-action"
+              onClick={playClickSound}
+              className="p-4 rounded-2xl border-2 border-blue-100 hover:border-blue-400 bg-blue-50/50 hover:bg-blue-50 transition-all flex items-center gap-3"
+            >
+              <span className="text-3xl">🎬</span>
+              <div>
+                <div className="font-extrabold text-blue-900 text-sm">Dạy AI Hành động</div>
+                <div className="text-[10px] text-slate-400 font-semibold">Chuỗi hành động</div>
               </div>
             </Link>
           </div>
@@ -413,6 +441,75 @@ export default function TeacherDashboard() {
             </table>
           </div>
         </div>
+
+        {/* Advanced / Extra Challenges Table */}
+        <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden mt-8">
+          <div className="px-6 py-5 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
+            <h3 className="font-extrabold text-slate-700 text-lg">Bảng Theo Dõi Bài Học Mở Rộng (Tự do & Hành động)</h3>
+            <span className="text-xs font-semibold text-slate-400">Các bài được bổ sung</span>
+          </div>
+          
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="bg-slate-50 border-b border-slate-200 text-xs font-extrabold text-slate-500 uppercase tracking-wider">
+                  <th className="px-6 py-4 w-1/4">Học sinh</th>
+                  <th className="px-6 py-4 text-center border-l border-slate-100">🌟 Dạy AI Nhãn Tự do</th>
+                  <th className="px-6 py-4 text-center border-l border-slate-100">🎬 Dạy AI Hành động</th>
+                  <th className="px-6 py-4 text-center border-l border-slate-100">Chi tiết</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {loading ? (
+                  <tr>
+                    <td colSpan={4} className="px-6 py-12 text-center">
+                      <div className="inline-block animate-spin w-6 h-6 border-4 border-indigo-600 border-t-transparent rounded-full mb-2"></div>
+                      <p className="text-sm font-semibold text-slate-500">Đang tổng hợp dữ liệu...</p>
+                    </td>
+                  </tr>
+                ) : students.length === 0 ? (
+                  <tr>
+                    <td colSpan={4} className="px-6 py-12 text-center text-slate-500 font-semibold italic">
+                      Chưa có học sinh nào tham gia.
+                    </td>
+                  </tr>
+                ) : (
+                  students.map(st => {
+                    return (
+                      <tr key={st.user.id} className="hover:bg-slate-50/80 transition-colors">
+                        <td className="px-6 py-4">
+                          <div className="flex items-center gap-3">
+                            <span className="text-3xl">{st.user.avatar || '🎓'}</span>
+                            <div>
+                              <div className="font-extrabold text-slate-800">{st.user.username}</div>
+                              <div className="text-xs text-slate-400 font-semibold">{st.user.email}</div>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 text-center border-l border-slate-100">
+                          {renderStatus(st.teachFree)}
+                        </td>
+                        <td className="px-6 py-4 text-center border-l border-slate-100">
+                          {renderStatus(st.teachAction)}
+                        </td>
+                        <td className="px-6 py-4 text-center border-l border-slate-100">
+                          <Link
+                            href={`/teacher/students/${st.user?.id || 'unknown'}`}
+                            onClick={playClickSound}
+                            className="inline-flex items-center gap-1 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-xs rounded-xl border border-indigo-200 transition-colors"
+                          >
+                            <Eye className="w-3.5 h-3.5" /> Xem
+                          </Link>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
 
       </div>
     </div>

@@ -36,11 +36,31 @@ const FACE_COLORS = [
   { oval: '#a78bfa', eye: '#60a5fa', lips: '#f472b6', nose: '#fbbf24', dot: 'rgba(167,139,250,0.55)' },
 ];
 
+// Helper to pick a random emotion, weighting 'Sad' and 'Neutral' lower so they appear less frequently
+const pickRandomEmotion = (emotions: string[]): string | null => {
+  if (emotions.length === 0) return null;
+  const weights = emotions.map(e => {
+    const lower = e.toLowerCase();
+    if (lower.includes('buồn') || lower.includes('sad')) return 0.2;
+    if (lower.includes('bình thường') || lower.includes('neutral')) return 0.2;
+    return 1.0;
+  });
+  const totalWeight = weights.reduce((acc, w) => acc + w, 0);
+  let random = Math.random() * totalWeight;
+  for (let i = 0; i < emotions.length; i++) {
+    random -= weights[i];
+    if (random <= 0) return emotions[i];
+  }
+  return emotions[emotions.length - 1];
+};
+
 export default function FaceChallenge() {
   const [facesCount, setFacesCount] = useState<number>(0);
   const [activeFilter, setActiveFilter] = useState<FaceFilter>('sunglasses');
   const [smileProgress, setSmileProgress] = useState(0); // 0 to 100
   const [isSmilingDetected, setIsSmilingDetected] = useState(false);
+  const [targetEmotion, setTargetEmotion] = useState<string | null>(null);
+  const [availableEmotions, setAvailableEmotions] = useState<string[]>([]);
   
   // Photo capture state
   const [photoCountdown, setPhotoCountdown] = useState<number | null>(null);
@@ -85,6 +105,9 @@ export default function FaceChallenge() {
           if (loadedSamples.length > 0) {
             trainerRef.current = new TfTrainer();
             await trainerRef.current.train(loadedSamples);
+            const classes = Array.from(new Set(loadedSamples.map(s => s.label))).sort();
+            setAvailableEmotions(classes);
+            setTargetEmotion(pickRandomEmotion(classes));
           }
         }
       } catch (err) {
@@ -184,19 +207,42 @@ export default function FaceChallenge() {
                 if (faceKps && faceKps.length >= 468) {
                   const features = normalizeFaceFeatures(faceKps);
                   const pred = trainerRef.current.predictSync(features);
-                  // In teach-face, 'class_1' is usually mapped to 'Vui vẻ 😀'
-                  // We check if the highest confidence class matches a "smile" class taught by teacher
-                  // For simplicity, let's use the confidence of class_1 (if it exists) as progress
-                  if (pred && pred.confidences && typeof pred.confidences['class_1'] === 'number') {
-                    const confidenceVal = pred.confidences['class_1'] * 100;
-                    faceSmile.progress = confidenceVal;
-                    faceSmile.isSmiling = confidenceVal > 80;
-                  } else if (pred && pred.label === 'class_1') {
-                     faceSmile.isSmiling = true;
-                     faceSmile.progress = 100;
-                  } else if (pred && pred.label !== 'class_1') {
-                     faceSmile.isSmiling = false;
-                     faceSmile.progress = 0;
+                  if (targetEmotion) {
+                    let emotionConfidence = 0;
+                    if (pred && pred.confidences && typeof pred.confidences[targetEmotion] === 'number') {
+                      emotionConfidence = Math.round(pred.confidences[targetEmotion] * 100);
+                      // Áp dụng bộ tăng lực (boost) 25% cho TẤT CẢ biểu cảm vì điểm Softmax hiếm khi đạt 100% tuyệt đối
+                      emotionConfidence = Math.min(100, Math.round(emotionConfidence * 1.25));
+                    } else if (pred && pred.label === targetEmotion) {
+                      emotionConfidence = 100;
+                    }
+                    
+                    faceSmile.progress = emotionConfidence;
+                    faceSmile.isSmiling = emotionConfidence >= 80;
+                  } else {
+                    // Check if the predicted label matches 'class_1' or 'Vui vẻ'
+                    const isHappyLabel = (l: string) => l === 'class_1' || l.includes('Vui vẻ') || l.includes('Happy');
+                    
+                    let happyConfidence = 0;
+                    if (pred && pred.confidences) {
+                      for (const [key, val] of Object.entries(pred.confidences)) {
+                        if (isHappyLabel(key)) {
+                          happyConfidence = Math.min(100, Math.round((val as number) * 100 * 1.25));
+                          break;
+                        }
+                      }
+                    }
+
+                    if (happyConfidence > 0) {
+                      faceSmile.progress = happyConfidence;
+                      faceSmile.isSmiling = happyConfidence >= 80;
+                    } else if (pred && isHappyLabel(pred.label)) {
+                       faceSmile.isSmiling = true;
+                       faceSmile.progress = 100;
+                    } else if (pred && !isHappyLabel(pred.label)) {
+                       faceSmile.isSmiling = false;
+                       faceSmile.progress = 0;
+                    }
                   }
                 }
               }
@@ -226,7 +272,7 @@ export default function FaceChallenge() {
 
     drawFrame();
     return () => cancelAnimationFrame(rafId);
-  }, [modelStatus, activeFilter, videoRef, canvasRef, allFacesRef]);
+  }, [modelStatus, activeFilter, videoRef, canvasRef, allFacesRef, targetEmotion]);
 
   const triggerFlash = useCallback(() => {
     setFlashActive(true);
@@ -268,8 +314,12 @@ export default function FaceChallenge() {
 
     setTimeout(() => {
       setFlashActive(false);
+      if (availableEmotions.length > 0) {
+        const nextEmotion = pickRandomEmotion(availableEmotions);
+        if (nextEmotion) setTargetEmotion(nextEmotion);
+      }
     }, 300);
-  }, [activeFilter, videoRef, allFacesRef, score]);
+  }, [activeFilter, videoRef, allFacesRef, score, availableEmotions]);
 
   // Handle Photo taking countdown when smiling
   useEffect(() => {
@@ -280,8 +330,8 @@ export default function FaceChallenge() {
       timer = setTimeout(() => setPhotoCountdown(3), 0);
     }
 
-    if ((!isSmilingDetected || smileProgress < 100) && photoCountdown !== null) {
-      timer = setTimeout(() => setPhotoCountdown(null), 0);
+    if (!isSmilingDetected && photoCountdown !== null) {
+      timer = setTimeout(() => setPhotoCountdown(null), 800);
     }
     return () => {
       if (timer) clearTimeout(timer);
@@ -301,7 +351,7 @@ export default function FaceChallenge() {
     const timer = setTimeout(() => {
       // Countdown reached 0: capture only if the latest camera frame is still smiling.
       setPhotoCountdown(null);
-      if (smileMetricsRef.current.isSmiling && smileMetricsRef.current.progress >= 100 && !capturedPhotoUrl) {
+      if (!capturedPhotoUrl) {
         triggerFlash();
       }
     }, 0);
@@ -389,7 +439,7 @@ export default function FaceChallenge() {
             <div className="bg-emerald-50 rounded-2xl p-4 border border-emerald-100 mt-6">
               <h4 className="font-bold text-emerald-800 mb-1 flex items-center gap-1">
                 <Smile className="w-5 h-5" />
-                Cười lên để chụp ảnh:
+                {targetEmotion ? `Hãy làm mặt: ${targetEmotion}` : 'Cười lên để chụp ảnh:'}
               </h4>
               <div className="w-full bg-gray-200 rounded-full h-4 overflow-hidden border border-gray-300 mt-2">
                 <div
@@ -405,10 +455,12 @@ export default function FaceChallenge() {
           <div className="md:col-span-2 bg-white rounded-3xl p-6 border-4 border-emerald-400 shadow-xl flex flex-col items-center relative">
             
             {/* Shutter Countdown overlay */}
-            {photoCountdown !== null && smileProgress >= 100 && (
+            {photoCountdown !== null && isSmilingDetected && (
               <div className="absolute inset-0 bg-black/50 backdrop-blur-sm flex flex-col items-center justify-center z-30 rounded-3xl">
                 <span className="text-9xl font-black text-white animate-bounce">{photoCountdown}</span>
-                <span className="text-2xl font-black text-yellow-300 mt-4">CHUẨN BỊ... CƯỜI LÊN ĐI! 📷</span>
+                <span className="text-2xl font-black text-yellow-300 mt-4">
+                  {targetEmotion ? 'GIỮ NGUYÊN KHUÔN MẶT ĐÓ! 📷' : 'CHUẨN BỊ... CƯỜI LÊN ĐI! 📷'}
+                </span>
               </div>
             )}
 

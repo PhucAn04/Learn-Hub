@@ -98,8 +98,8 @@ export function getSmileMetricsFromFaceMesh(kps: FaceKeypoint[]): SmileMetrics {
   const mouthCornerRatio = distance(leftMouth, rightMouth) / faceWidth;
   const lipOpenRatio = distance(topLip, bottomLip) / faceWidth;
 
-  const progress = Math.min(100, Math.max(0, Math.round(((mouthCornerRatio - 0.28) / 0.14) * 100)));
-  const isSmiling = progress >= 100 && lipOpenRatio < 0.16;
+  const progress = Math.min(100, Math.max(0, Math.round(((mouthCornerRatio - 0.30) / 0.08) * 100)));
+  const isSmiling = progress >= 90;
 
   return {
     progress,

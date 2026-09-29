@@ -14,6 +14,15 @@ const challengeNames: Record<string, string> = {
   'teach-gestures': 'Cử chỉ',
   'teach-free': 'Nhãn Tự do',
   'teach-action': 'Hành động',
+  'teach-body': 'Thể dục',
+};
+
+const formatChallengeName = (type: string) => {
+  if (type.startsWith('teach-body-')) {
+    const level = type.split('-').pop();
+    return `Thể dục ${level}`;
+  }
+  return challengeNames[type] || type;
 };
 
 export default function TeacherTemplatesPage() {
@@ -61,7 +70,7 @@ export default function TeacherTemplatesPage() {
       {/* Toolbar */}
       <div className="flex flex-col sm:flex-row gap-4 justify-between items-center bg-white p-4 rounded-2xl shadow-sm border border-gray-100">
         <div className="flex gap-2 w-full sm:w-auto overflow-x-auto custom-scrollbar pb-2 sm:pb-0">
-          {['all', 'teach', 'teach-two-hands', 'teach-face', 'teach-gestures', 'teach-free', 'teach-action'].map((type) => (
+          {['all', 'teach', 'teach-two-hands', 'teach-face', 'teach-gestures', 'teach-free', 'teach-action', 'teach-body'].map((type) => (
             <button
               key={type}
               onClick={() => setFilter(type)}
@@ -71,7 +80,7 @@ export default function TeacherTemplatesPage() {
                   : 'bg-gray-50 text-gray-500 hover:bg-gray-100'
               }`}
             >
-              {challengeNames[type] || type}
+              {formatChallengeName(type)}
             </button>
           ))}
         </div>
@@ -122,7 +131,7 @@ export default function TeacherTemplatesPage() {
             <div key={template.id} className="bg-white rounded-3xl p-5 border-2 border-gray-100 shadow-sm hover:shadow-md hover:border-indigo-300 transition-all group flex flex-col">
               <div className="flex justify-between items-start mb-4">
                 <span className="px-3 py-1 bg-indigo-50 text-indigo-700 rounded-lg text-xs font-black uppercase tracking-wider">
-                  {challengeNames[template.challengeType] || template.challengeType}
+                  {formatChallengeName(template.challengeType)}
                 </span>
                 <span className="px-3 py-1 bg-green-50 text-green-700 rounded-lg text-xs font-black uppercase tracking-wider flex items-center gap-1">
                   <Users className="w-3 h-3" /> Public
@@ -130,7 +139,7 @@ export default function TeacherTemplatesPage() {
               </div>
               
               <h3 className="text-lg font-black text-gray-800 mb-2">
-                Bộ mẫu: {challengeNames[template.challengeType] || template.challengeType}
+                Bộ mẫu: {formatChallengeName(template.challengeType)}
               </h3>
               
               <div className="flex-1 space-y-3 mb-6">

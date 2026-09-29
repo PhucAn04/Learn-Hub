@@ -42,6 +42,8 @@ const CHALLENGES = [
   { type: 'teach-two-hands', label: '2 Bàn tay', emoji: '👐' },
   { type: 'teach-face', label: 'Cảm xúc', emoji: '😀' },
   { type: 'teach-gestures', label: 'Cử chỉ', emoji: '🤟' },
+  { type: 'teach-free', label: 'Nhãn Tự do', emoji: '🌟' },
+  { type: 'teach-action', label: 'Hành động', emoji: '🎬' },
   { type: 'teach-body-1', label: 'Vươn Thở', emoji: '🧘' },
   { type: 'teach-body-2', label: 'Tay', emoji: '💪' },
   { type: 'teach-body-3', label: 'Lườn', emoji: '🔄' },

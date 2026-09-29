@@ -25,22 +25,28 @@ interface StudentProgress {
   teachGestures: { completed: boolean; bestScore: number };
   teachTwoHands: { completed: boolean; bestScore: number };
   teachFree: { completed: boolean; bestScore: number };
+  teachBody: { completed: boolean; bestScore: number };
 }
 
 export default function TeacherDashboard() {
   const { data, loading, refetch: fetchDashboardData } = usePageData(async () => {
     const userProfile = await api.getProfile().catch(() => null);
 
-    // Fetch all four challenges
-    const [teachRes, faceRes, gesturesRes, twoHandsRes, freeRes] = await Promise.all([
+    // Fetch all challenges
+    const [teachRes, faceRes, gesturesRes, twoHandsRes, freeRes, body1, body2, body3, body4, body5] = await Promise.all([
       api.getDatasetsByChallenge('teach').catch(() => [] as DatasetRecord[]),
       api.getDatasetsByChallenge('teach-face').catch(() => [] as DatasetRecord[]),
       api.getDatasetsByChallenge('teach-gestures').catch(() => [] as DatasetRecord[]),
       api.getDatasetsByChallenge('teach-two-hands').catch(() => [] as DatasetRecord[]),
-      api.getDatasetsByChallenge('teach-free').catch(() => [] as DatasetRecord[])
+      api.getDatasetsByChallenge('teach-free').catch(() => [] as DatasetRecord[]),
+      api.getDatasetsByChallenge('teach-body-1').catch(() => [] as DatasetRecord[]),
+      api.getDatasetsByChallenge('teach-body-2').catch(() => [] as DatasetRecord[]),
+      api.getDatasetsByChallenge('teach-body-3').catch(() => [] as DatasetRecord[]),
+      api.getDatasetsByChallenge('teach-body-4').catch(() => [] as DatasetRecord[]),
+      api.getDatasetsByChallenge('teach-body-5').catch(() => [] as DatasetRecord[])
     ]);
 
-    const allDatasets = [...teachRes, ...faceRes, ...gesturesRes, ...twoHandsRes, ...freeRes];
+    const allDatasets = [...teachRes, ...faceRes, ...gesturesRes, ...twoHandsRes, ...freeRes, ...body1, ...body2, ...body3, ...body4, ...body5];
     const studentMap = new Map<string, StudentProgress>();
     
     let sumAccuracy = 0;
@@ -56,6 +62,7 @@ export default function TeacherDashboard() {
           teachGestures: { completed: false, bestScore: 0 },
           teachTwoHands: { completed: false, bestScore: 0 },
           teachFree: { completed: false, bestScore: 0 },
+          teachBody: { completed: false, bestScore: 0 },
         });
       }
       
@@ -82,13 +89,16 @@ export default function TeacherDashboard() {
       } else if (ds.challengeType === 'teach-free') {
         st.teachFree.completed = true;
         if (score > st.teachFree.bestScore) st.teachFree.bestScore = score;
+      } else if (ds.challengeType.startsWith('teach-body-')) {
+        st.teachBody.completed = true;
+        if (score > st.teachBody.bestScore) st.teachBody.bestScore = score;
       }
     });
 
     // Sort students by average score descending
     const sortedStudents = Array.from(studentMap.values()).sort((a, b) => {
-      const avgA = (a.teach.bestScore + a.teachFace.bestScore + a.teachGestures.bestScore + a.teachTwoHands.bestScore + a.teachFree.bestScore) / 5;
-      const avgB = (b.teach.bestScore + b.teachFace.bestScore + b.teachGestures.bestScore + b.teachTwoHands.bestScore + b.teachFree.bestScore) / 5;
+      const avgA = (a.teach.bestScore + a.teachFace.bestScore + a.teachGestures.bestScore + a.teachTwoHands.bestScore + a.teachBody.bestScore) / 5;
+      const avgB = (b.teach.bestScore + b.teachFace.bestScore + b.teachGestures.bestScore + b.teachTwoHands.bestScore + b.teachBody.bestScore) / 5;
       return avgB - avgA;
     });
 
@@ -316,6 +326,7 @@ export default function TeacherDashboard() {
                   <th className="px-6 py-4 text-center border-l border-slate-100">👐 2 Bàn tay</th>
                   <th className="px-6 py-4 text-center border-l border-slate-100">😀 Cảm xúc</th>
                   <th className="px-6 py-4 text-center border-l border-slate-100">🤟 Cử chỉ</th>
+                  <th className="px-6 py-4 text-center border-l border-slate-100">🏃 Thể dục</th>
                   <th className="px-6 py-4 text-center border-l border-slate-100 bg-indigo-50/30 text-indigo-600">Trung bình</th>
                   <th className="px-6 py-4 text-center border-l border-slate-100">Chi tiết</th>
                 </tr>
@@ -323,14 +334,14 @@ export default function TeacherDashboard() {
               <tbody className="divide-y divide-slate-100">
                 {loading ? (
                   <tr>
-                    <td colSpan={7} className="px-6 py-12 text-center">
+                    <td colSpan={8} className="px-6 py-12 text-center">
                       <div className="inline-block animate-spin w-6 h-6 border-4 border-indigo-600 border-t-transparent rounded-full mb-2"></div>
                       <p className="text-sm font-semibold text-slate-500">Đang tổng hợp dữ liệu...</p>
                     </td>
                   </tr>
                 ) : students.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="px-6 py-12 text-center text-slate-500 font-semibold italic">
+                    <td colSpan={8} className="px-6 py-12 text-center text-slate-500 font-semibold italic">
                       Chưa có học sinh nào nộp bài.
                     </td>
                   </tr>
@@ -342,8 +353,9 @@ export default function TeacherDashboard() {
                     if (st.teachTwoHands.completed) { totalScore += st.teachTwoHands.bestScore; completedTasks++; }
                     if (st.teachFace.completed) { totalScore += st.teachFace.bestScore; completedTasks++; }
                     if (st.teachGestures.completed) { totalScore += st.teachGestures.bestScore; completedTasks++; }
+                    if (st.teachBody.completed) { totalScore += st.teachBody.bestScore; completedTasks++; }
                     
-                    const avgScore = completedTasks > 0 ? Math.round(totalScore / 4) : 0;
+                    const avgScore = completedTasks > 0 ? Math.round(totalScore / 5) : 0;
 
                     return (
                       <tr key={st.user.id} className="hover:bg-slate-50/80 transition-colors">
@@ -367,6 +379,9 @@ export default function TeacherDashboard() {
                         </td>
                         <td className="px-6 py-4 text-center border-l border-slate-100">
                           {renderStatus(st.teachGestures)}
+                        </td>
+                        <td className="px-6 py-4 text-center border-l border-slate-100">
+                          {renderStatus(st.teachBody)}
                         </td>
                         <td className="px-6 py-4 text-center border-l border-slate-100 bg-indigo-50/20">
                           {completedTasks === 0 ? (

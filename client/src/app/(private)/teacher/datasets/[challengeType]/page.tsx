@@ -16,6 +16,11 @@ const CHALLENGE_LABELS: Record<string, string> = {
   'teach-two-hands': 'Dạy AI nhận diện 2 bàn tay 👐',
   'teach-free': 'Phân loại ảnh tạo nhãn tự do 🧪',
   'teach-action': 'Gán nhãn bằng hành động 🎭',
+  'teach-body-1': 'Thể dục: Vươn Thở 🧘',
+  'teach-body-2': 'Thể dục: Tay 💪',
+  'teach-body-3': 'Thể dục: Lườn 🔄',
+  'teach-body-4': 'Thể dục: Bụng 🏋️',
+  'teach-body-5': 'Thể dục: Chân 🦵',
 };
 
 interface DatasetRecord {

@@ -70,7 +70,7 @@ export default function TeacherTemplatesPage() {
       {/* Toolbar */}
       <div className="flex flex-col sm:flex-row gap-4 justify-between items-center bg-white p-4 rounded-2xl shadow-sm border border-gray-100">
         <div className="flex gap-2 w-full sm:w-auto overflow-x-auto custom-scrollbar pb-2 sm:pb-0">
-          {['all', 'teach', 'teach-two-hands', 'teach-face', 'teach-gestures', 'teach-free', 'teach-action', 'teach-body'].map((type) => (
+          {['all', 'teach', 'teach-two-hands', 'teach-face', 'teach-gestures', 'teach-body', 'teach-free', 'teach-action'].map((type) => (
             <button
               key={type}
               onClick={() => setFilter(type)}

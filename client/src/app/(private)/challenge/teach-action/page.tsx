@@ -28,7 +28,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
 import { playSuccessSound, speakEnglish, playClickSound } from '@/lib/audio';
-import { StoredSample, classifyKNN } from '@/lib/knn-classifier';
+import { StoredSample, classifyKNN, classifyKNNWithVotes } from '@/lib/knn-classifier';
 import { DatasetResponse, ModelResponse } from '@/types/models';
 import { uploadSamplesToCloudinary, isCloudinaryConfigured } from '@/lib/cloudinary';
 import { useModelEvaluation } from '@/hooks/useModelEvaluation';
@@ -42,6 +42,8 @@ import { useMobilenet } from '@/hooks/useMobilenet';
 import { TfTrainer } from '@/lib/tf-trainer';
 import { assessQuality } from '@/lib/image-quality';
 import { checkMisclassification, REFERENCE_CENTROIDS, cosineSimilarity } from '@/lib/reference-embeddings';
+import KnnScatterPlot from '@/components/journey/KnnScatterPlot';
+import AIConfidenceEnergyBars from '@/components/journey/AIConfidenceEnergyBars';
 import {
   matchLabelToDataset,
   cleanClassLabel,
@@ -111,6 +113,13 @@ export default function StudentTeachActionPage() {
   const idleStreakRef = useRef(0);
   const lastActiveTimeRef = useRef(0);
   const isDetectedRef = useRef(false);
+
+  // ── KNN Scatter & Energy Bars ───────────────────────────
+  const [kNearestIds, setKNearestIds] = useState<string[]>([]);
+  const [voteCounts, setVoteCounts] = useState<Record<string, number>>({});
+  const [kValue] = useState(3);
+  const [isAnomaly, setIsAnomaly] = useState(false);
+  const [anomalyMessage, setAnomalyMessage] = useState<string | undefined>(undefined);
 
   // ── Hold-to-Record ───────────────────────────────────
   const [capturingType, setCapturingType] = useState<'gesture' | 'object' | null>(null);
@@ -687,6 +696,16 @@ export default function StudentTeachActionPage() {
               setConfidence(result.confidence);
               setPredictedLabel(result.label);
               if (result.confidences) setConfidences(result.confidences);
+
+              // KNN classification for scatter plot visualization
+              const validSamples = samples.filter(s => s.isValid !== false && !s.isQuestionable);
+              if (validSamples.length >= 2) {
+                const knnResult = classifyKNNWithVotes(features, validSamples, kValue);
+                setKNearestIds(knnResult.kNearestIds);
+                setVoteCounts(knnResult.voteCounts);
+              }
+              setIsAnomaly(false);
+              setAnomalyMessage(undefined);
             }
           } else {
             idleStreakRef.current++;
@@ -701,6 +720,11 @@ export default function StudentTeachActionPage() {
                 const zeroConf: Record<string, number> = {};
                 classes.forEach((c) => { zeroConf[c.label] = 0; });
                 setConfidences(zeroConf);
+
+                setKNearestIds([]);
+                setVoteCounts({});
+                setIsAnomaly(true);
+                setAnomalyMessage('⚠️ Chưa phát hiện cử chỉ trong Thư viện ảnh!');
               }
 
               const idleMs = Date.now() - lastActiveTimeRef.current;
@@ -723,7 +747,7 @@ export default function StudentTeachActionPage() {
 
     predict();
     return () => cancelAnimationFrame(rafId);
-  }, [predictionActive, isTrained, modelStatus, samples, classes, extractFeaturesFromVideo, videoRef, showToast]);
+  }, [predictionActive, isTrained, modelStatus, samples, classes, extractFeaturesFromVideo, videoRef, showToast, kValue]);
 
   // ── Static Image Upload Prediction (4-Tier Bulletproof OOD) ──
   const handlePredictUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1024,10 +1048,10 @@ export default function StudentTeachActionPage() {
 
         {/* ── MAIN CONTENT ── */}
         {!showSubmitModal && !showReportCard && (
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
 
             {/* ══ LEFT: Label Management & Data Collection ══ */}
-            <div className="bg-white rounded-3xl p-6 shadow-xl border-4 border-teal-200 flex flex-col">
+            <div className="bg-white rounded-3xl p-6 shadow-xl border-4 border-teal-200 flex flex-col lg:col-span-3">
 
               {/* MobileNet Status */}
               <div className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs font-bold mb-4 ${
@@ -1425,7 +1449,7 @@ export default function StudentTeachActionPage() {
             </div>
 
             {/* ══ CENTER + RIGHT: Camera & Real-time / Static Prediction ══ */}
-            <div className="lg:col-span-2 flex flex-col gap-6">
+            <div className="lg:col-span-5 flex flex-col gap-6">
 
               {/* Camera View */}
               <div className="bg-white rounded-3xl overflow-hidden border-4 border-teal-200 shadow-lg">
@@ -1477,6 +1501,7 @@ export default function StudentTeachActionPage() {
                         <div className="text-sm opacity-80 mt-1">Độ tự tin: {confidence}%</div>
                       </div>
 
+                      {/* TODO: Remove after KNN+Energy integration confirmed */}
                       {isDetectedInLibrary && confidence >= 50 && Object.keys(confidences).length > 0 && (
                         <div className="space-y-1.5 mt-4">
                           {classes.map((c) => {
@@ -1553,6 +1578,38 @@ export default function StudentTeachActionPage() {
                 </div>
               )}
 
+            </div>
+
+            {/* ── RIGHT PANEL: KNN Scatter Plot + Energy Bars ── */}
+            <div className="lg:col-span-4 flex flex-col gap-4">
+              {/* KNN Scatter Plot */}
+              <div className="bg-white rounded-3xl p-3 border-4 border-teal-200 shadow-lg">
+                <h4 className="text-xs font-black text-teal-700 uppercase tracking-wider mb-2 text-center">📊 Biểu đồ phân loại KNN</h4>
+                <div className="relative aspect-square w-full rounded-2xl overflow-hidden">
+                  <KnnScatterPlot
+                    samples={samples.filter(s => s.isValid !== false && !s.isQuestionable)}
+                    classes={classes}
+                    kValue={kValue}
+                    threshold={Math.ceil(kValue * 0.6)}
+                    kNearestIds={kNearestIds}
+                    predictedLabel={predictedLabel !== 'Chưa nhận diện... 🤔' && predictedLabel !== 'Đang chờ hành động / đối tượng... 💤' ? predictedLabel : undefined}
+                    voteCounts={voteCounts}
+                  />
+                </div>
+              </div>
+
+              {/* AI Energy Bars */}
+              {isTrained && (
+                <AIConfidenceEnergyBars
+                  classes={classes}
+                  confidences={confidences}
+                  isAnomaly={isAnomaly}
+                  anomalyMessage={anomalyMessage}
+                  classCounts={Object.fromEntries(Object.entries(classCounts).map(([k, v]) => [k, v.total]))}
+                  isPhaseB={false}
+                  teacherHintImages={[]}
+                />
+              )}
             </div>
           </div>
         )}

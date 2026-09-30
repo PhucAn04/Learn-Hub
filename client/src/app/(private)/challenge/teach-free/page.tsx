@@ -20,13 +20,15 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
 import { playSuccessSound, speakEnglish, playClickSound } from '@/lib/audio';
-import { StoredSample, classifyKNN } from '@/lib/knn-classifier';
+import { StoredSample, classifyKNN, classifyKNNWithVotes } from '@/lib/knn-classifier';
 import { DatasetResponse, ModelResponse } from '@/types/models';
 import { uploadSamplesToCloudinary, isCloudinaryConfigured } from '@/lib/cloudinary';
 import { useModelEvaluation } from '@/hooks/useModelEvaluation';
 import { getStarRatingInfo } from '@/lib/scoring';
 import ReportCard from '@/components/journey/ReportCard';
 import CameraView from '@/components/CameraView';
+import KnnScatterPlot from '@/components/journey/KnnScatterPlot';
+import AIConfidenceEnergyBars from '@/components/journey/AIConfidenceEnergyBars';
 import SampleGallery from '@/components/SampleGallery';
 import ImageAIFeedbackModal from '@/components/journey/ImageAIFeedbackModal';
 import {
@@ -58,6 +60,7 @@ const TARGET_SAMPLES_PER_CLASS = 10;
 const DEFAULT_INITIAL_CLASSES = [
   { id: 'class_free_1', label: 'Chó', emoji: '🐶' },
   { id: 'class_free_2', label: 'Mèo', emoji: '🐱' },
+  { id: 'class_free_3', label: 'Bọ Cánh Cứng', emoji: '🪲' },
 ];
 
 // ── Helpers ────────────────────────────────────────────
@@ -78,7 +81,7 @@ export default function StudentTeachFreePage() {
   const [activeClass, setActiveClass] = useState<string>('class_free_1');
   const [newLabelInput, setNewLabelInput] = useState('');
   const [newEmojiInput, setNewEmojiInput] = useState('✨');
-  const classIdCounterRef = useRef(2);
+  const classIdCounterRef = useRef(3);
 
   // ── Template từ Thầy/Cô (Gợi ý tùy chọn, không chặn) ─
   const [teacherTemplate, setTeacherTemplate] = useState<DatasetResponse | null>(null);
@@ -104,6 +107,14 @@ export default function StudentTeachFreePage() {
   const [confidences, setConfidences] = useState<Record<string, number>>({});
   const [predictionActive, setPredictionActive] = useState(false);
   const [isDetectedInLibrary, setIsDetectedInLibrary] = useState(false);
+
+  // ── KNN Scatter & Energy Bars ───────────────────────────
+  const [kNearestIds, setKNearestIds] = useState<string[]>([]);
+  const [voteCounts, setVoteCounts] = useState<Record<string, number>>({});
+  const [kValue] = useState(3);
+  const [isAnomaly, setIsAnomaly] = useState(false);
+  const [anomalyMessage, setAnomalyMessage] = useState<string | undefined>(undefined);
+
   const lastActiveTimeRef = useRef<number>(0);
   const activeStreakRef = useRef<number>(0);
   const idleStreakRef = useRef<number>(0);
@@ -584,6 +595,16 @@ export default function StudentTeachFreePage() {
               if (result.confidences) {
                 setConfidences(result.confidences);
               }
+
+              // KNN classification for scatter plot visualization
+              const validSamplesForKnn = samples.filter(s => s.isValid !== false && !s.isQuestionable);
+              if (validSamplesForKnn.length >= 2) {
+                const knnResult = classifyKNNWithVotes(features, validSamplesForKnn, kValue);
+                setKNearestIds(knnResult.kNearestIds);
+                setVoteCounts(knnResult.voteCounts);
+              }
+              setIsAnomaly(false);
+              setAnomalyMessage(undefined);
             }
           } else {
             idleStreakRef.current++;
@@ -598,6 +619,11 @@ export default function StudentTeachFreePage() {
                 const zeroConf: Record<string, number> = {};
                 classes.forEach((c) => { zeroConf[c.label] = 0; });
                 setConfidences(zeroConf);
+
+                setKNearestIds([]);
+                setVoteCounts({});
+                setIsAnomaly(true);
+                setAnomalyMessage('⚠️ Đối tượng này chưa có trong thư viện ảnh!');
               }
 
               // Tự động tắt nhận diện sau đúng 10s không có đối tượng trong Thư viện ảnh
@@ -612,6 +638,11 @@ export default function StudentTeachFreePage() {
               }
             }
           }
+        } else {
+          setKNearestIds([]);
+          setVoteCounts({});
+          setIsAnomaly(false);
+          setAnomalyMessage(undefined);
         }
       } catch {
         // skip frame
@@ -621,7 +652,7 @@ export default function StudentTeachFreePage() {
 
     predict();
     return () => cancelAnimationFrame(rafId);
-  }, [predictionActive, isTrained, modelStatus, samples, classes, extractFeaturesFromVideo, videoRef, showToast]);
+  }, [predictionActive, isTrained, modelStatus, samples, classes, extractFeaturesFromVideo, videoRef, showToast, kValue]);
 
   // ── Upload ảnh để dự đoán (Static Test với 4-Tier Bulletproof OOD) ──
   const handlePredictUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1020,10 +1051,10 @@ export default function StudentTeachFreePage() {
 
         {/* ── MAIN CONTENT ── */}
         {!showSubmitModal && !showReportCard && (
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
 
             {/* ══ LEFT: Class Management & Sample Gallery ══ */}
-            <div className="bg-white rounded-3xl p-6 shadow-xl border-4 border-teal-200 flex flex-col">
+            <div className="lg:col-span-3 bg-white rounded-3xl p-6 shadow-xl border-4 border-teal-200 flex flex-col">
 
               {/* MobileNet Status */}
               <div className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs font-bold mb-4 ${
@@ -1084,26 +1115,26 @@ export default function StudentTeachFreePage() {
 
               {/* Add New Label Input (Học sinh tự tạo nhãn tùy ý) */}
               <div className="mb-4 space-y-2">
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2">
                   <input
                     type="text"
                     value={newLabelInput}
                     onChange={(e) => setNewLabelInput(e.target.value)}
                     onKeyDown={(e) => e.key === 'Enter' && addClass()}
-                    placeholder="Nhập tên nhãn (VD: Chó, Mèo...)"
-                    className="flex-1 bg-slate-50 border-2 border-slate-200 rounded-xl px-3 py-2.5 text-sm font-bold text-slate-700 focus:outline-none focus:border-teal-500 transition-colors"
+                    placeholder="Nhập tên nhãn..."
+                    className="flex-1 min-w-0 bg-slate-50 border-2 border-slate-200 rounded-xl px-3 py-2.5 text-sm font-bold text-slate-700 focus:outline-none focus:border-teal-500 transition-colors"
                   />
                   <input
                     type="text"
                     value={newEmojiInput}
                     onChange={(e) => setNewEmojiInput(e.target.value)}
-                    className="w-14 bg-slate-50 border-2 border-slate-200 rounded-xl px-2 py-2.5 text-center text-lg focus:outline-none focus:border-teal-500 transition-colors"
+                    className="w-12 shrink-0 bg-slate-50 border-2 border-slate-200 rounded-xl px-2 py-2.5 text-center text-lg focus:outline-none focus:border-teal-500 transition-colors"
                     placeholder="🐶"
                   />
                   <button
                     onClick={addClass}
                     disabled={!newLabelInput.trim() || classes.length >= MAX_CLASSES}
-                    className="bg-teal-600 hover:bg-teal-700 disabled:bg-slate-300 text-white font-bold py-2.5 px-3 rounded-xl text-sm transition-colors flex items-center gap-1 shadow-sm"
+                    className="shrink-0 bg-teal-600 hover:bg-teal-700 disabled:bg-slate-300 text-white font-bold py-2.5 px-3 rounded-xl text-sm transition-colors flex items-center gap-1 shadow-sm"
                   >
                     <Plus className="w-4 h-4" />
                     Thêm
@@ -1370,7 +1401,7 @@ export default function StudentTeachFreePage() {
             </div>
 
             {/* ══ CENTER + RIGHT: Camera & Real-time / Static Prediction ══ */}
-            <div className="lg:col-span-2 flex flex-col gap-6">
+            <div className="lg:col-span-5 flex flex-col gap-6">
 
               {/* Camera View */}
               <div className="bg-white rounded-3xl overflow-hidden border-4 border-teal-200 shadow-lg">
@@ -1422,6 +1453,7 @@ export default function StudentTeachFreePage() {
                         <div className="text-sm opacity-80 mt-1">Độ tự tin: {confidence}%</div>
                       </div>
 
+                      {/* TODO: Remove after KNN+Energy integration confirmed */}
                       {/* Per-class confidence bars — CHỈ HIỆN KHI PHÁT HIỆN ĐỐI TƯỢNG TRONG THƯ VIỆN */}
                       {isDetectedInLibrary && confidence >= 50 && Object.keys(confidences).length > 0 && (
                         <div className="space-y-1.5 mt-4">
@@ -1520,6 +1552,38 @@ export default function StudentTeachFreePage() {
                 </div>
               )}
 
+            </div>
+
+            {/* ══ RIGHT PANEL: KNN Scatter Plot + Energy Bars ══ */}
+            <div className="lg:col-span-4 flex flex-col gap-4">
+              {/* KNN Scatter Plot */}
+              <div className="bg-white rounded-3xl p-3 border-2 border-teal-200 shadow-lg">
+                <h4 className="text-xs font-black text-teal-600 uppercase tracking-wider mb-2 text-center">📊 Biểu đồ phân loại KNN</h4>
+                <div className="relative aspect-square w-full rounded-2xl overflow-hidden">
+                  <KnnScatterPlot
+                    samples={samples.filter(s => s.isValid !== false && !s.isQuestionable)}
+                    classes={classes}
+                    kValue={kValue}
+                    threshold={Math.ceil(kValue * 0.6)}
+                    kNearestIds={kNearestIds}
+                    predictedLabel={predictedLabel !== 'Chưa nhận diện... 🤔' && predictedLabel !== 'Đang chờ đối tượng... 💤' ? predictedLabel : undefined}
+                    voteCounts={voteCounts}
+                  />
+                </div>
+              </div>
+
+              {/* AI Energy Bars */}
+              {isTrained && (
+                <AIConfidenceEnergyBars
+                  classes={classes}
+                  confidences={confidences}
+                  isAnomaly={isAnomaly}
+                  anomalyMessage={anomalyMessage}
+                  classCounts={classCounts}
+                  isPhaseB={false}
+                  teacherHintImages={[]}
+                />
+              )}
             </div>
           </div>
         )}

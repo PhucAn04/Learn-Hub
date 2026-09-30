@@ -7,7 +7,7 @@ import { playSuccessSound } from '@/lib/audio';
 
 interface UnlockCelebrationProps {
   title: string;
-  emoji: string;
+  emoji?: string;
   onDismiss: () => void;
 }
 

@@ -1,0 +1,4 @@
+- [x] Create `AIFeedbackModal.tsx` component
+- [x] Update `TeachPanel.tsx`: Change button text and integrate `AIFeedbackModal`
+- [x] Update `BodyTeachPanel.tsx`: Change button text and integrate `AIFeedbackModal`
+- [x] Update Student teach pages to fetch and pass `teacherTemplate`

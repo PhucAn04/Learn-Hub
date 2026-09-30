@@ -1,0 +1,14 @@
+- `[x]` 1. Create `/dashboard` and move the current homepage there.
+  - `[x]` Create directory `app/(private)/dashboard`
+  - `[x]` Move `app/(public)/page.tsx` to `app/(private)/dashboard/page.tsx`
+- `[x]` 2. Move `/concepts/page.tsx` to `/page.tsx` and update its ending.
+  - `[x]` Replace `app/(public)/page.tsx` with content of `app/(public)/concepts/page.tsx`
+  - `[x]` Update the Quiz End Screen to show Login/Register buttons instead of the Game link.
+  - `[x]` Delete `app/(public)/concepts/page.tsx`
+- `[x]` 3. Update Navbar
+  - `[x]` Remove "Lớp Học AI" link.
+  - `[x]` Update "Trang Chủ" link to point to `/dashboard` if logged in.
+- `[x]` 4. Update Auth redirects
+  - `[x]` Update `login/page.tsx`
+  - `[x]` Update `register/page.tsx`
+- `[x]` 5. Verify and review

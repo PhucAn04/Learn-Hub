@@ -1,5 +1,11 @@
 import { Controller, Post, Get, Body, Param, UseGuards } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiBody, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiBody,
+  ApiResponse,
+  ApiBearerAuth,
+} from '@nestjs/swagger';
 import { ProgressService } from './progress.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
@@ -18,7 +24,11 @@ export class ProgressController {
   @ApiBody({ type: SaveProgressDto })
   @ApiResponse({ status: 201, description: 'Lưu điểm thành công.' })
   async saveProgress(@CurrentUser() user: User, @Body() dto: SaveProgressDto) {
-    return this.progressService.saveProgress(user.id, dto.challengeType, dto.score);
+    return this.progressService.saveProgress(
+      user.id,
+      dto.challengeType,
+      dto.score,
+    );
   }
 
   @Get('stats')

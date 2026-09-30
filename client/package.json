@@ -6,6 +6,7 @@
     "dev": "next dev",
     "dev:clean": "npx rimraf .next && next dev",
     "clean": "npx rimraf .next",
+    "fix-routes": "node scripts/touch-routes.js",
     "build": "next build",
     "start": "next start",
     "lint": "eslint"

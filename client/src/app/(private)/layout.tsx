@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
 import Navbar from '@/components/Navbar';
+import Footer from '@/components/Footer';
 
 export default function PrivateLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -35,7 +36,8 @@ export default function PrivateLayout({ children }: { children: React.ReactNode 
   return (
     <div className="flex flex-col min-h-screen">
       <Navbar />
-      <main className="flex-1 w-full relative">{children}</main>
+      <main className="flex-1 w-full relative flex flex-col">{children}</main>
+      <Footer />
     </div>
   );
 }

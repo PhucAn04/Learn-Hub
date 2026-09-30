@@ -13,13 +13,20 @@ import {
   FACE_NOSE,
   drawPolyline,
   normalizeFaceKeypoints,
+
   getSmileMetricsFromFaceMesh,
   drawFaceStickers,
+  getFaceKeypoints,
+  drawFaceSkeleton
 } from '@/lib/face-drawing';
 import ScoreHeader from '@/components/ScoreHeader';
 import CameraView from '@/components/CameraView';
 import { FaceFilter, SmileMetrics } from '@/types/ml5';
 import { api } from '@/lib/api';
+import { TfTrainer } from '@/lib/tf-trainer';
+import { normalizeFaceFeatures, classifyKNN, StoredSample } from '@/lib/knn-classifier';
+
+import { LeaderboardEntry } from '@/types/models';
 
 // Color palette for multiple faces — each face gets its own color set
 const FACE_COLORS = [
@@ -29,18 +36,38 @@ const FACE_COLORS = [
   { oval: '#a78bfa', eye: '#60a5fa', lips: '#f472b6', nose: '#fbbf24', dot: 'rgba(167,139,250,0.55)' },
 ];
 
+// Helper to pick a random emotion, weighting 'Sad' and 'Neutral' lower so they appear less frequently
+const pickRandomEmotion = (emotions: string[]): string | null => {
+  if (emotions.length === 0) return null;
+  const weights = emotions.map(e => {
+    const lower = e.toLowerCase();
+    if (lower.includes('buồn') || lower.includes('sad')) return 0.2;
+    if (lower.includes('bình thường') || lower.includes('neutral')) return 0.2;
+    return 1.0;
+  });
+  const totalWeight = weights.reduce((acc, w) => acc + w, 0);
+  let random = Math.random() * totalWeight;
+  for (let i = 0; i < emotions.length; i++) {
+    random -= weights[i];
+    if (random <= 0) return emotions[i];
+  }
+  return emotions[emotions.length - 1];
+};
+
 export default function FaceChallenge() {
   const [facesCount, setFacesCount] = useState<number>(0);
   const [activeFilter, setActiveFilter] = useState<FaceFilter>('sunglasses');
   const [smileProgress, setSmileProgress] = useState(0); // 0 to 100
   const [isSmilingDetected, setIsSmilingDetected] = useState(false);
+  const [targetEmotion, setTargetEmotion] = useState<string | null>(null);
+  const [availableEmotions, setAvailableEmotions] = useState<string[]>([]);
   
   // Photo capture state
   const [photoCountdown, setPhotoCountdown] = useState<number | null>(null);
   const [capturedPhotoUrl, setCapturedPhotoUrl] = useState<string | null>(null);
   const [flashActive, setFlashActive] = useState(false);
   const [score, setScore] = useState(0);
-  const [leaderboard, setLeaderboard] = useState<any[]>([]);
+  const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
 
   const smileMetricsRef = useRef<SmileMetrics>({
     isSmiling: false,
@@ -58,7 +85,38 @@ export default function FaceChallenge() {
     maxFaces: 4,
   });
 
+  // Load custom KNN model from user's "teach-face" dataset
+  const trainerRef = useRef<TfTrainer | null>(null);
+  const [isLoadingModel, setIsLoadingModel] = useState(true);
+
   useEffect(() => {
+    const fetchMyModel = async () => {
+      try {
+        const datasets = await api.getMyDatasets('teach-face');
+        if (datasets && datasets.length > 0) {
+          const fileRes = await api.getDatasetFile(datasets[0].id);
+          let loadedSamples: StoredSample[] = [];
+          if (fileRes && fileRes.data && Array.isArray(fileRes.data)) {
+            loadedSamples = fileRes.data;
+          } else if (fileRes && Array.isArray(fileRes.samples)) {
+            loadedSamples = fileRes.samples;
+          }
+          
+          if (loadedSamples.length > 0) {
+            trainerRef.current = new TfTrainer();
+            await trainerRef.current.train(loadedSamples);
+            const classes = Array.from(new Set(loadedSamples.map(s => s.label))).sort();
+            setAvailableEmotions(classes);
+            setTargetEmotion(pickRandomEmotion(classes));
+          }
+        }
+      } catch (err) {
+        console.error('Failed to fetch teach-face model', err);
+      } finally {
+        setIsLoadingModel(false);
+      }
+    };
+    fetchMyModel();
   }, []);
 
   // Fetch leaderboard on mount and score change
@@ -142,6 +200,53 @@ export default function FaceChallenge() {
 
               // Calculate smile metrics for this face
               const faceSmile = getSmileMetricsFromFaceMesh(kps);
+              
+              // If we have a custom AI model, use it to override the heuristics!
+              if (trainerRef.current) {
+                const faceKps = getFaceKeypoints(kpsRaw);
+                if (faceKps && faceKps.length >= 468) {
+                  const features = normalizeFaceFeatures(faceKps);
+                  const pred = trainerRef.current.predictSync(features);
+                  if (targetEmotion) {
+                    let emotionConfidence = 0;
+                    if (pred && pred.confidences && typeof pred.confidences[targetEmotion] === 'number') {
+                      emotionConfidence = Math.round(pred.confidences[targetEmotion] * 100);
+                      // Áp dụng bộ tăng lực (boost) 25% cho TẤT CẢ biểu cảm vì điểm Softmax hiếm khi đạt 100% tuyệt đối
+                      emotionConfidence = Math.min(100, Math.round(emotionConfidence * 1.25));
+                    } else if (pred && pred.label === targetEmotion) {
+                      emotionConfidence = 100;
+                    }
+                    
+                    faceSmile.progress = emotionConfidence;
+                    faceSmile.isSmiling = emotionConfidence >= 80;
+                  } else {
+                    // Check if the predicted label matches 'class_1' or 'Vui vẻ'
+                    const isHappyLabel = (l: string) => l === 'class_1' || l.includes('Vui vẻ') || l.includes('Happy');
+                    
+                    let happyConfidence = 0;
+                    if (pred && pred.confidences) {
+                      for (const [key, val] of Object.entries(pred.confidences)) {
+                        if (isHappyLabel(key)) {
+                          happyConfidence = Math.min(100, Math.round((val as number) * 100 * 1.25));
+                          break;
+                        }
+                      }
+                    }
+
+                    if (happyConfidence > 0) {
+                      faceSmile.progress = happyConfidence;
+                      faceSmile.isSmiling = happyConfidence >= 80;
+                    } else if (pred && isHappyLabel(pred.label)) {
+                       faceSmile.isSmiling = true;
+                       faceSmile.progress = 100;
+                    } else if (pred && !isHappyLabel(pred.label)) {
+                       faceSmile.isSmiling = false;
+                       faceSmile.progress = 0;
+                    }
+                  }
+                }
+              }
+
               if (faceSmile.progress > bestSmile.progress) {
                 bestSmile = faceSmile;
               }
@@ -167,7 +272,7 @@ export default function FaceChallenge() {
 
     drawFrame();
     return () => cancelAnimationFrame(rafId);
-  }, [modelStatus, activeFilter, videoRef, canvasRef, allFacesRef]);
+  }, [modelStatus, activeFilter, videoRef, canvasRef, allFacesRef, targetEmotion]);
 
   const triggerFlash = useCallback(() => {
     setFlashActive(true);
@@ -194,8 +299,10 @@ export default function FaceChallenge() {
 
         // Draw stickers on ALL faces into the captured photo
         for (const kpsRaw of allFacesRef.current) {
-          if (kpsRaw.length >= 30) {
-            const kps = normalizeFaceKeypoints(kpsRaw, videoRef.current!, cv);
+          const faceKps = getFaceKeypoints(kpsRaw);
+          if (faceKps && faceKps.length >= 30) {
+            const kps = normalizeFaceKeypoints(faceKps, videoRef.current!, cv);
+            drawFaceSkeleton(ctx, faceKps, videoRef.current!.videoWidth || 640, videoRef.current!.videoHeight || 480, cv.width, cv.height);
             drawFaceStickers(ctx, kps, [activeFilter]);
           }
         }
@@ -207,8 +314,12 @@ export default function FaceChallenge() {
 
     setTimeout(() => {
       setFlashActive(false);
+      if (availableEmotions.length > 0) {
+        const nextEmotion = pickRandomEmotion(availableEmotions);
+        if (nextEmotion) setTargetEmotion(nextEmotion);
+      }
     }, 300);
-  }, [activeFilter, videoRef, allFacesRef, score]);
+  }, [activeFilter, videoRef, allFacesRef, score, availableEmotions]);
 
   // Handle Photo taking countdown when smiling
   useEffect(() => {
@@ -219,8 +330,8 @@ export default function FaceChallenge() {
       timer = setTimeout(() => setPhotoCountdown(3), 0);
     }
 
-    if ((!isSmilingDetected || smileProgress < 100) && photoCountdown !== null) {
-      timer = setTimeout(() => setPhotoCountdown(null), 0);
+    if (!isSmilingDetected && photoCountdown !== null) {
+      timer = setTimeout(() => setPhotoCountdown(null), 800);
     }
     return () => {
       if (timer) clearTimeout(timer);
@@ -240,7 +351,7 @@ export default function FaceChallenge() {
     const timer = setTimeout(() => {
       // Countdown reached 0: capture only if the latest camera frame is still smiling.
       setPhotoCountdown(null);
-      if (smileMetricsRef.current.isSmiling && smileMetricsRef.current.progress >= 100 && !capturedPhotoUrl) {
+      if (!capturedPhotoUrl) {
         triggerFlash();
       }
     }, 0);
@@ -328,7 +439,7 @@ export default function FaceChallenge() {
             <div className="bg-emerald-50 rounded-2xl p-4 border border-emerald-100 mt-6">
               <h4 className="font-bold text-emerald-800 mb-1 flex items-center gap-1">
                 <Smile className="w-5 h-5" />
-                Cười lên để chụp ảnh:
+                {targetEmotion ? `Hãy làm mặt: ${targetEmotion}` : 'Cười lên để chụp ảnh:'}
               </h4>
               <div className="w-full bg-gray-200 rounded-full h-4 overflow-hidden border border-gray-300 mt-2">
                 <div
@@ -344,10 +455,12 @@ export default function FaceChallenge() {
           <div className="md:col-span-2 bg-white rounded-3xl p-6 border-4 border-emerald-400 shadow-xl flex flex-col items-center relative">
             
             {/* Shutter Countdown overlay */}
-            {photoCountdown !== null && smileProgress >= 100 && (
+            {photoCountdown !== null && isSmilingDetected && (
               <div className="absolute inset-0 bg-black/50 backdrop-blur-sm flex flex-col items-center justify-center z-30 rounded-3xl">
                 <span className="text-9xl font-black text-white animate-bounce">{photoCountdown}</span>
-                <span className="text-2xl font-black text-yellow-300 mt-4">CHUẨN BỊ... CƯỜI LÊN ĐI! 📷</span>
+                <span className="text-2xl font-black text-yellow-300 mt-4">
+                  {targetEmotion ? 'GIỮ NGUYÊN KHUÔN MẶT ĐÓ! 📷' : 'CHUẨN BỊ... CƯỜI LÊN ĐI! 📷'}
+                </span>
               </div>
             )}
 
@@ -355,9 +468,9 @@ export default function FaceChallenge() {
             <CameraView
               videoRef={videoRef}
               canvasRef={canvasRef}
-              modelStatus={modelStatus}
+              modelStatus={isLoadingModel ? 'loading' : modelStatus}
               cameraError={cameraError || ''}
-              loadingText="ĐANG TÌM KHUÔN MẶT CỦA BÉ..."
+              loadingText={isLoadingModel ? "ĐANG TẢI MÔ HÌNH AI CỦA BÉ..." : "ĐANG TÌM KHUÔN MẶT CỦA BÉ..."}
               hudText={hudText}
               theme="emerald"
               onRetry={retryCamera}

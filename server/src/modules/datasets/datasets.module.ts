@@ -6,12 +6,14 @@ import { DatasetsService } from './datasets.service';
 import { DatasetsController } from './datasets.controller';
 import { AuthModule } from '../auth/auth.module';
 import { UsersModule } from '../users/users.module';
+import { IntegrationsModule } from '../integrations/integrations.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([Dataset, Model]),
     AuthModule,
     UsersModule,
+    IntegrationsModule,
   ],
   providers: [DatasetsService],
   controllers: [DatasetsController],

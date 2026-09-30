@@ -6,17 +6,24 @@
  *   const ml5 = await loadMl5();
  */
 
+import { Ml5Module } from '@/types/ml5';
+
 const ML5_CDN_URL = 'https://unpkg.com/ml5@1.0.1/dist/ml5.min.js';
 
-let ml5Promise: Promise<any> | null = null;
+type Ml5Window = Window & typeof globalThis & {
+  ml5?: Ml5Module;
+};
 
-export function loadMl5(): Promise<any> {
+let ml5Promise: Promise<Ml5Module> | null = null;
+
+export function loadMl5(): Promise<Ml5Module> {
   if (ml5Promise) return ml5Promise;
 
   ml5Promise = new Promise((resolve, reject) => {
     // Already loaded (e.g. another component already triggered this)
-    if (typeof window !== 'undefined' && (window as any).ml5) {
-      resolve((window as any).ml5);
+    const win = typeof window !== 'undefined' ? (window as Ml5Window) : null;
+    if (win && win.ml5) {
+      resolve(win.ml5);
       return;
     }
 
@@ -25,8 +32,9 @@ export function loadMl5(): Promise<any> {
     script.async = true;
 
     script.onload = () => {
-      if ((window as any).ml5) {
-        resolve((window as any).ml5);
+      const w = window as Ml5Window;
+      if (w.ml5) {
+        resolve(w.ml5);
       } else {
         reject(new Error('ml5 script loaded but ml5 global not found'));
       }

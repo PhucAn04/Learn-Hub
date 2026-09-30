@@ -54,9 +54,21 @@ if (!cloudName || !apiKey || !apiSecret) {
   process.exit(0);
 }
 
-console.log(`\n🧹 Đang xóa ảnh trên Cloudinary (${cloudName})...`);
+console.log(`\n🧹 Đang dọn dẹp Cloudinary (${cloudName})...`);
 
-const deleteCloudinaryFolder = async () => {
+const fetchWithRetry = async (url, options, retries = 3) => {
+  for (let i = 0; i < retries; i++) {
+    try {
+      return await fetch(url, options);
+    } catch (err) {
+      if (i === retries - 1) throw err;
+      console.log(`⚠️ Lỗi kết nối (${err.message}). Đang thử lại (${i + 1}/${retries})...`);
+      await new Promise(resolve => setTimeout(resolve, 2000));
+    }
+  }
+};
+
+const deleteCloudinaryResourcesByType = async (resourceType) => {
   try {
     const auth = Buffer.from(`${apiKey}:${apiSecret}`).toString('base64');
     let hasMore = true;
@@ -64,10 +76,10 @@ const deleteCloudinaryFolder = async () => {
     let totalDeleted = 0;
 
     while (hasMore) {
-      let url = `https://api.cloudinary.com/v1_1/${cloudName}/resources/image/upload?prefix=learn-hub/&max_results=500`;
+      let url = `https://api.cloudinary.com/v1_1/${cloudName}/resources/${resourceType}/upload?prefix=learn-hub/&max_results=500`;
       if (nextCursor) url += `&next_cursor=${nextCursor}`;
 
-      const res = await fetch(url, {
+      const res = await fetchWithRetry(url, {
         headers: { 'Authorization': `Basic ${auth}` }
       });
       
@@ -77,20 +89,20 @@ const deleteCloudinaryFolder = async () => {
       const publicIds = data.resources.map(r => r.public_id);
       
       if (publicIds.length === 0) {
-        if (totalDeleted === 0) console.log("✅ Không có ảnh nào trong thư mục 'learn-hub' cần xóa.");
+        if (totalDeleted === 0) console.log(`✅ Không có file ${resourceType} nào trong thư mục 'learn-hub' cần xóa.`);
         break;
       }
 
-      console.log(`🗑️ Đang xóa batch ${publicIds.length} ảnh...`);
+      console.log(`🗑️ Đang xóa batch ${publicIds.length} file ${resourceType}...`);
       
       const chunkSize = 100;
       for (let i = 0; i < publicIds.length; i += chunkSize) {
         const chunk = publicIds.slice(i, i + chunkSize);
-        const delUrl = `https://api.cloudinary.com/v1_1/${cloudName}/resources/image/upload`;
+        const delUrl = `https://api.cloudinary.com/v1_1/${cloudName}/resources/${resourceType}/upload`;
         const params = new URLSearchParams();
         chunk.forEach(id => params.append('public_ids[]', id));
         
-        const delRes = await fetch(delUrl, {
+        const delRes = await fetchWithRetry(delUrl, {
           method: 'DELETE',
           headers: {
             'Authorization': `Basic ${auth}`,
@@ -117,12 +129,17 @@ const deleteCloudinaryFolder = async () => {
     }
     
     if (totalDeleted > 0) {
-      console.log(`✅ Đã xóa tổng cộng ${totalDeleted} ảnh trên Cloudinary thành công!`);
+      console.log(`✅ Đã xóa tổng cộng ${totalDeleted} file ${resourceType} trên Cloudinary thành công!`);
     }
     
   } catch (error) {
-    console.error("❌ Lỗi khi xóa ảnh Cloudinary:", error);
+    console.error(`❌ Lỗi khi xóa file ${resourceType} trên Cloudinary:`, error);
   }
 };
 
-deleteCloudinaryFolder();
+const runCloudinaryClean = async () => {
+  await deleteCloudinaryResourcesByType('image'); // Xóa ảnh thumbnail
+  await deleteCloudinaryResourcesByType('raw');   // Xóa file dataset .json và model .bin
+};
+
+runCloudinaryClean();

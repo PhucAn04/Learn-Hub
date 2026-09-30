@@ -14,5 +14,5 @@ COPY . .
 
 EXPOSE 3000
 
-# Start development server
-CMD ["npm", "run", "dev"]
+# Clear stale cache and start dev server to prevent 404s after container restart
+CMD ["sh", "-c", "find .next -mindepth 1 -delete 2>/dev/null || true; npx next dev"]

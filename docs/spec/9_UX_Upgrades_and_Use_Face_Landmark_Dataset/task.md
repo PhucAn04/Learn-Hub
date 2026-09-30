@@ -1,0 +1,16 @@
+- `[x]` Update `knn-classifier.ts` to add `thumbnail` and `isValid` to `StoredSample`.
+- `[x]` Create `SampleGallery.tsx` component (64×64 thumbnails, red border for invalid, preview modal).
+- `[x]` Update `teach/page.tsx` with hold-to-capture, thumbnail capture, Golden Dataset validation and finger count heuristic.
+- `[x]` Update `teach-gestures/page.tsx` with hold-to-capture, thumbnail capture, and golden-dataset validation.
+- `[x]` Update `teach-face/page.tsx` with hold-to-capture and thumbnail capture.
+- `[x]` Extract 60 normalized samples from Kaggle emotion_landmark_dataset.csv (streaming Python script).
+- `[x]` Create `emotion-landmark-dataset.ts` with golden face data for scoring.
+- `[x]` Implement `getExpressionRatios()` — 5 face-shape-invariant metrics (MAR, SmileRatio, CornerLift, EAR, BrowHeight).
+- `[x]` Implement `detectExpression()` — rule-based expression classifier using ratios.
+- `[x]` Implement `validateExpression()` — unified with detectExpression, 100% consistent.
+- `[x]` Add Live Expression Indicator UI below camera (real-time feedback).
+- `[x]` Fix SampleGallery red border CSS (`border-3` → `border-4`).
+- `[x]` Fix Surprised vs Happy priority (jaw drop inflates cornerLift → check Surprised first).
+- `[x]` Tune Sad vs Neutral boundary (reverse logic: check Neutral first, fallback to Sad).
+- `[x]` Tune smileRatio thresholds (0.38 → 0.40 for Happy, 0.32/0.34 for Neutral/Sad boundary).
+- `[x]` Verify build — 18/18 pages, 0 TypeScript errors.

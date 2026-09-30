@@ -1,0 +1,8 @@
+- [x] 1. Tạo `client/src/lib/image-quality.ts` — assessQuality, analyzeBrightness, analyzeBlur
+- [x] 2. Tạo `client/src/lib/scatter-layout.ts` — computeClassCenters, computeScatterPoints
+- [x] 3. Sửa `client/src/lib/knn-classifier.ts` — SampleQualityMeta, classifyKNNWithVotes
+- [x] 4. Tạo `client/src/components/journey/KnnScatterPlot.tsx` — Canvas scatter plot
+- [x] 5. Sửa `client/src/components/journey/TeachPanel.tsx` — Layout 3 cột, xóa "Tự tin %", tích hợp scatter plot
+- [x] 6. Sửa `client/src/components/journey/DataCollector.tsx` — Gọi assessQuality khi thu mẫu
+- [x] 7. Sửa `client/src/components/journey/AIFeedbackModal.tsx` — Thêm phân tích chất lượng ảnh
+- [x] 8. Fix pre-existing bugs: duplicate isCapturing, BodyTeachPanel JSX nesting, TS7053 type error

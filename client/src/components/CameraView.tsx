@@ -52,7 +52,7 @@ export default function CameraView({
   const styles = themeStyles[theme];
 
   return (
-    <div className="relative w-full aspect-[4/3] max-w-lg bg-gray-900 rounded-2xl overflow-hidden border-4 border-gray-200 shadow-lg">
+    <div className="relative w-full aspect-[4/3] bg-gray-900 rounded-2xl overflow-hidden shadow-inner">
       {modelStatus === 'loading' && (
         <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-gray-900/80 backdrop-blur-sm text-white">
           <Loader2 className={`w-12 h-12 animate-spin mb-4 ${styles.loaderSpinner}`} />

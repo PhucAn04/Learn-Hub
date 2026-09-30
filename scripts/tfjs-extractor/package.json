@@ -1,0 +1,10 @@
+{
+  "name": "tfjs-extractor",
+  "version": "1.0.0",
+  "description": "Script to extract face landmarks using tfjs-node",
+  "main": "extract.js",
+  "dependencies": {
+    "@tensorflow/tfjs-node": "^4.17.0",
+    "@tensorflow-models/face-landmarks-detection": "^1.0.2"
+  }
+}

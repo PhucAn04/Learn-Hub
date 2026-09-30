@@ -58,12 +58,12 @@ export default function ConceptsPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-yellow-50 via-purple-50 to-pink-100 py-12 px-4 select-none">
-      <div className="max-w-3xl mx-auto">
+      <div className="max-w-4xl mx-auto">
         <div className="mb-8 text-center mt-4">
-          <h1 className="text-4xl md:text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-purple-600 tracking-tight">
-            Khám Phá Trí Tuệ Nhân Tạo
+          <h1 className="text-3xl sm:text-4xl lg:text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600 tracking-tight uppercase leading-tight">
+            AI EXPLORATION WEBSITE <br className="hidden md:block" /> FOR PRIMARY SCHOOL STUDENTS
           </h1>
-          <p className="text-lg text-slate-500 font-bold mt-2">Hành trình phiêu lưu dành cho các bé! 🌟</p>
+          <p className="text-lg text-slate-500 font-bold mt-3">Hành trình phiêu lưu khám phá Trí tuệ Nhân tạo dành cho các bé! 🌟</p>
         </div>
 
         {/* ── SLIDES ── */}

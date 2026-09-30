@@ -58,6 +58,7 @@ const TARGET_SAMPLES_PER_CLASS = 10;
 const DEFAULT_INITIAL_CLASSES = [
   { id: 'class_free_1', label: 'Chó', emoji: '🐶' },
   { id: 'class_free_2', label: 'Mèo', emoji: '🐱' },
+  { id: 'class_free_3', label: 'Bọ Cánh Cứng', emoji: '🪲' },
 ];
 
 // ── Helpers ────────────────────────────────────────────
@@ -78,7 +79,7 @@ export default function StudentTeachFreePage() {
   const [activeClass, setActiveClass] = useState<string>('class_free_1');
   const [newLabelInput, setNewLabelInput] = useState('');
   const [newEmojiInput, setNewEmojiInput] = useState('✨');
-  const classIdCounterRef = useRef(2);
+  const classIdCounterRef = useRef(3);
 
   // ── Template từ Thầy/Cô (Gợi ý tùy chọn, không chặn) ─
   const [teacherTemplate, setTeacherTemplate] = useState<DatasetResponse | null>(null);
@@ -1084,26 +1085,26 @@ export default function StudentTeachFreePage() {
 
               {/* Add New Label Input (Học sinh tự tạo nhãn tùy ý) */}
               <div className="mb-4 space-y-2">
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2">
                   <input
                     type="text"
                     value={newLabelInput}
                     onChange={(e) => setNewLabelInput(e.target.value)}
                     onKeyDown={(e) => e.key === 'Enter' && addClass()}
-                    placeholder="Nhập tên nhãn (VD: Chó, Mèo...)"
-                    className="flex-1 bg-slate-50 border-2 border-slate-200 rounded-xl px-3 py-2.5 text-sm font-bold text-slate-700 focus:outline-none focus:border-teal-500 transition-colors"
+                    placeholder="Nhập tên nhãn..."
+                    className="flex-1 min-w-0 bg-slate-50 border-2 border-slate-200 rounded-xl px-3 py-2.5 text-sm font-bold text-slate-700 focus:outline-none focus:border-teal-500 transition-colors"
                   />
                   <input
                     type="text"
                     value={newEmojiInput}
                     onChange={(e) => setNewEmojiInput(e.target.value)}
-                    className="w-14 bg-slate-50 border-2 border-slate-200 rounded-xl px-2 py-2.5 text-center text-lg focus:outline-none focus:border-teal-500 transition-colors"
+                    className="w-12 shrink-0 bg-slate-50 border-2 border-slate-200 rounded-xl px-2 py-2.5 text-center text-lg focus:outline-none focus:border-teal-500 transition-colors"
                     placeholder="🐶"
                   />
                   <button
                     onClick={addClass}
                     disabled={!newLabelInput.trim() || classes.length >= MAX_CLASSES}
-                    className="bg-teal-600 hover:bg-teal-700 disabled:bg-slate-300 text-white font-bold py-2.5 px-3 rounded-xl text-sm transition-colors flex items-center gap-1 shadow-sm"
+                    className="shrink-0 bg-teal-600 hover:bg-teal-700 disabled:bg-slate-300 text-white font-bold py-2.5 px-3 rounded-xl text-sm transition-colors flex items-center gap-1 shadow-sm"
                   >
                     <Plus className="w-4 h-4" />
                     Thêm
